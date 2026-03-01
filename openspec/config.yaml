@@ -2,19 +2,42 @@ schema: spec-driven
 
 # Project context (optional)
 # This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  ## Проект: knowledge-db
+  
+  Система управления персональной базой знаний. Принципы: оффлайн-first, git-first.
+  База хранится в отдельной директории (data/) под git — доступна локально без интернета.
+  
+  ## Компоненты
+  
+  - **serverapp** (Go): REST API (CRUD, поиск по ключам, векторный поиск для RAG), Telegram bot (отдельный порт), MCP server для чатботов
+  - **webapp** (React): UI для работы с базой
+  - **Agent skills** (.cursor/skills/): навыки для Cursor/Claude — локальная работа с базой из IDE
+  
+  ## Tech stack
+  
+  - Backend: Go (stdlib, chi или fiber для роутинга)
+  - Frontend: React, Vite
+  - Хранение: markdown/JSON/YAML в data/, git-версионирование
+  - Векторный поиск: опционально (embeddings для RAG)
+  
+  ## Конвенции
+  
+  - Артефакты OpenSpec — на русском
+  - Conventional commits
+  - При изменении API — API тесты
 
 # Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Писать на русском языке.
+  design:
+    - Писать на русском языке.
+  tasks:
+    - Писать на русском языке.
+    - При реализации/изменении endpoint'ов писать API тесты.
+  specs:
+    - Писать на русском языке.
+    - "Секции спека: заголовки MUST быть «## Purpose» и «## Requirements» (валидатор OpenSpec проверяет их наличие). Назначение — в разделе Purpose, требования — в разделе Requirements."
+    - "Блоки требований: заголовок MUST быть «### Requirement:» (для парсера delta-спеков); далее — описание на русском. Сценарии — «#### Scenario:» или «#### Сценарий:»."
+    - "В тексте каждого требования обязательно использовать SHALL или MUST (валидатор OpenSpec проверяет наличие этих ключевых слов). Формат: «Система SHALL …» или «… MUST …». При русскоязычном описании можно комбинировать: «Система ДОЛЖНА (SHALL) …»."
