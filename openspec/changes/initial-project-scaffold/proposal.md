@@ -6,16 +6,16 @@
 
 ## What Changes
 
-- Создание директорий и базовой структуры `serverapp/`, `webapp/`, `data/`, agent skills
+- Создание директорий по golang-standards: `cmd/kb-server`, `cmd/kb-cli`, `internal/`, `web/`, `.cursor/skills/`
 - Формат хранения: темы/подтемы (2–3 уровня), узлы = папки с `annotation.md`, `content.md`, `notes/`, `images/`, `metadata.json`, `.local/` (gitignore)
-- Каркас REST API (Go) с минимальными эндпоинтами
-- Каркас Telegram бота (отдельный бинарник) — приём сообщений и URL, pipeline создания узлов
-- Каркас MCP-сервера для интеграции с чатботами
-- Каркас веб-приложения (React + Vite) — создание и редактирование записей
-- Agent skill + установка через консольную утилиту
-- Консольная утилита `kb` (Go): валидация структуры базы (`kb validate`), установка agent skills (`kb install-skills`)
-- Pipeline заполнения: текст/URL → LLM → создание файлов узла (URL: fetch, HTML→markdown, метаданные)
-- `go.mod`, `package.json`, скрипты запуска
+- Каркас REST API (Go) с минимальными эндпоинтами, stdlib net/http
+- Telegram бот в том же процессе, что и kb-server — приём сообщений и URL, pipeline создания узлов
+- MCP на `/api/mcp` в том же сервере
+- Веб-приложение (React + Vite) embedded в kb-server
+- Agent skill + инициализация через `kb-cli init`
+- Консольная утилита `kb-cli`: валидация (`kb-cli validate`), инициализация базы (`kb-cli init`)
+- Pipeline заполнения: текст/URL → LLM → создание файлов узла (в scaffold — заглушка)
+- Taskfile, `go.mod`, `package.json`
 
 ## Capabilities
 
@@ -28,7 +28,7 @@
 - `mcp-server`: MCP-сервер для подключения чатботов
 - `webapp`: веб-интерфейс для просмотра, поиска, создания и редактирования
 - `agent-skills`: skill для локальной работы с базой из IDE
-- `kb-cli`: консольная утилита — валидация структуры базы, установка agent skills
+- `kb-cli`: консольная утилита — валидация структуры базы, инициализация (init: .gitignore, agent skills)
 
 ### Modified Capabilities
 
@@ -36,6 +36,6 @@
 
 ## Impact
 
-- Новый код: `serverapp/`, `webapp/`, `data/`, `.cursor/skills/`
+- Новый код: `cmd/kb-server`, `cmd/kb-cli`, `internal/`, `web/`, `.cursor/skills/`
 - Зависимости: Go-модули (роутер, MCP SDK, Telegram API), npm (React, Vite), LLM-API для ingestion
 - Затрагиваемые системы: только новый проект, внешних интеграций нет

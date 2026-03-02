@@ -11,7 +11,7 @@
 - Структура репозитория по golang-standards и каркасы компонентов
 - Монолит: серверная часть (API + web UI + Telegram bot) и консольная (kb)
 - Формат хранения с валидацией через kb-cli
-- Agent skill + установка через kb install-skills
+- Agent skill + инициализация базы через kb-cli init
 
 **Non-Goals:**
 
@@ -25,16 +25,18 @@
 
 **Решение:** Один репозиторий, две части приложения:
 
-- **Серверное** — API, web UI (embedded), Telegram bot (отдельный порт в том же процессе). Один бинарник `cmd/server`.
-- **Консольное** — валидация структуры, установка skills. Бинарник `cmd/kb`.
+- **Серверное (kb-server)** — API, web UI (embedded), Telegram bot (отдельный порт в том же процессе), MCP на `/api/mcp`. Бинарник `cmd/kb-server`.
+- **Консольное (kb-cli)** — валидация структуры, инициализация базы. Бинарник `cmd/kb-cli`.
+
+Сборка и задачи — через **Taskfile**.
 
 Структура по [project-layout](https://github.com/golang-standards/project-layout):
 
 ```
 /
 ├── cmd/
-│   ├── server/      # API + UI + bot + MCP
-│   └── kb/          # validate, install-skills
+│   ├── kb-server/   # API + UI + bot + MCP (/api/mcp)
+│   └── kb-cli/      # validate, init
 ├── internal/
 │   ├── kb/          # работа с data/, валидация
 │   ├── api/         # HTTP handlers
@@ -45,6 +47,8 @@
 ├── .cursor/skills/
 └── go.mod
 ```
+
+Go module: **`github.com/strider2038/knowledge-db`**
 
 Директория базы знаний **вне проекта**, путь задаётся переменной окружения `KB_DATA_PATH`.
 
@@ -61,17 +65,19 @@
 | Вариант | Описание | Плюсы | Минусы |
 |---------|----------|-------|--------|
 | **A. main.go в корне** | `main.go` и `web/dist` в корне, embed там же | Просто | Нарушает project layout (нет cmd/) |
-| **B. Copy в build** | Makefile/скрипт копирует `web/dist` → `internal/ui/static/` перед `go build` | Соответствует layout, cmd/server чистый | Два шага сборки |
+| **B. Copy в build** | Taskfile копирует `web/dist` → `internal/ui/static/` перед `go build` | Соответствует layout, cmd/kb-server чистый | Два шага сборки |
 | **C. Симлинк** | `internal/ui/static` — симлинк на `web/dist` | Один `go build` после сборки web | Симлинки в git, кроссплатформенность |
 | **D. web внутри internal** | `internal/web/` — React-проект, `internal/web/dist` | Всё под рукой | Смешение Go и Node в internal |
 
-**Выбор: B (copy в build).** Сохраняем layout, явный pipeline: `make build` или `npm run build && cp -r web/dist internal/ui/static && go build ./cmd/server`.
+**Выбор: B (copy в build).** Сохраняем layout, явный pipeline через Taskfile: `task build` (сборка web → копирование → go build).
 
 Структура: `internal/ui/embed.go` с `//go:embed static`, `static/` заполняется при сборке. `web/` — исходники React.
 
-### 4. Layout cmd/kb
+### 4. Layout cmd/kb-cli
 
-**Решение:** Cobra, подкоманды `validate`, `install-skills`. Путь к data — флаг `--path` или `KB_DATA_PATH`. Общая логика — `internal/kb`.
+**Решение:** Cobra, подкоманды `validate`, `init`. Путь к data — флаг `--path` (по умолчанию текущая директория). Общая логика — `internal/kb`.
+
+**`kb-cli init`** — инициализирует новую базу знаний в указанной (или текущей) директории: создаёт `.gitignore` (`**/.local/`, `**/.local/**`), устанавливает agent skills в `~/.cursor/skills/` с подстановкой пути к базе.
 
 ### 5. Хранение: путь к базе знаний
 
@@ -79,9 +85,9 @@
 
 `.gitignore` в корне базы (если она под git): `**/.local/`, `**/.local/**`.
 
-### 6. Agent skill: установка
+### 6. Agent skill: установка (в рамках init)
 
-**Решение:** `kb install-skills --path <path>` копирует skill из `.cursor/skills/knowledge-db/` в `~/.cursor/skills/` и подставляет путь к data в SKILL.md (шаблон `{{DATA_PATH}}`). Skill читает путь из встроенного параметра.
+**Решение:** `kb-cli init --path <path>` создаёт `.gitignore` в корне базы и копирует skill из `.cursor/skills/knowledge-db/` в `~/.cursor/skills/` с подстановкой пути (шаблон `{{DATA_PATH}}`). Skill читает путь из встроенного параметра.
 
 ### 7. Ingestion pipeline (scaffold)
 
@@ -89,28 +95,26 @@
 
 ### 8. Telegram bot: в том же процессе, отдельный порт
 
-**Решение:** Бот слушает отдельный порт в рамках `cmd/server` (отдельный http.Server или long-polling горутина). Конфиг через env: `TELEGRAM_TOKEN`, `KB_DATA_PATH`. Long polling — без публичного URL.
+**Решение:** Бот слушает отдельный порт в рамках `cmd/kb-server` (отдельный http.Server или long-polling горутина). Конфиг через env: `TELEGRAM_TOKEN`, `KB_DATA_PATH`. Long polling — без публичного URL.
 
 ## Risks / Trade-offs
 
 | Риск | Митигация |
 |------|-----------|
-| Дублирование логики kb между server и kb | Общий пакет `internal/kb`; cmd/server и cmd/kb импортируют |
+| Дублирование логики kb между kb-server и kb-cli | Общий пакет `internal/kb`; cmd/kb-server и cmd/kb-cli импортируют |
 | LLM API — затраты и латентность | В scaffold не используем; интерфейс позволяет подставить mock |
 | CORS при не-localhost | В scaffold разрешаем только localhost |
-| Skill перезаписывается при обновлении | install-skills — идемпотентно; документировать, что локальные правки skill будут потеряны |
+| Skill перезаписывается при обновлении | init — идемпотентно; документировать, что локальные правки skill будут потеряны |
 
 ## Migration Plan
 
 Новый проект — миграции нет. Шаги:
 
-1. `go mod init`, создать директории по project layout
-2. `cd web && npm install && npm run build`
-3. `cp -r web/dist internal/ui/static` (или через Makefile)
-4. `go build ./cmd/server` и `go build ./cmd/kb`
-5. Задать `KB_DATA_PATH`, запустить server
-6. `kb validate $KB_DATA_PATH`, `kb install-skills --path $KB_DATA_PATH`
+1. `go mod init github.com/strider2038/knowledge-db`, создать директории по project layout, Taskfile
+2. `task build` — сборка web, копирование в internal/ui/static, go build
+3. Задать `KB_DATA_PATH`, запустить kb-server
+4. `kb-cli validate $KB_DATA_PATH`, `kb-cli init` (в директории базы) или `kb-cli init --path /path/to/base`
 
-## Open Questions
+## MCP
 
-- MCP в том же процессе, что и API, или отдельный бинарник — для scaffold достаточно встроенного в server.
+MCP на том же сервере, что и API — отдельный endpoint **`/api/mcp`** (SSE/WebSocket или HTTP по протоколу MCP).
