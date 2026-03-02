@@ -1,0 +1,61 @@
+version: "3"
+
+vars:
+  WEB_DIR: ./web
+  UI_STATIC: ./internal/ui/static
+
+tasks:
+  web:install:
+    desc: Установить зависимости web
+    dir: "{{.WEB_DIR}}"
+    cmds:
+      - npm install
+
+  web:build:
+    desc: Собрать web (Vite)
+    dir: "{{.WEB_DIR}}"
+    deps: [web:install]
+    cmds:
+      - npm run build
+
+  build-server:
+    desc: Собрать kb-server (web → copy → go build)
+    deps: [web:build]
+    cmds:
+      - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
+      - go build -o kb-server ./cmd/kb-server
+
+  build-cli:
+    desc: Собрать kb-cli
+    cmds:
+      - go build -o kb-cli ./cmd/kb-cli
+
+  build:
+    desc: Собрать всё (web + kb-server + kb-cli)
+    cmds:
+      - task: web:build
+      - mkdir -p {{.UI_STATIC}}
+      - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
+      - go build -o kb-server ./cmd/kb-server
+      - go build -o kb-cli ./cmd/kb-cli
+
+  dev:
+    desc: Запустить dev-сервер (web dev + kb-server)
+    cmds:
+      - task: build-server
+      - echo 'Run KB_DATA_PATH=/path/to/data ./kb-server'
+
+  test:
+    desc: Запустить тесты
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Запустить golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  lint:fix:
+    desc: golangci-lint с автоисправлением
+    cmds:
+      - golangci-lint run ./... --fix

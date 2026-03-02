@@ -10,23 +10,31 @@
 
 ```
 knowledge-db/
-├── serverapp/      # Серверная часть (Go)
-├── webapp/         # Web UI (React)
-├── .cursor/skills/ # Agent skills для Cursor/Claude
-├── data/           # База знаний (git subtree/submodule, локальная)
-└── openspec/       # Спецификации, изменения (OpenSpec workflow)
+├── cmd/
+│   ├── kb-server/   # API + UI + Telegram bot + MCP
+│   └── kb-cli/      # validate, init
+├── internal/
+│   ├── kb/          # работа с data/, валидация, дерево тем
+│   ├── api/         # HTTP handlers, роутинг
+│   ├── ingestion/   # интерфейс Ingester, pipeline
+│   ├── mcp/         # MCP endpoint /api/mcp
+│   └── ui/          # embed статики (embed.go, static/)
+├── web/             # React исходники (Vite)
+├── .cursor/skills/  # Agent skills
+├── data/            # База знаний (git subtree/submodule, локальная)
+└── openspec/        # Спецификации, изменения (OpenSpec workflow)
 ```
 
 ### serverapp (Go)
 
 - **REST API** — CRUD, поиск по ключевым словам, векторный поиск (RAG)
-- **Telegram bot** — отдельный процесс/порт, доступ к базе через Telegram
+- **Telegram bot** — в том же процессе, long polling
 - **MCP server** — Model Context Protocol для подключения чатботов (Claude, и др.)
 
-### webapp (React)
+### web (React)
 
 - Упрощённый UI для работы с базой
-- Работа с локально запущенным serverapp
+- Работа с локально запущенным kb-server
 
 ### Agent skills
 
@@ -41,20 +49,20 @@ knowledge-db/
 
 3. **Git как источник правды**: Версионирование, diff, merge — ключевые инструменты. Избегать форматов, которые сложно мержить.
 
-4. **Локальность**: serverapp и webapp рассчитаны на localhost. Удалённый доступ — отдельная опция, не основной сценарий.
+4. **Локальность**: kb-server и web рассчитаны на localhost. Удалённый доступ — отдельная опция, не основной сценарий.
 
 5. **Язык артефактов**: Proposal, design, tasks, specs — на русском. Код — по конвенции проекта (часто английский для идентификаторов).
 
 ## Расположение кода
 
-| Компонент       | Путь                   | Технологии                    |
-|-----------------|------------------------|-------------------------------|
-| Сервер, API     | `serverapp/`           | Go, stdlib, возможно chi/fiber |
-| Telegram bot    | `serverapp/cmd/bot/`   | Go, telegram API              |
-| MCP server      | `serverapp/internal/mcp/` | Go, MCP SDK                |
-| Web UI          | `webapp/`              | React, Vite                   |
-| Agent skills    | `.cursor/skills/`      | Markdown, SKILL.md            |
-| База знаний     | `data/` или отдельный репо | Markdown, frontmatter   |
+| Компонент | Путь | Технологии |
+|-----------|------|------------|
+| Сервер, API | `cmd/kb-server`, `internal/api` | Go, stdlib net/http |
+| Telegram bot | `cmd/kb-server` (в том же процессе) | Go, long polling |
+| MCP server | `internal/mcp` | Go, endpoint /api/mcp |
+| Web UI | `web/` | React, Vite |
+| Agent skills | `.cursor/skills/` | Markdown, SKILL.md |
+| База знаний | `data/` или отдельный репо | Markdown, frontmatter |
 
 ## Когда агент работает с базой
 
@@ -69,14 +77,21 @@ knowledge-db/
 ## Полезные команды
 
 ```bash
-# Запуск serverapp (пример)
-go run ./serverapp/cmd/server
+# Запуск kb-server
+go run ./cmd/kb-server
+# или: KB_DATA_PATH=/path/to/data ./kb-server
 
-# Запуск Telegram bot
-go run ./serverapp/cmd/bot
+# CLI: валидация
+./kb-cli validate --path /path/to/data
 
-# Запуск webapp
-cd webapp && npm run dev
+# CLI: инициализация
+./kb-cli init --path /path/to/data
+
+# Сборка
+task build
+
+# Web UI (dev)
+cd web && npm run dev
 
 # Открыть change
 openspec status --change <name>
