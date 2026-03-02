@@ -69,6 +69,8 @@ Go module: **`github.com/strider2038/knowledge-db`**
 
 Для ingestion (будущее): `github.com/openai/openai-go` или аналог. В scaffold не требуется.
 
+При реализации: следовать skills `.cursor/skills/kb-backend-golang`, `golang-errors`, `golang-logging`, `golang-tests` и правилам `.cursor/rules/`.
+
 ### 3. HTTP-роутинг
 
 **Решение:** Стандартный `net/http.ServeMux` (Go 1.22+): method matching (`GET /posts/{id}`), wildcards.

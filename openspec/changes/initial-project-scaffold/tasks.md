@@ -1,9 +1,10 @@
 ## 1. Setup
 
-- [ ] 1.1 Создать go.mod с модулем github.com/strider2038/knowledge-db, добавить зависимости: caarlos0/env, cobra, muonsoft/clog, muonsoft/errors, muonsoft/api-testing, pior/runnable, google/uuid, godotenv
+- [ ] 1.1 Создать go.mod с модулем github.com/strider2038/knowledge-db, добавить Go-стек из design (Decision 2): caarlos0/env, cobra, muonsoft/clog, muonsoft/errors, muonsoft/api-testing, pior/runnable, google/uuid, godotenv
 - [ ] 1.2 Создать директории cmd/kb-server, cmd/kb-cli, internal/kb, internal/api, internal/ingestion, internal/mcp, internal/ui, web
 - [ ] 1.3 Создать Taskfile с задачами: build (web → copy → go build), build-server, build-cli, dev
 - [ ] 1.4 Добавить .cursor/skills/knowledge-db/ для agent skill
+- [ ] 1.5 При реализации Go-кода следовать skills: kb-backend-golang, golang-errors, golang-logging, golang-tests; правила: agent-finish-tests-lint, golang-errors-wrap
 
 ## 2. internal/kb
 
@@ -17,13 +18,13 @@
 
 ## 4. internal/api
 
-- [ ] 4.1 Реализовать роутинг net/http.ServeMux (Go 1.22+)
+- [ ] 4.1 Реализовать роутинг net/http.ServeMux (Go 1.22+), конфиг через caarlos0/env
 - [ ] 4.2 Эндпоинт GET /api/nodes/{path} — чтение узла
 - [ ] 4.3 Эндпоинт GET /api/tree — дерево тем
 - [ ] 4.4 Эндпоинт GET /api/search?q=... — поиск (заглушка)
 - [ ] 4.5 Эндпоинт POST /api/ingest — приём текста для ingestion
 - [ ] 4.6 Раздача embedded статики для / и /index.html
-- [ ] 4.7 API тесты для эндпоинтов
+- [ ] 4.7 API тесты для эндпоинтов (muonsoft/api-testing, skill golang-tests)
 
 ## 5. internal/ui
 
@@ -32,20 +33,20 @@
 
 ## 6. cmd/kb-server
 
-- [ ] 6.1 main.go: чтение KB_DATA_PATH, TELEGRAM_TOKEN из env
-- [ ] 6.2 Запуск HTTP-сервера с API и раздачей статики
-- [ ] 6.3 Интеграция Telegram bot (long polling, заглушка ingestion)
+- [ ] 6.1 main.go: чтение KB_DATA_PATH, TELEGRAM_TOKEN через caarlos0/env
+- [ ] 6.2 Запуск HTTP-сервера с API и раздачей статики (pior/runnable для graceful shutdown)
+- [ ] 6.3 Интеграция Telegram bot (long polling, runnable, skill runnable-background-processes)
 - [ ] 6.4 Endpoint /api/mcp (заглушка или каркас MCP)
 
 ## 7. cmd/kb-cli
 
-- [ ] 7.1 Cobra: корневая команда kb-cli, подкоманды validate, init
+- [ ] 7.1 Cobra (spf13/cobra): корневая команда kb-cli, подкоманды validate, init
 - [ ] 7.2 validate: вызов internal/kb, вывод отчёта
 - [ ] 7.3 init: создание .gitignore, копирование skill с подстановкой {{DATA_PATH}}
 
 ## 8. web (React + Vite)
 
-- [ ] 8.1 Инициализировать Vite + React в web/
+- [ ] 8.1 Инициализировать Vite + React в web/ (skill web-frontend)
 - [ ] 8.2 Настроить VITE_API_URL
 - [ ] 8.3 Navbar с пунктами «Добавить», «Поиск»
 - [ ] 8.4 Страница «Добавить»: textarea, кнопка «Добавить», вызов POST /api/ingest
