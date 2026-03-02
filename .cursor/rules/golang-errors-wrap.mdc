@@ -1,0 +1,18 @@
+---
+description: Обязательное обёртывание ошибок при возврате из handler и use case
+globs: internal/**/*.go
+---
+
+# Ошибки в Go: враппинг при возврате
+
+При любом **`return ..., err`** из API-handler или use case ошибка **должна быть обёрнута** через `errors.Errorf("<действие>: %w", err)`.
+
+Это относится в том числе к:
+- возврату sentinel-ошибок валидации;
+- возврату ошибок из internal/kb, internal/ingestion и т.п.
+
+**Не возвращать ошибку без обёртки** — иначе теряется контекст и стек.
+
+Пример: `return nil, errors.Errorf("get node: %w", ErrNodeNotFound)` вместо `return nil, ErrNodeNotFound`.
+
+Подробнее: skill `golang-errors`.

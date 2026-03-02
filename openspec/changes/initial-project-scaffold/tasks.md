@@ -1,6 +1,6 @@
 ## 1. Setup
 
-- [ ] 1.1 Создать go.mod с модулем github.com/strider2038/knowledge-db
+- [ ] 1.1 Создать go.mod с модулем github.com/strider2038/knowledge-db, добавить зависимости: caarlos0/env, cobra, muonsoft/clog, muonsoft/errors, muonsoft/api-testing, pior/runnable, google/uuid, godotenv
 - [ ] 1.2 Создать директории cmd/kb-server, cmd/kb-cli, internal/kb, internal/api, internal/ingestion, internal/mcp, internal/ui, web
 - [ ] 1.3 Создать Taskfile с задачами: build (web → copy → go build), build-server, build-cli, dev
 - [ ] 1.4 Добавить .cursor/skills/knowledge-db/ для agent skill

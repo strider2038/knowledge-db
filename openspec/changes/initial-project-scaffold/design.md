@@ -52,11 +52,28 @@ Go module: **`github.com/strider2038/knowledge-db`**
 
 Директория базы знаний **вне проекта**, путь задаётся переменной окружения `KB_DATA_PATH`.
 
-### 2. HTTP-роутинг
+### 2. Go-библиотеки
+
+**Решение:** Использовать проверенный стек (по аналогии с audio-quest):
+
+| Библиотека | Назначение |
+|------------|------------|
+| `github.com/caarlos0/env/v10` | Конфигурация из env (KB_DATA_PATH, TELEGRAM_TOKEN) — struct-based |
+| `github.com/joho/godotenv` | Загрузка .env в dev |
+| `github.com/spf13/cobra` | CLI для kb-cli (validate, init) |
+| `github.com/muonsoft/clog` | Структурированное логирование |
+| `github.com/muonsoft/errors` | Обработка ошибок с контекстом |
+| `github.com/muonsoft/api-testing` | API-тесты для эндпоинтов |
+| `github.com/pior/runnable` | Graceful shutdown сервера |
+| `github.com/google/uuid` | Генерация ID при необходимости |
+
+Для ingestion (будущее): `github.com/openai/openai-go` или аналог. В scaffold не требуется.
+
+### 3. HTTP-роутинг
 
 **Решение:** Стандартный `net/http.ServeMux` (Go 1.22+): method matching (`GET /posts/{id}`), wildcards.
 
-### 3. Embed статики (web UI)
+### 4. Embed статики (web UI)
 
 Ограничение: `//go:embed` не допускает `..` в путях; embed задаётся относительно файла с директивой.
 
@@ -73,27 +90,27 @@ Go module: **`github.com/strider2038/knowledge-db`**
 
 Структура: `internal/ui/embed.go` с `//go:embed static`, `static/` заполняется при сборке. `web/` — исходники React.
 
-### 4. Layout cmd/kb-cli
+### 5. Layout cmd/kb-cli
 
 **Решение:** Cobra, подкоманды `validate`, `init`. Путь к data — флаг `--path` (по умолчанию текущая директория). Общая логика — `internal/kb`.
 
 **`kb-cli init`** — инициализирует новую базу знаний в указанной (или текущей) директории: создаёт `.gitignore` (`**/.local/`, `**/.local/**`), устанавливает agent skills в `~/.cursor/skills/` с подстановкой пути к базе.
 
-### 5. Хранение: путь к базе знаний
+### 6. Хранение: путь к базе знаний
 
 **Решение:** Директория базы может находиться вне проекта. Путь задаётся переменной окружения **`KB_DATA_PATH`**. В `data/` в репо — только пример структуры или `.gitkeep`; рабочая база — снаружи.
 
 `.gitignore` в корне базы (если она под git): `**/.local/`, `**/.local/**`.
 
-### 6. Agent skill: установка (в рамках init)
+### 7. Agent skill: установка (в рамках init)
 
 **Решение:** `kb-cli init --path <path>` создаёт `.gitignore` в корне базы и копирует skill из `.cursor/skills/knowledge-db/` в `~/.cursor/skills/` с подстановкой пути (шаблон `{{DATA_PATH}}`). Skill читает путь из встроенного параметра.
 
-### 7. Ingestion pipeline (scaffold)
+### 8. Ingestion pipeline (scaffold)
 
 **Решение:** Интерфейс `Ingester` с методами `IngestText(text)`, `IngestURL(url)`. Реализация-заглушка возвращает ошибку "not implemented" или создаёт минимальный узел без LLM. LLM-интеграция — в последующих change.
 
-### 8. Telegram bot: в том же процессе, отдельный порт
+### 9. Telegram bot: в том же процессе, отдельный порт
 
 **Решение:** Бот слушает отдельный порт в рамках `cmd/kb-server` (отдельный http.Server или long-polling горутина). Конфиг через env: `TELEGRAM_TOKEN`, `KB_DATA_PATH`. Long polling — без публичного URL.
 

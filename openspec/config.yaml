@@ -16,7 +16,7 @@ context: |
   
   ## Tech stack
   
-  - Backend: Go (stdlib, chi или fiber для роутинга)
+  - Backend: Go (stdlib net/http), библиотеки: caarlos0/env, cobra, muonsoft/clog, muonsoft/errors, muonsoft/api-testing, pior/runnable, google/uuid, godotenv
   - Frontend: React, Vite
   - Хранение: markdown/JSON/YAML в data/, git-версионирование
   - Векторный поиск: опционально (embeddings для RAG)
