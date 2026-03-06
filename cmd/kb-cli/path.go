@@ -18,5 +18,6 @@ func absPath(p string) (string, error) {
 	if !info.IsDir() {
 		return "", fmt.Errorf("%s is not a directory", abs)
 	}
+
 	return abs, nil
 }

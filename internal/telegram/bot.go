@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -41,6 +42,7 @@ func (b *Bot) Run(ctx context.Context) error {
 			if err != nil {
 				logger.Warn("poll failed", "error", err)
 				time.Sleep(5 * time.Second)
+
 				continue
 			}
 			offset = nextOffset
@@ -71,7 +73,7 @@ func (b *Bot) getUpdates(ctx context.Context, baseURL string, offset int) ([]upd
 		return nil, offset, err
 	}
 	if !result.OK {
-		return nil, offset, fmt.Errorf("telegram API error")
+		return nil, offset, errors.New("telegram API error")
 	}
 
 	nextOffset := offset
@@ -80,6 +82,7 @@ func (b *Bot) getUpdates(ctx context.Context, baseURL string, offset int) ([]upd
 			nextOffset = u.UpdateID + 1
 		}
 	}
+
 	return result.Result, nextOffset, nil
 }
 

@@ -51,5 +51,6 @@ func Run() error {
 	}
 
 	runnable.Run(m)
+
 	return nil
 }

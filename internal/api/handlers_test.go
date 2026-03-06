@@ -9,29 +9,35 @@ import (
 
 	"github.com/muonsoft/api-testing/apitest"
 	"github.com/muonsoft/api-testing/assertjson"
+	"github.com/stretchr/testify/require"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 )
 
-func setupTestHandler(t *testing.T) (http.Handler, string) {
+func setupTestHandler(t *testing.T) http.Handler {
 	t.Helper()
 	tmp := t.TempDir()
-	// Создаём валидный узел для тестов
+	// Создаём валидный узел для тестов (node1.md с frontmatter)
 	nodePath := filepath.Join(tmp, "topic", "node1")
 	_ = os.MkdirAll(nodePath, 0o755)
-	_ = os.WriteFile(filepath.Join(nodePath, "annotation.md"), []byte("Annotation"), 0o644)
-	_ = os.WriteFile(filepath.Join(nodePath, "content.md"), []byte("Content"), 0o644)
-	_ = os.WriteFile(filepath.Join(nodePath, "metadata.json"), []byte(`{"keywords":["a"],"created":"2024-01-01T00:00:00Z","updated":"2024-01-01T00:00:00Z"}`), 0o644)
+	node1Content := `---
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Annotation"
+---
+
+Content`
+	_ = os.WriteFile(filepath.Join(nodePath, "node1.md"), []byte(node1Content), 0o644)
 	h := NewHandler(tmp, &ingestion.StubIngester{})
 	mux, err := NewMux(h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return mux, tmp
+	require.NoError(t, err)
+
+	return mux
 }
 
 func TestGetNode_WhenNotFound_Expect404(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandleGET(t, handler, "/api/nodes/missing/path")
 
@@ -40,7 +46,7 @@ func TestGetNode_WhenNotFound_Expect404(t *testing.T) {
 
 func TestGetNode_WhenValidPath_ExpectOK(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandleGET(t, handler, "/api/nodes/topic/node1")
 
@@ -54,7 +60,7 @@ func TestGetNode_WhenValidPath_ExpectOK(t *testing.T) {
 
 func TestGetTree_WhenValidBase_ExpectOK(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandleGET(t, handler, "/api/tree")
 
@@ -66,7 +72,7 @@ func TestGetTree_WhenValidBase_ExpectOK(t *testing.T) {
 
 func TestListNodes_WhenValidPath_ExpectOK(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandleGET(t, handler, "/api/nodes?path=topic")
 
@@ -78,7 +84,7 @@ func TestListNodes_WhenValidPath_ExpectOK(t *testing.T) {
 
 func TestSearch_WhenQuery_ExpectOK(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandleGET(t, handler, "/api/search?q=test")
 
@@ -90,7 +96,7 @@ func TestSearch_WhenQuery_ExpectOK(t *testing.T) {
 
 func TestIngest_WhenEmptyText_Expect400(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandlePOST(t, handler, "/api/ingest", strings.NewReader(`{"text":""}`),
 		apitest.WithContentType("application/json"))
@@ -100,7 +106,7 @@ func TestIngest_WhenEmptyText_Expect400(t *testing.T) {
 
 func TestIngest_WhenStub_Expect501(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandlePOST(t, handler, "/api/ingest", strings.NewReader(`{"text":"hello"}`),
 		apitest.WithContentType("application/json"))
@@ -110,7 +116,7 @@ func TestIngest_WhenStub_Expect501(t *testing.T) {
 
 func TestSPA_WhenRoot_ExpectIndexHTML(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandleGET(t, handler, "/")
 
@@ -120,7 +126,7 @@ func TestSPA_WhenRoot_ExpectIndexHTML(t *testing.T) {
 
 func TestSPA_WhenAddRoute_ExpectIndexHTML(t *testing.T) {
 	t.Parallel()
-	handler, _ := setupTestHandler(t)
+	handler := setupTestHandler(t)
 
 	resp := apitest.HandleGET(t, handler, "/add")
 

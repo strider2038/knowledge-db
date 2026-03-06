@@ -38,6 +38,9 @@ KB_DATA_PATH=/path/to/data ./kb-server
 
 # CLI: инициализация новой базы
 ./kb-cli init --path /path/to/data
+
+# CLI: инициализация с примером узла (формат Obsidian)
+./kb-cli init --path /path/to/data --example
 ```
 
 ## Команды Taskfile

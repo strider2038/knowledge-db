@@ -4,19 +4,7 @@
 
 ## Requirements
 
-### Requirement: Иерархия тем
-
-Система ДОЛЖНА (SHALL) хранить знания в иерархии тем: директории тем, внутри — подтемы. Глубина вложенности MUST быть не более 2–3 уровней.
-
-#### Сценарий: Валидная структура тем
-
-- **WHEN** база содержит topic/subtopic/node
-- **THEN** структура считается валидной
-
-#### Сценарий: Слишком глубокая вложенность
-
-- **WHEN** база содержит topic/subtopic/subsubtopic/subsubsubtopic
-- **THEN** валидация сообщает об ошибке
+## MODIFIED Requirements
 
 ### Requirement: Структура узла
 
@@ -51,11 +39,10 @@
 - **WHEN** во frontmatter отсутствует поле created или updated
 - **THEN** валидация сообщает об ошибке
 
-### Requirement: Исключение .local из git
+## REMOVED Requirements
 
-Директория `.local/` в каждом узле MUST быть исключена из git (через .gitignore в корне базы). В ней хранятся sha-хеш, embedding и прочие вспомогательные файлы.
+### Requirement: Формат metadata.json
 
-#### Сценарий: .gitignore в корне базы
+**Reason:** Метаданные перенесены в YAML frontmatter главного .md файла для совместимости с Obsidian.
 
-- **WHEN** в корне базы есть .gitignore с правилами `**/.local/`, `**/.local/**`
-- **THEN** содержимое .local не попадает в репозиторий
+**Migration:** Использовать frontmatter в `{dirname}.md` вместо отдельного metadata.json.

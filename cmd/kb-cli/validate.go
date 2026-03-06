@@ -33,9 +33,11 @@ func validateCmd() *cobra.Command {
 				os.Exit(1)
 			}
 			fmt.Println("OK: структура базы валидна")
+
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&path, "path", "p", "", "путь к базе знаний (по умолчанию текущая директория)")
+
 	return cmd
 }

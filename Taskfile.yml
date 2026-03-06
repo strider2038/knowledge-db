@@ -84,3 +84,13 @@ tasks:
     desc: golangci-lint с автоисправлением
     cmds:
       - golangci-lint run ./... --fix
+
+  lint:install:
+    desc: Установить golangci-lint
+    cmds:
+      - |
+        if ! command -v golangci-lint &> /dev/null; then
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+        else
+          echo "golangci-lint is already installed"
+        fi

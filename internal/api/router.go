@@ -21,5 +21,6 @@ func NewMux(h *Handler) (*http.ServeMux, error) {
 	mux.Handle("GET /{$}", spa)
 	mux.Handle("GET /index.html", spa)
 	mux.Handle("GET /{path...}", spa)
+
 	return mux, nil
 }

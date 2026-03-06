@@ -24,7 +24,7 @@ description: Структура backend knowledge-db (cmd/, internal/). Испо
 
 ## internal/kb
 
-- Валидация структуры базы (темы 2–3 уровня, узлы с annotation.md, content.md, metadata.json)
+- Валидация структуры базы (темы 2–3 уровня, узлы с {dirname}.md и frontmatter)
 - Чтение дерева тем, списка узлов
 - Путь к базе — `KB_DATA_PATH` (env)
 

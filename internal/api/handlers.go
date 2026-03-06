@@ -29,15 +29,18 @@ func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "path required")
+
 		return
 	}
 	node, err := kb.GetNode(r.Context(), h.dataPath, path)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
 			writeError(w, http.StatusNotFound, "node not found")
+
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
+
 		return
 	}
 	writeJSON(w, node)
@@ -48,6 +51,7 @@ func (h *Handler) GetTree(w http.ResponseWriter, r *http.Request) {
 	tree, err := kb.ReadTree(r.Context(), h.dataPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+
 		return
 	}
 	writeJSON(w, tree)
@@ -60,9 +64,11 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
 			writeError(w, http.StatusNotFound, "path not found")
+
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
+
 		return
 	}
 	writeJSON(w, map[string]any{"nodes": nodes})
@@ -78,6 +84,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+
 		return
 	}
 	var req struct {
@@ -85,19 +92,23 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
+
 		return
 	}
 	if req.Text == "" {
 		writeError(w, http.StatusBadRequest, "text required")
+
 		return
 	}
 	node, err := h.ingester.IngestText(r.Context(), req.Text)
 	if err != nil {
 		if errors.Is(err, ingestion.ErrNotImplemented) {
 			writeError(w, http.StatusNotImplemented, "ingestion not implemented")
+
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
+
 		return
 	}
 	writeJSON(w, node)
@@ -120,6 +131,7 @@ func NewSPAHandler() (http.Handler, error) {
 		// SPA-маршруты (add, search) — index.html
 		if isSPAClientRoute(path) {
 			serveIndexHTML(w, r, sub)
+
 			return
 		}
 
@@ -127,6 +139,7 @@ func NewSPAHandler() (http.Handler, error) {
 		trimmed := strings.TrimPrefix(path, "/")
 		if _, err := sub.Open(trimmed); err == nil {
 			fileServer.ServeHTTP(w, r)
+
 			return
 		}
 
@@ -137,6 +150,7 @@ func NewSPAHandler() (http.Handler, error) {
 
 func isSPAClientRoute(path string) bool {
 	path = strings.TrimPrefix(path, "/")
+
 	return path == "add" || path == "search"
 }
 
@@ -146,13 +160,15 @@ func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
 	file, err := fsys.Open(indexFile)
 	if err != nil {
 		http.Error(w, "index.html not found", http.StatusNotFound)
+
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	stat, err := file.Stat()
 	if err != nil {
 		http.Error(w, "cannot stat index.html", http.StatusInternalServerError)
+
 		return
 	}
 
@@ -160,6 +176,7 @@ func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
 	reader, ok := file.(io.ReadSeeker)
 	if !ok {
 		http.Error(w, "cannot read index.html", http.StatusInternalServerError)
+
 		return
 	}
 	http.ServeContent(w, r, indexFile, stat.ModTime(), reader)
@@ -167,11 +184,15 @@ func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		http.Error(w, "json encode error", http.StatusInternalServerError)
+	}
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		http.Error(w, "json encode error", http.StatusInternalServerError)
+	}
 }

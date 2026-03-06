@@ -9,10 +9,10 @@ type TreeNode struct {
 
 // Node — узел базы знаний (папка со статьёй).
 type Node struct {
-	Path       string            `json:"path"`
-	Annotation string            `json:"annotation"`
-	Content    string            `json:"content"`
-	Metadata   map[string]any    `json:"metadata"`
+	Path       string         `json:"path"`
+	Annotation string         `json:"annotation"`
+	Content    string         `json:"content"`
+	Metadata   map[string]any `json:"metadata"`
 }
 
 // ValidationError — ошибка валидации с путём.
@@ -25,5 +25,6 @@ func (e ValidationError) Error() string {
 	if e.Path != "" {
 		return e.Path + ": " + e.Message
 	}
+
 	return e.Message
 }
