@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"net/http"
@@ -10,6 +10,7 @@ import (
 	"github.com/muonsoft/api-testing/apitest"
 	"github.com/muonsoft/api-testing/assertjson"
 	"github.com/stretchr/testify/require"
+	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 )
 
@@ -28,8 +29,8 @@ annotation: "Annotation"
 
 Content`
 	_ = os.WriteFile(filepath.Join(nodePath, "node1.md"), []byte(node1Content), 0o644)
-	h := NewHandler(tmp, &ingestion.StubIngester{})
-	mux, err := NewMux(h)
+	h := api.NewHandler(tmp, &ingestion.StubIngester{})
+	mux, err := api.NewMux(h)
 	require.NoError(t, err)
 
 	return mux

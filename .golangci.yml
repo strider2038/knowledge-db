@@ -150,10 +150,6 @@ linters:
       - path: internal/telegram
         linters:
           - tagliatelle
-      # Тесты в package api для доступа к внутренним типам
-      - path: internal/api
-        linters:
-          - testpackage
       # validateNode намеренно возвращает nil при нарушении (собирает violations)
       - path: internal/kb/validate.go
         linters:
@@ -162,10 +158,6 @@ linters:
       - path: internal/kb/tree.go
         linters:
           - unparam
-      # Unit-тесты в package kb для white-box тестирования
-      - path: internal/kb
-        linters:
-          - testpackage
       # Проект использует fmt.Errorf для простых ошибок (err113 — sentinel)
       - path: cmd/
         linters:

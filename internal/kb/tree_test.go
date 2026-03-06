@@ -1,4 +1,4 @@
-package kb
+package kb_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
 func TestParseNodeFile_WhenValid_ExpectContent(t *testing.T) {
@@ -38,7 +39,7 @@ func TestParseNodeFile_WhenFileMissing_ExpectError(t *testing.T) {
 
 	fs := afero.NewMemMapFs()
 	_ = fs.MkdirAll("/node1", 0o755)
-	store := NewStore(fs)
+	store := kb.NewStore(fs)
 	base := "/"
 
 	_, err := store.GetNode(context.Background(), base, "node1")
@@ -60,7 +61,7 @@ func TestIsNodeDir_WhenNoMainFile_ExpectFalse(t *testing.T) {
 
 	fs := afero.NewMemMapFs()
 	_ = fs.MkdirAll("/node1", 0o755)
-	store := NewStore(fs)
+	store := kb.NewStore(fs)
 
 	assert.False(t, store.IsNodeDir("/node1"))
 }
@@ -92,5 +93,5 @@ func TestGetNode_WhenNotFound_ExpectError(t *testing.T) {
 
 	_, err := store.GetNode(context.Background(), base, "missing/path")
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrNodeNotFound)
+	assert.ErrorIs(t, err, kb.ErrNodeNotFound)
 }

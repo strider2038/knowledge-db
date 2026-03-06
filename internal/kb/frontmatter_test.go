@@ -1,9 +1,10 @@
-package kb
+package kb_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
 func TestValidateFrontmatter_WhenValid_ExpectEmpty(t *testing.T) {
@@ -15,7 +16,7 @@ func TestValidateFrontmatter_WhenValid_ExpectEmpty(t *testing.T) {
 		"updated":  "2024-01-01T00:00:00Z",
 	}
 
-	result := ValidateFrontmatter(matter)
+	result := kb.ValidateFrontmatter(matter)
 
 	assert.Empty(t, result)
 }
@@ -23,7 +24,7 @@ func TestValidateFrontmatter_WhenValid_ExpectEmpty(t *testing.T) {
 func TestValidateFrontmatter_WhenNil_ExpectError(t *testing.T) {
 	t.Parallel()
 
-	result := ValidateFrontmatter(nil)
+	result := kb.ValidateFrontmatter(nil)
 
 	assert.Equal(t, "frontmatter required", result)
 }
@@ -36,7 +37,7 @@ func TestValidateFrontmatter_WhenMissingKeywords_ExpectError(t *testing.T) {
 		"updated": "2024-01-01T00:00:00Z",
 	}
 
-	result := ValidateFrontmatter(matter)
+	result := kb.ValidateFrontmatter(matter)
 
 	assert.Equal(t, "frontmatter: keywords required", result)
 }
@@ -49,7 +50,7 @@ func TestValidateFrontmatter_WhenMissingCreated_ExpectError(t *testing.T) {
 		"updated":  "2024-01-01T00:00:00Z",
 	}
 
-	result := ValidateFrontmatter(matter)
+	result := kb.ValidateFrontmatter(matter)
 
 	assert.Equal(t, "frontmatter: created required", result)
 }
@@ -62,7 +63,7 @@ func TestValidateFrontmatter_WhenMissingUpdated_ExpectError(t *testing.T) {
 		"created":  "2024-01-01T00:00:00Z",
 	}
 
-	result := ValidateFrontmatter(matter)
+	result := kb.ValidateFrontmatter(matter)
 
 	assert.Equal(t, "frontmatter: updated required", result)
 }
