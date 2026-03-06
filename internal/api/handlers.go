@@ -2,7 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"io"
+	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
@@ -100,42 +103,66 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, node)
 }
 
-// Static раздаёт embedded статику.
-func (h *Handler) Static(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	if path == "" || path == "/" {
-		path = "/index.html"
-	}
-	embedPath := "static" + path
-	data, err := ui.Static.ReadFile(embedPath)
+// NewSPAHandler создаёт handler для раздачи embedded статики (FileServer + SPA fallback).
+func NewSPAHandler() (http.Handler, error) {
+	sub, err := fs.Sub(ui.Static, "static")
 	if err != nil {
-		if path != "/index.html" {
-			data, err = ui.Static.ReadFile("static/index.html")
-			if err == nil {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				_, _ = w.Write(data)
-				return
-			}
-		}
-		http.NotFound(w, r)
-		return
+		return nil, errors.Errorf("ui static: %w", err)
 	}
-	contentType := contentType(path)
-	w.Header().Set("Content-Type", contentType)
-	_, _ = w.Write(data)
+	fileServer := http.FileServer(http.FS(sub))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if path == "/" {
+			path = "/index.html"
+		}
+
+		// SPA-маршруты (add, search) — index.html
+		if isSPAClientRoute(path) {
+			serveIndexHTML(w, r, sub)
+			return
+		}
+
+		// Файл существует — FileServer
+		trimmed := strings.TrimPrefix(path, "/")
+		if _, err := sub.Open(trimmed); err == nil {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Fallback для SPA (клиентский роутинг)
+		serveIndexHTML(w, r, sub)
+	}), nil
 }
 
-func contentType(path string) string {
-	switch {
-	case len(path) > 4 && path[len(path)-4:] == ".html":
-		return "text/html; charset=utf-8"
-	case len(path) > 3 && path[len(path)-3:] == ".js":
-		return "application/javascript"
-	case len(path) > 4 && path[len(path)-4:] == ".css":
-		return "text/css"
-	default:
-		return "application/octet-stream"
+func isSPAClientRoute(path string) bool {
+	path = strings.TrimPrefix(path, "/")
+	return path == "add" || path == "search"
+}
+
+// serveIndexHTML отдаёт index.html без FileServer, чтобы избежать редиректов.
+func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
+	const indexFile = "index.html"
+	file, err := fsys.Open(indexFile)
+	if err != nil {
+		http.Error(w, "index.html not found", http.StatusNotFound)
+		return
 	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		http.Error(w, "cannot stat index.html", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	reader, ok := file.(io.ReadSeeker)
+	if !ok {
+		http.Error(w, "cannot read index.html", http.StatusInternalServerError)
+		return
+	}
+	http.ServeContent(w, r, indexFile, stat.ModTime(), reader)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

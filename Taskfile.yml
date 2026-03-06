@@ -11,6 +11,13 @@ tasks:
     cmds:
       - npm install
 
+  web:dev:
+    desc: Запустить Vite dev server (HMR, прокси /api на :8080)
+    dir: "{{.WEB_DIR}}"
+    deps: [web:install]
+    cmds:
+      - npm run dev
+
   web:build:
     desc: Собрать web (Vite)
     dir: "{{.WEB_DIR}}"
@@ -22,6 +29,7 @@ tasks:
     desc: Собрать kb-server (web → copy → go build)
     deps: [web:build]
     cmds:
+      - mkdir -p {{.UI_STATIC}}
       - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
       - go build -o kb-server ./cmd/kb-server
 
@@ -39,11 +47,28 @@ tasks:
       - go build -o kb-server ./cmd/kb-server
       - go build -o kb-cli ./cmd/kb-cli
 
-  dev:
-    desc: Запустить dev-сервер (web dev + kb-server)
+  server:dev:
+    desc: Запустить kb-server с hot reload (air)
+    deps: [web:build]
     cmds:
-      - task: build-server
-      - echo 'Run KB_DATA_PATH=/path/to/data ./kb-server'
+      - mkdir -p {{.UI_STATIC}}
+      - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
+      - air
+
+  server:dev:install:
+    desc: Установить air (go install)
+    cmds:
+      - go install github.com/air-verse/air@latest
+
+  dev:
+    desc: Подсказка — запустите в двух терминалах task web:dev и task server:dev
+    cmds:
+      - |
+        echo "Для разработки запустите в двух терминалах:"
+        echo "  1) task web:dev     - Vite dev server (HMR, прокси /api)"
+        echo "  2) task server:dev  - kb-server с hot reload (air)"
+        echo ""
+        echo "Откройте http://localhost:5173 (Vite)"
 
   test:
     desc: Запустить тесты

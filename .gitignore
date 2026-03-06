@@ -1,2 +1,5 @@
-kb-cli
-kb-server
+/kb-cli
+/kb-server
+/tmp
+
+.env

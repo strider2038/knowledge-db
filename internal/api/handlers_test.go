@@ -22,7 +22,10 @@ func setupTestHandler(t *testing.T) (http.Handler, string) {
 	_ = os.WriteFile(filepath.Join(nodePath, "content.md"), []byte("Content"), 0o644)
 	_ = os.WriteFile(filepath.Join(nodePath, "metadata.json"), []byte(`{"keywords":["a"],"created":"2024-01-01T00:00:00Z","updated":"2024-01-01T00:00:00Z"}`), 0o644)
 	h := NewHandler(tmp, &ingestion.StubIngester{})
-	mux := NewMux(h)
+	mux, err := NewMux(h)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return mux, tmp
 }
 
@@ -103,4 +106,24 @@ func TestIngest_WhenStub_Expect501(t *testing.T) {
 		apitest.WithContentType("application/json"))
 
 	resp.HasCode(http.StatusNotImplemented)
+}
+
+func TestSPA_WhenRoot_ExpectIndexHTML(t *testing.T) {
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
+
+	resp := apitest.HandleGET(t, handler, "/")
+
+	resp.IsOK()
+	resp.HasContentType("text/html; charset=utf-8")
+}
+
+func TestSPA_WhenAddRoute_ExpectIndexHTML(t *testing.T) {
+	t.Parallel()
+	handler, _ := setupTestHandler(t)
+
+	resp := apitest.HandleGET(t, handler, "/add")
+
+	resp.IsOK()
+	resp.HasContentType("text/html; charset=utf-8")
 }

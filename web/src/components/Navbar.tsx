@@ -1,11 +1,33 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom'
+import { ModeToggle } from './mode-toggle'
 
 export function Navbar() {
-  const location = useLocation();
+  const location = useLocation()
   return (
-    <nav style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #ccc', display: 'flex', gap: '1rem' }}>
-      <Link to="/" style={{ fontWeight: location.pathname === '/' ? 'bold' : 'normal' }}>Поиск</Link>
-      <Link to="/add" style={{ fontWeight: location.pathname === '/add' ? 'bold' : 'normal' }}>Добавить</Link>
+    <nav className="flex h-14 items-center gap-4 border-b px-4">
+      <Link
+        to="/"
+        className={
+          location.pathname === '/'
+            ? 'font-semibold text-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        }
+      >
+        Поиск
+      </Link>
+      <Link
+        to="/add"
+        className={
+          location.pathname === '/add'
+            ? 'font-semibold text-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        }
+      >
+        Добавить
+      </Link>
+      <div className="ml-auto">
+        <ModeToggle />
+      </div>
     </nav>
-  );
+  )
 }

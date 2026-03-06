@@ -1,0 +1,35 @@
+# Air — hot-reload для kb-server (https://github.com/air-verse/air)
+
+root = "."
+tmp_dir = "tmp"
+
+env_files = [".env"]
+
+[build]
+cmd = "go build -o ./tmp/kb-server ./cmd/kb-server"
+bin = "tmp/kb-server"
+entrypoint = ["./tmp/kb-server"]
+include_ext = ["go"]
+exclude_dir = ["tmp", "vendor", "web", ".git", "node_modules", "openspec", "docs"]
+exclude_regex = ["_test\\.go"]
+exclude_unchanged = true
+stop_on_error = true
+log = "air.log"
+delay = 0
+
+[log]
+time = false
+main_only = false
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = true
+
+[screen]
+clear_on_rebuild = true
+keep_scroll = true

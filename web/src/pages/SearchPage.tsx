@@ -1,47 +1,52 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { getTree, getNodes, type TreeNode } from '../services/api';
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { getTree, getNodes, type TreeNode } from '../services/api'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 export function SearchPage() {
-  const [tree, setTree] = useState<TreeNode | null>(null);
-  const [nodes, setNodes] = useState<TreeNode[]>([]);
-  const [selectedPath, setSelectedPath] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [tree, setTree] = useState<TreeNode | null>(null)
+  const [nodes, setNodes] = useState<TreeNode[]>([])
+  const [selectedPath, setSelectedPath] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     getTree()
       .then(setTree)
       .catch((err) => setError(err instanceof Error ? err.message : 'Ошибка'))
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => setLoading(false))
+  }, [])
 
   useEffect(() => {
     if (!selectedPath) {
-      setNodes([]);
-      return;
+      setNodes([])
+      return
     }
     getNodes(selectedPath)
       .then(setNodes)
-      .catch(() => setNodes([]));
-  }, [selectedPath]);
+      .catch(() => setNodes([]))
+  }, [selectedPath])
 
   const renderTree = (node: TreeNode, depth = 0) => {
-    if (!node.children?.length) return null;
+    if (!node.children?.length) return null
     return (
-      <ul key={node.path || 'root'} style={{ marginLeft: depth * 16, listStyle: 'none' }}>
+      <ul key={node.path || 'root'} className="ml-4 list-none">
         {node.children.map((child) => (
           <li key={child.path}>
             <button
               type="button"
               onClick={() => setSelectedPath(child.path)}
-              style={{
-                background: selectedPath === child.path ? '#e0e0e0' : 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                textAlign: 'left',
-                padding: 4,
-              }}
+              className={`w-full rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent ${
+                selectedPath === child.path ? 'bg-accent font-medium' : ''
+              }`}
             >
               {child.name}
             </button>
@@ -49,43 +54,57 @@ export function SearchPage() {
           </li>
         ))}
       </ul>
-    );
-  };
+    )
+  }
 
-  if (loading) return <p>Загрузка...</p>;
-  if (error) return <p style={{ color: 'red' }}>{error}</p>;
+  if (loading) return <p className="p-4 text-muted-foreground">Загрузка...</p>
+  if (error) return <p className="p-4 text-destructive">{error}</p>
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 60px)' }}>
-      <aside style={{ width: 250, borderRight: '1px solid #ccc', padding: '1rem', overflow: 'auto' }}>
-        <h3>Темы</h3>
+    <div className="flex h-[calc(100vh-3.5rem)]">
+      <aside className="w-64 shrink-0 border-r bg-muted/30 p-4 overflow-auto">
+        <h3 className="mb-3 font-semibold">Темы</h3>
         {tree && renderTree(tree)}
       </aside>
-      <main style={{ flex: 1, padding: '1rem', overflow: 'auto' }}>
-        <h3>Узлы</h3>
+      <main className="flex-1 overflow-auto p-4">
+        <h3 className="mb-3 font-semibold">Узлы</h3>
         {nodes.length === 0 ? (
-          <p>Выберите тему слева</p>
+          <p className="text-muted-foreground">Выберите тему слева</p>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: 8 }}>Название</th>
-                <th style={{ textAlign: 'left', padding: 8 }}>Путь</th>
-              </tr>
-            </thead>
-            <tbody>
-              {nodes.map((n) => (
-                <tr key={n.path}>
-                  <td style={{ padding: 8 }}>
-                    <Link to={`/node/${n.path}`}>{n.name}</Link>
-                  </td>
-                  <td style={{ padding: 8 }}>{n.path}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Card>
+            <CardHeader>
+              <CardTitle>Список узлов</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Название</TableHead>
+                    <TableHead>Путь</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {nodes.map((n) => (
+                    <TableRow key={n.path}>
+                      <TableCell>
+                        <Link
+                          to={`/node/${n.path}`}
+                          className="text-primary hover:underline"
+                        >
+                          {n.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {n.path}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
       </main>
     </div>
-  );
+  )
 }

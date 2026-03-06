@@ -50,6 +50,7 @@ description: Правила и лучшие практики для Go-кода 
 - Sentinel-ошибки: `var ErrNodeNotFound = errors.New("node not found")`
 - Каждая возвращаемая ошибка оборачивается через `errors.Errorf` или `errors.Wrap`
 - Не подавлять ошибки (`_ = err` запрещён)
+- **Не использовать panic** — обрабатывать ошибки явно, возвращать их вызывающему коду
 
 ## Логирование (muonsoft/clog)
 
