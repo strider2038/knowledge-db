@@ -3,3 +3,18 @@
 /tmp
 
 .env
+.env.local
+.env.*.local
+
+# Build output (task build copies web/dist here)
+internal/ui/static/
+
+# Go test artifacts
+coverage.out
+*.cover
+coverage.html
+*.test
+
+# OS
+.DS_Store
+*.log

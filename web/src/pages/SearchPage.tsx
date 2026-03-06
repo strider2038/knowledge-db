@@ -13,7 +13,10 @@ import {
 
 export function SearchPage() {
   const [tree, setTree] = useState<TreeNode | null>(null)
-  const [nodes, setNodes] = useState<TreeNode[]>([])
+  const [nodesForPath, setNodesForPath] = useState<{ path: string; nodes: TreeNode[] }>({
+    path: '',
+    nodes: [],
+  })
   const [selectedPath, setSelectedPath] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -26,13 +29,10 @@ export function SearchPage() {
   }, [])
 
   useEffect(() => {
-    if (!selectedPath) {
-      setNodes([])
-      return
-    }
+    if (!selectedPath) return
     getNodes(selectedPath)
-      .then(setNodes)
-      .catch(() => setNodes([]))
+      .then((nodes) => setNodesForPath({ path: selectedPath, nodes }))
+      .catch(() => setNodesForPath({ path: selectedPath, nodes: [] }))
   }, [selectedPath])
 
   const renderTree = (node: TreeNode, depth = 0) => {
@@ -68,7 +68,7 @@ export function SearchPage() {
       </aside>
       <main className="flex-1 overflow-auto p-4">
         <h3 className="mb-3 font-semibold">Узлы</h3>
-        {nodes.length === 0 ? (
+        {!selectedPath || nodesForPath.path !== selectedPath || nodesForPath.nodes.length === 0 ? (
           <p className="text-muted-foreground">Выберите тему слева</p>
         ) : (
           <Card>
@@ -84,7 +84,7 @@ export function SearchPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {nodes.map((n) => (
+                  {nodesForPath.nodes.map((n) => (
                     <TableRow key={n.path}>
                       <TableCell>
                         <Link
