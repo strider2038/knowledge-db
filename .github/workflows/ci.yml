@@ -38,11 +38,21 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: go.sum
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
       - name: Go mod verify
         run: go mod verify
 
-      - name: Prepare static for embed
-        run: mkdir -p internal/ui/static && echo -n > internal/ui/static/placeholder
+      - name: Build web for embed
+        run: |
+          cd web && npm ci && npm run build
+          cd ..
+          mkdir -p internal/ui/static
+          cp -r web/dist/* internal/ui/static/
 
       - name: Build
         run: go build ./...
