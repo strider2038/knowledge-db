@@ -19,7 +19,7 @@ import (
 
 const (
 	forwardBufferTTL    = 3 * time.Second
-	forwardFlushTimeout = 30 * time.Second
+	forwardFlushTimeout = 90 * time.Second
 	maxPendingPerChat   = 10
 )
 
