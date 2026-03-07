@@ -214,7 +214,7 @@ GitCommitter interface {
 
 Для отправки ответа — добавить метод `sendMessage` (POST `/sendMessage`).
 
-**Пересылка**: пока не отличаем от обычного текста. Forwarded message содержит тот же `text` — обрабатывается как текст. Усложнение (разбор forward_from, caption) — в будущем.
+**Пересылка**: текст из `text` (текстовые сообщения) или `caption` (медиа: фото, видео, документ). Оба варианта передаются в IngestText. Разбор `forward_origin` для метаданных источника — в будущем.
 
 **Разделение IngestText/IngestURL**: интерфейс `Ingester` сохраняет оба метода для API (`POST /api/ingest` может явно указать URL). Telegram всегда использует `IngestText` — LLM разберётся.
 

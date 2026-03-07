@@ -98,8 +98,9 @@ func (b *Bot) getUpdates(ctx context.Context, baseURL string, offset int) ([]upd
 type update struct {
 	UpdateID int `json:"update_id"`
 	Message  *struct {
-		Text string `json:"text"`
-		Chat *struct {
+		Text    string `json:"text"`
+		Caption string `json:"caption"` // для медиа: фото, видео, документ
+		Chat    *struct {
 			ID int64 `json:"id"`
 		} `json:"chat"`
 		From *struct {
@@ -129,12 +130,21 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 
 	text := u.Message.Text
 	if text == "" {
+		text = u.Message.Caption
+	}
+	if text == "" {
+		clog.FromContext(ctx).Warn("telegram bot: empty message ignored")
+
 		return
 	}
 
 	var chatID int64
 	if u.Message.Chat != nil {
 		chatID = u.Message.Chat.ID
+	}
+
+	if chatID != 0 {
+		_ = b.sendMessage(ctx, chatID, "Принял, обрабатываю...")
 	}
 
 	node, err := b.ingester.IngestText(ctx, text)

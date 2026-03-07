@@ -72,8 +72,9 @@ func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
 	u := update{
 		UpdateID: 1,
 		Message: &struct {
-			Text string `json:"text"`
-			Chat *struct {
+			Text    string `json:"text"`
+			Caption string `json:"caption"`
+			Chat    *struct {
 				ID int64 `json:"id"`
 			} `json:"chat"`
 			From *struct {
@@ -115,8 +116,9 @@ func TestHandleUpdate_WhenUnauthorizedUser_ExpectIngestNotCalled(t *testing.T) {
 	u := update{
 		UpdateID: 1,
 		Message: &struct {
-			Text string `json:"text"`
-			Chat *struct {
+			Text    string `json:"text"`
+			Caption string `json:"caption"`
+			Chat    *struct {
 				ID int64 `json:"id"`
 			} `json:"chat"`
 			From *struct {
@@ -155,8 +157,9 @@ func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 	u := update{
 		UpdateID: 1,
 		Message: &struct {
-			Text string `json:"text"`
-			Chat *struct {
+			Text    string `json:"text"`
+			Caption string `json:"caption"`
+			Chat    *struct {
 				ID int64 `json:"id"`
 			} `json:"chat"`
 			From *struct {
@@ -173,6 +176,59 @@ func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 	bot.handleUpdate(ctx, u)
 
 	assert.True(t, ingestCalled)
+}
+
+func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	ingestCalled := false
+	var capturedText string
+	mock := &mockIngester{
+		node: &kb.Node{
+			Path:       "go/notes/forwarded-caption",
+			Annotation: "forwarded",
+			Metadata:   map[string]any{"type": "note"},
+		},
+	}
+	bot := &Bot{
+		token:    "token",
+		ownerID:  12345,
+		dataPath: "/data",
+		ingester: &callTrackingIngesterWithCapture{
+			inner:        mock,
+			called:       &ingestCalled,
+			capturedText: &capturedText,
+		},
+	}
+
+	u := update{
+		UpdateID: 1,
+		Message: &struct {
+			Text    string `json:"text"`
+			Caption string `json:"caption"`
+			Chat    *struct {
+				ID int64 `json:"id"`
+			} `json:"chat"`
+			From *struct {
+				ID int64 `json:"id"`
+			} `json:"from"`
+		}{
+			Text:    "",
+			Caption: "forwarded media caption",
+			Chat: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+
+	bot.handleUpdate(ctx, u)
+
+	assert.True(t, ingestCalled)
+	assert.Equal(t, "forwarded media caption", capturedText)
 }
 
 func TestBuildConfirmation_WhenNodeWithKeywords_ExpectFormattedMessage(t *testing.T) {
@@ -206,6 +262,25 @@ func (c *callTrackingIngester) IngestText(ctx context.Context, text string) (*kb
 }
 
 func (c *callTrackingIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
+	*c.called = true
+
+	return c.inner.IngestURL(ctx, url)
+}
+
+type callTrackingIngesterWithCapture struct {
+	inner        ingestion.Ingester
+	called       *bool
+	capturedText *string
+}
+
+func (c *callTrackingIngesterWithCapture) IngestText(ctx context.Context, text string) (*kb.Node, error) {
+	*c.called = true
+	*c.capturedText = text
+
+	return c.inner.IngestText(ctx, text)
+}
+
+func (c *callTrackingIngesterWithCapture) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
 	*c.called = true
 
 	return c.inner.IngestURL(ctx, url)
