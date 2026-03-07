@@ -19,7 +19,8 @@ knowledge-db/
 │   └── ui/          # embed статики (embed.go, static/)
 ├── web/             # React исходники (Vite)
 ├── .cursor/skills/  # Agent skills
-├── openspec/        # Спецификации (OpenSpec)
+├── openspec/        # Спецификации (OpenSpec workflow)
+├── data/            # База знаний (git subtree/submodule, локальная)
 ├── AGENTS.md        # Руководство для AI-агентов
 └── README.md
 ```
@@ -32,6 +33,9 @@ task build
 
 # Запуск сервера (KB_DATA_PATH обязателен)
 KB_DATA_PATH=/path/to/data ./kb-server
+
+# Без git (коммиты и sync отключены)
+KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 
 # CLI: валидация структуры базы
 ./kb-cli validate --path /path/to/data
@@ -50,15 +54,36 @@ KB_DATA_PATH=/path/to/data ./kb-server
 | `task build` | Собрать web + kb-server + kb-cli |
 | `task build-server` | Собрать только kb-server |
 | `task build-cli` | Собрать только kb-cli |
+| `task web:dev` | Vite dev server (HMR, прокси /api) |
+| `task server:dev` | kb-server с hot reload (air) |
+| `task dev` | Подсказка по запуску dev-окружения |
 | `task test` | Запустить тесты |
 | `task lint` | golangci-lint |
+| `task lint:fix` | golangci-lint с автоисправлением |
+
+## Разработка
+
+Для разработки запустите в двух терминалах:
+
+1. `task web:dev` — Vite dev server (http://localhost:5173)
+2. `task server:dev` — kb-server с hot reload
+
+Для `server:dev` нужен [air](https://github.com/air-verse/air): `task server:dev:install`.
 
 ## Конфигурация
 
-- **KB_DATA_PATH** — путь к корню базы знаний (обязателен для kb-server)
-- **TELEGRAM_TOKEN** — токен Telegram-бота (опционально)
-- **KB_HTTP_ADDR** — адрес HTTP-сервера (по умолчанию :8080)
-- **VITE_API_URL** — URL API для web (по умолчанию http://localhost:8080)
+| Переменная | Описание |
+|------------|----------|
+| **KB_DATA_PATH** | Путь к корню базы знаний (обязателен для kb-server) |
+| **KB_HTTP_ADDR** | Адрес HTTP-сервера (по умолчанию :8080) |
+| **KB_GIT_DISABLED** | Отключить git (коммиты и sync) |
+| **TELEGRAM_TOKEN** | Токен Telegram-бота (опционально) |
+| **TELEGRAM_OWNER_ID** | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN) |
+| **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL** | LLM для ingestion (OpenAI-совместимый API) |
+| **JINA_API_KEY** | Ключ Jina для эмбеддингов (опционально) |
+| **GIT_SYNC_INTERVAL** | Интервал git sync (по умолчанию 5m) |
+| **VITE_API_URL** | URL API для web (по умолчанию http://localhost:8080) |
+| **ALLOWED_CORS_ORIGIN** | CORS origin для dev (например http://localhost:5173) |
 
 ## Лицензия
 
