@@ -23,7 +23,7 @@ func NewStore(fs afero.Fs) *Store {
 	return &Store{fs: fs}
 }
 
-// Validate проверяет структуру базы: темы 2–3 уровня, узлы с {dirname}.md и frontmatter.
+// Validate проверяет структуру базы: темы 2–3 уровня, узлы как .md файлы с frontmatter.
 func (s *Store) Validate(ctx context.Context, basePath string) ([]ValidationError, error) {
 	basePath = filepath.Clean(basePath)
 	info, err := s.fs.Stat(basePath)
@@ -45,21 +45,28 @@ func (s *Store) Validate(ctx context.Context, basePath string) ([]ValidationErro
 		}
 		parts := strings.Split(filepath.ToSlash(rel), "/")
 		depth := len(parts)
+
 		if info.IsDir() {
+			// Если рядом существует {dirname}.md — это директория вложений, пропускаем.
+			if _, statErr := s.fs.Stat(path + ".md"); statErr == nil {
+				return filepath.SkipDir
+			}
 			if depth > maxDepth {
 				violations = append(violations, ValidationError{Path: rel, Message: "theme depth exceeds 2-3 levels"})
 
 				return filepath.SkipDir
 			}
-			if s.isNode(path) {
-				if err := s.validateNode(path, rel, &violations); err != nil {
-					return err
-				}
-
-				return filepath.SkipDir
-			}
 
 			return nil
+		}
+
+		// Файл: проверяем только .md узлы.
+		if !strings.HasSuffix(info.Name(), ".md") {
+			return nil
+		}
+		stemRel := strings.TrimSuffix(rel, ".md")
+		if err := s.validateNode(path, stemRel, &violations); err != nil {
+			return err
 		}
 
 		return nil
@@ -112,40 +119,72 @@ func (s *Store) ListNodes(ctx context.Context, basePath, themePath string) ([]*T
 		return nil, errors.Errorf("list nodes: %w", err)
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
+		if e.IsDir() {
 			continue
 		}
 		name := e.Name()
+		if !strings.HasSuffix(name, ".md") {
+			continue
+		}
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		childPath := filepath.Join(fullPath, name)
-		if s.isNode(childPath) {
-			nodeRel := filepath.Join(themePath, name)
-			nodes = append(nodes, &TreeNode{
-				Name: name,
-				Path: filepath.ToSlash(nodeRel),
-			})
-		}
+		slug := strings.TrimSuffix(name, ".md")
+		nodeRel := filepath.ToSlash(filepath.Join(themePath, slug))
+		nodes = append(nodes, &TreeNode{
+			Name: slug,
+			Path: nodeRel,
+		})
 	}
 
 	return nodes, nil
 }
 
-// IsNodeDir проверяет, является ли директория узлом (содержит {dirname}.md).
-func (s *Store) IsNodeDir(path string) bool {
-	return s.isNode(path)
+// IsNode проверяет, является ли стем-путь узлом (существует {stem}.md).
+func (s *Store) IsNode(stemPath string) bool {
+	return s.isNode(stemPath)
 }
 
-// GetNode читает узел по пути (relative path от корня базы).
+// ListAllNodes рекурсивно возвращает все узлы базы знаний.
+func (s *Store) ListAllNodes(ctx context.Context, basePath string) ([]*TreeNode, error) {
+	basePath = filepath.Clean(basePath)
+	var nodes []*TreeNode
+	err := afero.Walk(s.fs, basePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".md") {
+			return nil
+		}
+		rel, _ := filepath.Rel(basePath, path)
+		slug := strings.TrimSuffix(info.Name(), ".md")
+		stemRel := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
+		nodes = append(nodes, &TreeNode{
+			Name: slug,
+			Path: stemRel,
+		})
+
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Errorf("list all nodes: %w", err)
+	}
+
+	return nodes, nil
+}
+
+// GetNode читает узел по пути стема (relative path от корня базы, без расширения .md).
 func (s *Store) GetNode(ctx context.Context, basePath, nodePath string) (*Node, error) {
 	basePath = filepath.Clean(basePath)
-	fullPath := filepath.Join(basePath, filepath.FromSlash(nodePath))
-	if !s.isNode(fullPath) {
+	stemPath := filepath.Join(basePath, filepath.FromSlash(nodePath))
+	if !s.isNode(stemPath) {
 		return nil, errors.Errorf("get node: %w", ErrNodeNotFound)
 	}
 
-	meta, annotation, content, err := parseNodeFile(s.fs, fullPath)
+	meta, annotation, content, err := parseNodeFile(s.fs, stemPath)
 	if err != nil {
 		return nil, errors.Errorf("get node: %w", err)
 	}
@@ -158,36 +197,28 @@ func (s *Store) GetNode(ctx context.Context, basePath, nodePath string) (*Node, 
 	}, nil
 }
 
-func (s *Store) isNode(path string) bool {
-	dirname := filepath.Base(path)
-	mainPath := filepath.Join(path, dirname+".md")
-	_, err := s.fs.Stat(mainPath)
+// isNode проверяет, существует ли {stemPath}.md.
+func (s *Store) isNode(stemPath string) bool {
+	_, err := s.fs.Stat(stemPath + ".md")
 
 	return err == nil
 }
 
-func (s *Store) validateNode(nodePath, rel string, violations *[]ValidationError) error {
-	dirname := filepath.Base(nodePath)
-	mainPath := filepath.Join(nodePath, dirname+".md")
-	if _, err := s.fs.Stat(mainPath); err != nil {
-		*violations = append(*violations, ValidationError{Path: rel, Message: "missing " + dirname + ".md"})
-
-		return nil //nolint:nilerr // violation recorded, continue walk
-	}
-	data, err := afero.ReadFile(s.fs, mainPath)
+func (s *Store) validateNode(filePath, stemRel string, violations *[]ValidationError) error {
+	data, err := afero.ReadFile(s.fs, filePath)
 	if err != nil {
-		*violations = append(*violations, ValidationError{Path: rel, Message: "cannot read " + dirname + ".md"})
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "cannot read file: " + err.Error()})
 
 		return nil //nolint:nilerr // violation recorded, continue walk
 	}
 	matter, err := parseFrontmatter(data)
 	if err != nil {
-		*violations = append(*violations, ValidationError{Path: rel, Message: "invalid frontmatter: " + err.Error()})
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "invalid frontmatter: " + err.Error()})
 
 		return nil //nolint:nilerr // violation recorded, continue walk
 	}
 	if msg := ValidateFrontmatter(matter); msg != "" {
-		*violations = append(*violations, ValidationError{Path: rel, Message: msg})
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: msg})
 	}
 
 	return nil
@@ -221,7 +252,8 @@ func (s *Store) buildTree(basePath, currentPath, relPath string, parent *TreeNod
 		}
 		childPath := filepath.Join(currentPath, name)
 		childRel := filepath.Join(relPath, name)
-		if s.isNode(childPath) {
+		// Пропускаем директории вложений: если рядом существует {name}.md.
+		if _, err := s.fs.Stat(filepath.Join(currentPath, name+".md")); err == nil {
 			continue
 		}
 		child := &TreeNode{

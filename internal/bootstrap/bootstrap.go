@@ -7,10 +7,15 @@ import (
 
 	"github.com/muonsoft/errors"
 	"github.com/pior/runnable"
+	"github.com/spf13/afero"
 
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
+	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
+	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
+	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
+	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/mcp"
 	"github.com/strider2038/knowledge-db/internal/telegram"
 )
@@ -25,7 +30,11 @@ func Run() error {
 		return errors.New("KB_DATA_PATH is required")
 	}
 
-	ingester := &ingestion.StubIngester{}
+	if err := validateConfig(cfg); err != nil {
+		return err
+	}
+
+	ingester := buildIngester(cfg)
 	handler := api.NewHandler(cfg.DataPath, ingester)
 	mux, err := api.NewMux(handler)
 	if err != nil {
@@ -45,12 +54,54 @@ func Run() error {
 	runnable.SetLogger(slog.Default())
 	m := runnable.Manager().ShutdownTimeout(30 * time.Second)
 	m.Register(runnable.HTTPServer(srv).ShutdownTimeout(30 * time.Second))
+
 	if cfg.Telegram.Token != "" {
-		bot := telegram.NewBot(cfg.Telegram.Token, cfg.DataPath, ingester)
+		bot := telegram.NewBot(cfg.Telegram.Token, cfg.Telegram.OwnerID, cfg.DataPath, ingester)
 		m.Register(bot)
 	}
 
+	if !cfg.GitDisabled && cfg.LLM.IsConfigured() {
+		committer := igit.NewExecGitCommitter(cfg.DataPath)
+		syncRunner := igit.NewGitSyncRunner(committer, cfg.GitSyncInterval)
+		m.Register(syncRunner)
+	}
+
 	runnable.Run(m)
+
+	return nil
+}
+
+func buildIngester(cfg *config.Config) ingestion.Ingester {
+	if !cfg.LLM.IsConfigured() {
+		slog.Warn("LLM configuration not set, ingestion pipeline disabled (using stub)")
+
+		return &ingestion.StubIngester{}
+	}
+
+	store := kb.NewStore(afero.NewOsFs())
+	contentFetcher := buildContentFetcher(cfg)
+	orchestrator := llm.NewOpenAIOrchestrator(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model, contentFetcher)
+	var committer igit.GitCommitter
+	if cfg.GitDisabled {
+		committer = &igit.NoopGitCommitter{}
+	} else {
+		committer = igit.NewExecGitCommitter(cfg.DataPath)
+	}
+
+	return ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath)
+}
+
+func buildContentFetcher(cfg *config.Config) fetcher.ContentFetcher {
+	jinaFetcher := fetcher.NewJinaFetcher(cfg.JinaAPIKey, nil)
+	readabilityFetcher := fetcher.NewReadabilityFetcher(30 * time.Second)
+
+	return fetcher.NewChainFetcher(jinaFetcher, readabilityFetcher)
+}
+
+func validateConfig(cfg *config.Config) error {
+	if cfg.Telegram.Token != "" && cfg.Telegram.OwnerID == 0 {
+		return errors.Errorf("TELEGRAM_OWNER_ID not set — all users can send messages to the bot")
+	}
 
 	return nil
 }

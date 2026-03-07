@@ -1,19 +1,18 @@
 package kb
 
 import (
-	"path/filepath"
+	"bytes"
 	"strings"
 
 	"github.com/adrg/frontmatter"
 	"github.com/muonsoft/errors"
 	"github.com/spf13/afero"
+	"gopkg.in/yaml.v2"
 )
 
-// nodeMainFile возвращает путь к главному .md файлу узла (dirname.md).
-func nodeMainFile(nodePath string) string {
-	dirname := filepath.Base(nodePath)
-
-	return filepath.Join(nodePath, dirname+".md")
+// nodeMainFile возвращает путь к .md файлу узла по пути стема (без расширения).
+func nodeMainFile(stemPath string) string {
+	return stemPath + ".md"
 }
 
 // parseFrontmatter парсит YAML frontmatter из данных файла.
@@ -48,6 +47,21 @@ func parseNodeFile(fs afero.Fs, nodePath string) (map[string]any, string, string
 // Использует реальную ФС (обёртка для обратной совместимости).
 func ParseNodeFile(nodePath string) (map[string]any, string, string, error) {
 	return parseNodeFile(afero.NewOsFs(), nodePath)
+}
+
+// FormatFrontmatter сериализует метаданные в YAML frontmatter block (---\n...\n---\n).
+// Поля keywords, created, updated обязательны; type, source_url, source_date — опциональны.
+func FormatFrontmatter(matter map[string]any) ([]byte, error) {
+	data, err := yaml.Marshal(matter)
+	if err != nil {
+		return nil, errors.Errorf("marshal frontmatter: %w", err)
+	}
+	var buf bytes.Buffer
+	buf.WriteString("---\n")
+	buf.Write(data)
+	buf.WriteString("---\n")
+
+	return buf.Bytes(), nil
 }
 
 // ValidateFrontmatter проверяет наличие обязательных полей (keywords, created, updated).

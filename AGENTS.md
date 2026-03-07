@@ -80,6 +80,7 @@ knowledge-db/
 # Запуск kb-server
 go run ./cmd/kb-server
 # или: KB_DATA_PATH=/path/to/data ./kb-server
+# без git (коммиты и sync отключены): KB_GIT_DISABLED=true go run ./cmd/kb-server
 
 # CLI: валидация
 ./kb-cli validate --path /path/to/data

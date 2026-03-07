@@ -1,41 +1,4 @@
-## Purpose
-
-Определяет формат и структуру хранения базы знаний в файловой системе. База под git, оффлайн-first. Формат совместим с Obsidian: один .md файл на узел с YAML frontmatter.
-
-## Requirements
-
-### Requirement: Иерархия тем
-
-Система ДОЛЖНА (SHALL) хранить знания в иерархии тем: директории тем, внутри — подтемы. Глубина вложенности MUST быть не более 2–3 уровней.
-
-#### Сценарий: Валидная структура тем
-
-- **WHEN** база содержит topic/subtopic/node
-- **THEN** структура считается валидной
-
-#### Сценарий: Слишком глубокая вложенность
-
-- **WHEN** база содержит topic/subtopic/subsubtopic/subsubsubtopic
-- **THEN** валидация сообщает об ошибке
-
-### Requirement: Структура узла
-
-Каждый узел (папка со статьёй/заметкой) MUST содержать главный файл `{dirname}.md`, где dirname — имя папки узла. Файл содержит YAML frontmatter и markdown-тело. Дополнительно допускаются: подпапка `notes/` с `.md` файлами, подпапка `images/`, подпапка `.local/` (исключена из git).
-
-#### Сценарий: Валидный узел
-
-- **WHEN** узел содержит файл `{dirname}.md` с валидным frontmatter (keywords, created, updated)
-- **THEN** узел считается валидным
-
-#### Сценарий: Отсутствует главный файл
-
-- **WHEN** в узле отсутствует `{dirname}.md`
-- **THEN** валидация сообщает об ошибке
-
-#### Сценарий: Невалидный frontmatter
-
-- **WHEN** главный .md файл не содержит обязательных полей (keywords, created, updated) во frontmatter
-- **THEN** валидация сообщает об ошибке
+## MODIFIED Requirements
 
 ### Requirement: Формат frontmatter
 
@@ -67,6 +30,8 @@
 - **WHEN** frontmatter содержит только keywords, created, updated (без type, source_url, source_date, title, aliases)
 - **THEN** узел проходит валидацию (обратная совместимость)
 
+## ADDED Requirements
+
 ### Requirement: Создание узла через Store
 
 Store ДОЛЖЕН (SHALL) предоставлять метод CreateNode для программного создания узлов. Метод MUST принимать параметры: ThemePath, Slug, Frontmatter, Content. Метод MUST создавать файл `{basePath}/{themePath}/{slug}.md` с frontmatter и markdown-контентом (без slug-директории).
@@ -92,12 +57,3 @@ Store ДОЛЖЕН (SHALL) предоставлять метод CreateNode дл
 
 - **WHEN** в теме существует `long-slug.md` и директория `long-slug/` с файлами
 - **THEN** `long-slug/` не считается подтемой и не нарушает валидацию структуры
-
-### Requirement: Исключение .local из git
-
-Директория `.local/` в каждом узле MUST быть исключена из git (через .gitignore в корне базы). В ней хранятся sha-хеш, embedding и прочие вспомогательные файлы.
-
-#### Сценарий: .gitignore в корне базы
-
-- **WHEN** в корне базы есть .gitignore с правилами `**/.local/`, `**/.local/**`
-- **THEN** содержимое .local не попадает в репозиторий

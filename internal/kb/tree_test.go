@@ -14,7 +14,7 @@ func TestParseNodeFile_WhenValid_ExpectContent(t *testing.T) {
 	t.Parallel()
 
 	store, base := seedMemFS(map[string]string{
-		"node1/node1.md": `---
+		"node1.md": `---
 keywords: [a, b]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
@@ -38,7 +38,6 @@ func TestParseNodeFile_WhenFileMissing_ExpectError(t *testing.T) {
 	t.Parallel()
 
 	fs := afero.NewMemMapFs()
-	_ = fs.MkdirAll("/node1", 0o755)
 	store := kb.NewStore(fs)
 	base := "/"
 
@@ -46,31 +45,30 @@ func TestParseNodeFile_WhenFileMissing_ExpectError(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestIsNodeDir_WhenHasMainFile_ExpectTrue(t *testing.T) {
+func TestIsNode_WhenFileExists_ExpectTrue(t *testing.T) {
 	t.Parallel()
 
 	store, _ := seedMemFS(map[string]string{
-		"node1/node1.md": "---\nkeywords: []\ncreated: \"\"\nupdated: \"\"\n---\n",
+		"node1.md": "---\nkeywords: []\ncreated: \"\"\nupdated: \"\"\n---\n",
 	})
 
-	assert.True(t, store.IsNodeDir("/node1"))
+	assert.True(t, store.IsNode("/node1"))
 }
 
-func TestIsNodeDir_WhenNoMainFile_ExpectFalse(t *testing.T) {
+func TestIsNode_WhenFileMissing_ExpectFalse(t *testing.T) {
 	t.Parallel()
 
 	fs := afero.NewMemMapFs()
-	_ = fs.MkdirAll("/node1", 0o755)
 	store := kb.NewStore(fs)
 
-	assert.False(t, store.IsNodeDir("/node1"))
+	assert.False(t, store.IsNode("/node1"))
 }
 
 func TestGetNode_WhenValid_ExpectNode(t *testing.T) {
 	t.Parallel()
 
 	store, base := seedMemFS(map[string]string{
-		"topic/node1/node1.md": `---
+		"topic/node1.md": `---
 keywords: [a]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"

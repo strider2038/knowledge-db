@@ -1,6 +1,8 @@
 package config
 
 import (
+	"time"
+
 	"github.com/caarlos0/env/v10"
 	"github.com/joho/godotenv"
 )
@@ -11,16 +13,33 @@ type HTTP struct {
 	AllowedCORSOrigin string `env:"ALLOWED_CORS_ORIGIN" envDefault:""`
 }
 
+// LLM — конфигурация LLM-провайдера (OpenAI-совместимый API).
+type LLM struct {
+	APIURL string `env:"LLM_API_URL" envDefault:""`
+	APIKey string `env:"LLM_API_KEY" envDefault:""`
+	Model  string `env:"LLM_MODEL" envDefault:"gpt-4o"`
+}
+
+// IsConfigured возвращает true, если LLM-конфигурация задана.
+func (l LLM) IsConfigured() bool {
+	return l.APIKey != ""
+}
+
 // Telegram — конфигурация Telegram-бота.
 type Telegram struct {
-	Token string `env:"TELEGRAM_TOKEN" envDefault:""`
+	Token   string `env:"TELEGRAM_TOKEN" envDefault:""`
+	OwnerID int64  `env:"TELEGRAM_OWNER_ID" envDefault:"0"`
 }
 
 // Config — конфигурация приложения.
 type Config struct {
-	DataPath string `env:"KB_DATA_PATH" envDefault:""`
+	DataPath        string        `env:"KB_DATA_PATH" envDefault:""`
+	JinaAPIKey      string        `env:"JINA_API_KEY" envDefault:""`
+	GitDisabled     bool          `env:"KB_GIT_DISABLED" envDefault:"false"`
+	GitSyncInterval time.Duration `env:"GIT_SYNC_INTERVAL" envDefault:"5m"`
 
 	HTTP     HTTP
+	LLM      LLM
 	Telegram Telegram
 }
 

@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,17 +10,44 @@ import (
 
 	"github.com/muonsoft/api-testing/apitest"
 	"github.com/muonsoft/api-testing/assertjson"
+	"github.com/muonsoft/errors"
 	"github.com/stretchr/testify/require"
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
+	"github.com/strider2038/knowledge-db/internal/kb"
 )
+
+var errLLMUnavailable = errors.New("LLM unavailable")
+
+type mockIngester struct {
+	node *kb.Node
+	err  error
+}
+
+func (m *mockIngester) IngestText(_ context.Context, _ string) (*kb.Node, error) {
+	return m.node, m.err
+}
+
+func (m *mockIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
+	return m.node, m.err
+}
+
+func setupTestHandlerWithIngester(t *testing.T, ingester ingestion.Ingester) http.Handler {
+	t.Helper()
+	tmp := t.TempDir()
+	h := api.NewHandler(tmp, ingester)
+	mux, err := api.NewMux(h)
+	require.NoError(t, err)
+
+	return mux
+}
 
 func setupTestHandler(t *testing.T) http.Handler {
 	t.Helper()
 	tmp := t.TempDir()
-	// Создаём валидный узел для тестов (node1.md с frontmatter)
-	nodePath := filepath.Join(tmp, "topic", "node1")
-	_ = os.MkdirAll(nodePath, 0o755)
+	// Создаём валидный узел для тестов (topic/node1.md с frontmatter)
+	themeDir := filepath.Join(tmp, "topic")
+	_ = os.MkdirAll(themeDir, 0o755)
 	node1Content := `---
 keywords: [a]
 created: "2024-01-01T00:00:00Z"
@@ -28,7 +56,7 @@ annotation: "Annotation"
 ---
 
 Content`
-	_ = os.WriteFile(filepath.Join(nodePath, "node1.md"), []byte(node1Content), 0o644)
+	_ = os.WriteFile(filepath.Join(themeDir, "node1.md"), []byte(node1Content), 0o644)
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
 	mux, err := api.NewMux(h)
 	require.NoError(t, err)
@@ -113,6 +141,42 @@ func TestIngest_WhenStub_Expect501(t *testing.T) {
 		apitest.WithContentType("application/json"))
 
 	resp.HasCode(http.StatusNotImplemented)
+}
+
+func TestIngest_WhenSuccess_ExpectOKWithNode(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerWithIngester(t, &mockIngester{
+		node: &kb.Node{
+			Path:       "go/concurrency/goroutine-leak",
+			Annotation: "Article about goroutine leaks",
+			Content:    "# Goroutine Leaks",
+			Metadata: map[string]any{
+				"type":     "article",
+				"keywords": []any{"goroutines"},
+			},
+		},
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/ingest", strings.NewReader(`{"text":"https://habr.com/article"}`),
+		apitest.WithContentType("application/json"))
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("path").IsString().EqualTo("go/concurrency/goroutine-leak")
+		json.Node("annotation").IsString().EqualTo("Article about goroutine leaks")
+	})
+}
+
+func TestIngest_WhenIngesterError_Expect500(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerWithIngester(t, &mockIngester{
+		err: errLLMUnavailable,
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/ingest", strings.NewReader(`{"text":"some text"}`),
+		apitest.WithContentType("application/json"))
+
+	resp.HasCode(http.StatusInternalServerError)
 }
 
 func TestSPA_WhenRoot_ExpectIndexHTML(t *testing.T) {

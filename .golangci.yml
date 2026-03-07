@@ -110,6 +110,9 @@ linters:
             - github.com/strider2038/knowledge-db
             - github.com
             - google.golang.org
+            - golang.org/x/net
+            - gopkg.in
+            - codeberg.org
           deny:
             - pkg: github.com/pkg/errors
               desc: use github.com/muonsoft/errors instead
@@ -127,6 +130,9 @@ linters:
             - github.com/strider2038/knowledge-db
             - github.com
             - google.golang.org
+            - golang.org/x/net
+            - gopkg.in
+            - codeberg.org
   exclusions:
     generated: lax
     warn-unused: true

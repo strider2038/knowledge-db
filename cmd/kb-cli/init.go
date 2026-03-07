@@ -62,15 +62,15 @@ func initCmd() *cobra.Command {
 			fmt.Println("Создан .gitignore")
 
 			if example {
-				examplePath := filepath.Join(basePath, "example", "topic", exampleNodeName)
-				if err := os.MkdirAll(examplePath, 0o755); err != nil {
-					return fmt.Errorf("create example node: %w", err)
+				exampleThemeDir := filepath.Join(basePath, "example", "topic")
+				if err := os.MkdirAll(exampleThemeDir, 0o755); err != nil {
+					return fmt.Errorf("create example dir: %w", err)
 				}
-				nodeFile := filepath.Join(examplePath, exampleNodeName+".md")
+				nodeFile := filepath.Join(exampleThemeDir, exampleNodeName+".md")
 				if err := os.WriteFile(nodeFile, []byte(exampleNodeContent), 0o644); err != nil {
 					return fmt.Errorf("write example node: %w", err)
 				}
-				fmt.Printf("Создан пример узла: example/topic/%s/%s.md\n", exampleNodeName, exampleNodeName)
+				fmt.Printf("Создан пример узла: example/topic/%s.md\n", exampleNodeName)
 			}
 
 			sourceSkill := findSourceSkill()
