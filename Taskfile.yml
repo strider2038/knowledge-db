@@ -71,9 +71,9 @@ tasks:
         echo "Откройте http://localhost:5173 (Vite)"
 
   test:
-    desc: Запустить тесты
+    desc: Запустить тесты (с детектором гонок)
     cmds:
-      - go test ./...
+      - go test ./... -race
 
   lint:
     desc: Запустить golangci-lint

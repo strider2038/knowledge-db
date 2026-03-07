@@ -8,7 +8,7 @@ alwaysApply: true
 По завершении реализации (изменений кода) агент **обязательно** выполняет проверки в конце работы:
 
 1. **Сборка и тесты** — для затронутой части:
-   - **Go** (cmd/kb-server, cmd/kb-cli, internal/): `go build ./... && go test ./...`
+   - **Go** (cmd/kb-server, cmd/kb-cli, internal/): `go build ./... && go test ./... -race`
    - **web** (если менялся): `cd web && npm run build` и при наличии — `npm run test` / `npm run lint`
 
 2. **Линтер** — для изменённых файлов:

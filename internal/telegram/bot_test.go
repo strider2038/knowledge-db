@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	ingestCalled := false
+	var ingestCalled atomic.Bool
 	mock := &mockIngester{
 		node: &kb.Node{
 			Path:       "go/concurrency/goroutine-basics",
@@ -62,14 +63,14 @@ func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
 
 	bot.handleUpdate(ctx, u)
 
-	assert.Eventually(t, func() bool { return ingestCalled }, 100*time.Millisecond, time.Millisecond)
+	assert.Eventually(t, ingestCalled.Load, 100*time.Millisecond, time.Millisecond)
 }
 
 func TestHandleUpdate_WhenUnauthorizedUser_ExpectIngestNotCalled(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	ingestCalled := false
+	var ingestCalled atomic.Bool
 	mock := &callTrackingIngester{
 		inner:  &mockIngester{},
 		called: &ingestCalled,
@@ -90,14 +91,14 @@ func TestHandleUpdate_WhenUnauthorizedUser_ExpectIngestNotCalled(t *testing.T) {
 
 	bot.handleUpdate(ctx, u)
 
-	assert.False(t, ingestCalled)
+	assert.False(t, ingestCalled.Load())
 }
 
 func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	ingestCalled := false
+	var ingestCalled atomic.Bool
 	bot := NewBot("token", 0, &callTrackingIngester{
 		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		called: &ingestCalled,
@@ -117,15 +118,15 @@ func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 
 	bot.handleUpdate(ctx, u)
 
-	assert.Eventually(t, func() bool { return ingestCalled }, 100*time.Millisecond, time.Millisecond)
+	assert.Eventually(t, ingestCalled.Load, 100*time.Millisecond, time.Millisecond)
 }
 
 func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	ingestCalled := false
-	var capturedText string
+	var ingestCalled atomic.Bool
+	var capturedText atomic.Value
 	mock := &mockIngester{
 		node: &kb.Node{
 			Path:       "go/notes/forwarded-caption",
@@ -153,19 +154,26 @@ func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
 
 	bot.handleUpdate(ctx, u)
 
-	assert.Eventually(t, func() bool { return ingestCalled }, 100*time.Millisecond, time.Millisecond)
-	assert.Eventually(t, func() bool { return capturedText == "forwarded media caption" }, 100*time.Millisecond, time.Millisecond)
+	assert.Eventually(t, ingestCalled.Load, 100*time.Millisecond, time.Millisecond)
+	assert.Eventually(t, func() bool {
+		v := capturedText.Load()
+
+		s, ok := v.(string)
+
+		return ok && s == "forwarded media caption"
+	}, 100*time.Millisecond, time.Millisecond)
 }
 
 func TestHandleUpdate_WhenCommentThenForward_ExpectMergedIngest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	var capturedText string
+	var capturedText atomic.Value
+	var ingestCalled atomic.Bool
 	bot := NewBot("token", 12345, &callTrackingIngesterWithCapture{
 		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
-		called:       new(bool),
+		called:       &ingestCalled,
 	})
 
 	// Шаг 1: пользователь пишет комментарий как обычный текст
@@ -203,18 +211,25 @@ func TestHandleUpdate_WhenCommentThenForward_ExpectMergedIngest(t *testing.T) {
 	bot.handleUpdate(ctx, fwdUpdate)
 
 	expected := "Инструкции пользователя: Сохрани как заметку со ссылкой\nПересланное сообщение: Профессор Кнут... https://cs.stanford.edu/~knuth/papers/claude-cycles.pdf"
-	assert.Eventually(t, func() bool { return capturedText == expected }, 100*time.Millisecond, time.Millisecond)
+	assert.Eventually(t, func() bool {
+		v := capturedText.Load()
+
+		s, ok := v.(string)
+
+		return ok && s == expected
+	}, 100*time.Millisecond, time.Millisecond)
 }
 
 func TestHandleUpdate_WhenReplyToForwardedMessage_ExpectMergedIngest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	var capturedText string
+	var capturedText atomic.Value
+	var ingestCalled atomic.Bool
 	bot := NewBot("token", 12345, &callTrackingIngesterWithCapture{
 		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
-		called:       new(bool),
+		called:       &ingestCalled,
 	})
 
 	forwarded := &message{
@@ -241,14 +256,18 @@ func TestHandleUpdate_WhenReplyToForwardedMessage_ExpectMergedIngest(t *testing.
 
 	bot.handleUpdate(ctx, reply)
 
-	assert.Equal(t, "Инструкции пользователя: сохрани в ai/notes\nПересланное сообщение: https://habr.com/article", capturedText)
+	v := capturedText.Load()
+	require.NotNil(t, v)
+	s, ok := v.(string)
+	require.True(t, ok)
+	assert.Equal(t, "Инструкции пользователя: сохрани в ai/notes\nПересланное сообщение: https://habr.com/article", s)
 }
 
 func TestHandleUpdate_WhenForwardedWithoutReply_ExpectBufferedThenFlushed(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	ingestCalled := false
+	var ingestCalled atomic.Bool
 	bot := NewBot("token", 12345, &callTrackingIngester{
 		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		called: &ingestCalled,
@@ -273,18 +292,19 @@ func TestHandleUpdate_WhenForwardedWithoutReply_ExpectBufferedThenFlushed(t *tes
 	bot.handleUpdate(ctx, u)
 
 	// сразу после handleUpdate ingestion ещё не вызван — сообщение в буфере
-	assert.False(t, ingestCalled, "ingest should not be called immediately, message is buffered")
+	assert.False(t, ingestCalled.Load(), "ingest should not be called immediately, message is buffered")
 }
 
 func TestHandleUpdate_WhenForwardedWithoutReply_ExpectFlushedAfterTTL(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	var capturedText string
+	var capturedText atomic.Value
+	var ingestCalled atomic.Bool
 	bot := NewBot("token", 12345, &callTrackingIngesterWithCapture{
 		inner:        &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
-		called:       new(bool),
+		called:       &ingestCalled,
 	})
 	bot.buffer.ttl = time.Millisecond
 
@@ -307,7 +327,13 @@ func TestHandleUpdate_WhenForwardedWithoutReply_ExpectFlushedAfterTTL(t *testing
 	bot.handleUpdate(ctx, u)
 
 	// Таймер вызывает processIngest асинхронно; sendMessage к API может занять время
-	assert.Eventually(t, func() bool { return capturedText == "forwarded after ttl" }, 15*time.Second, 50*time.Millisecond)
+	assert.Eventually(t, func() bool {
+		v := capturedText.Load()
+
+		s, ok := v.(string)
+
+		return ok && s == "forwarded after ttl"
+	}, 15*time.Second, 50*time.Millisecond)
 }
 
 func TestHandleUpdate_WhenReplyArrivesDuringBuffer_ExpectSingleIngest(t *testing.T) {
@@ -396,36 +422,36 @@ func TestBuildConfirmation_WhenNodeWithKeywords_ExpectFormattedMessage(t *testin
 
 type callTrackingIngester struct {
 	inner  ingestion.Ingester
-	called *bool
+	called *atomic.Bool
 }
 
 func (c *callTrackingIngester) IngestText(ctx context.Context, text string) (*kb.Node, error) {
-	*c.called = true
+	c.called.Store(true)
 
 	return c.inner.IngestText(ctx, text)
 }
 
 func (c *callTrackingIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
-	*c.called = true
+	c.called.Store(true)
 
 	return c.inner.IngestURL(ctx, url)
 }
 
 type callTrackingIngesterWithCapture struct {
 	inner        ingestion.Ingester
-	called       *bool
-	capturedText *string
+	called       *atomic.Bool
+	capturedText *atomic.Value
 }
 
 func (c *callTrackingIngesterWithCapture) IngestText(ctx context.Context, text string) (*kb.Node, error) {
-	*c.called = true
-	*c.capturedText = text
+	c.called.Store(true)
+	c.capturedText.Store(text)
 
 	return c.inner.IngestText(ctx, text)
 }
 
 func (c *callTrackingIngesterWithCapture) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
-	*c.called = true
+	c.called.Store(true)
 
 	return c.inner.IngestURL(ctx, url)
 }
