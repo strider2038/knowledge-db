@@ -156,18 +156,7 @@ linters:
       - path: internal/telegram
         linters:
           - tagliatelle
-      # validateNode намеренно возвращает nil при нарушении (собирает violations)
-      - path: internal/kb/validate.go
-        linters:
-          - nilerr
-      # buildTree передаёт basePath в рекурсивный вызов
-      - path: internal/kb/tree.go
-        linters:
-          - unparam
       # Проект использует fmt.Errorf для простых ошибок (err113 — sentinel)
       - path: cmd/
-        linters:
-          - err113
-      - path: internal/telegram
         linters:
           - err113

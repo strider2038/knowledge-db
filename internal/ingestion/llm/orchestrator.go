@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	openai "github.com/openai/openai-go"
@@ -298,7 +299,7 @@ func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
 		Slug:       args.Slug,
 		Type:       args.Type,
 		SourceURL:  args.SourceURL,
-		Content:    args.Content,
+		Content:    unescapeNewlines(args.Content),
 		Title:      args.Title,
 	}
 
@@ -324,6 +325,13 @@ func extractURLFromArgs(argsJSON string) string {
 	}
 
 	return args.URL
+}
+
+// unescapeNewlines заменяет буквальные последовательности \n на настоящие символы
+// переноса строки. Некоторые LLM двойно экранируют newlines в JSON аргументах
+// function call, что приводит к появлению литеральных \n в сохранённом контенте.
+func unescapeNewlines(s string) string {
+	return strings.ReplaceAll(s, `\n`, "\n")
 }
 
 func jsonError(msg string) string {

@@ -3,9 +3,9 @@ package telegram //nolint:testpackage // internal methods handleUpdate and build
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,49 +42,18 @@ func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
 			},
 		},
 	}
-	var capturedMessages []string
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/botten/sendMessage" {
-			var body map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			if text, ok := body["text"].(string); ok {
-				capturedMessages = append(capturedMessages, text)
-			}
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer srv.Close()
+	bot := NewBot("en", 12345, mock)
+	bot.buffer.ttl = time.Millisecond
 
-	bot := &Bot{
-		token:    "token",
-		ownerID:  12345,
-		dataPath: "/data",
-		ingester: mock,
-	}
-	bot.token = "en"
-
-	// Override the ingester to track calls
 	origIngester := bot.ingester
 	bot.ingester = &callTrackingIngester{inner: origIngester, called: &ingestCalled}
 
 	u := update{
 		UpdateID: 1,
-		Message: &struct {
-			Text    string `json:"text"`
-			Caption string `json:"caption"`
-			Chat    *struct {
-				ID int64 `json:"id"`
-			} `json:"chat"`
-			From *struct {
-				ID int64 `json:"id"`
-			} `json:"from"`
-		}{
-			Text: "test message",
-			Chat: &struct {
-				ID int64 `json:"id"`
-			}{ID: 12345},
+		Message: &message{
+			MessageID: 1,
+			Text:      "test message",
 			From: &struct {
 				ID int64 `json:"id"`
 			}{ID: 12345},
@@ -93,7 +62,7 @@ func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
 
 	bot.handleUpdate(ctx, u)
 
-	assert.True(t, ingestCalled)
+	assert.Eventually(t, func() bool { return ingestCalled }, 100*time.Millisecond, time.Millisecond)
 }
 
 func TestHandleUpdate_WhenUnauthorizedUser_ExpectIngestNotCalled(t *testing.T) {
@@ -106,26 +75,13 @@ func TestHandleUpdate_WhenUnauthorizedUser_ExpectIngestNotCalled(t *testing.T) {
 		called: &ingestCalled,
 	}
 
-	bot := &Bot{
-		token:    "token",
-		ownerID:  99999,
-		dataPath: "/data",
-		ingester: mock,
-	}
+	bot := NewBot("token", 99999, mock)
 
 	u := update{
 		UpdateID: 1,
-		Message: &struct {
-			Text    string `json:"text"`
-			Caption string `json:"caption"`
-			Chat    *struct {
-				ID int64 `json:"id"`
-			} `json:"chat"`
-			From *struct {
-				ID int64 `json:"id"`
-			} `json:"from"`
-		}{
-			Text: "test",
+		Message: &message{
+			MessageID: 1,
+			Text:      "test",
 			From: &struct {
 				ID int64 `json:"id"`
 			}{ID: 12345},
@@ -142,31 +98,17 @@ func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 	ctx := context.Background()
 
 	ingestCalled := false
-	bot := &Bot{
-		token:    "token",
-		ownerID:  0,
-		dataPath: "/data",
-		ingester: &callTrackingIngester{
-			inner: &mockIngester{
-				node: &kb.Node{Path: "go/test", Metadata: map[string]any{}},
-			},
-			called: &ingestCalled,
-		},
-	}
+	bot := NewBot("token", 0, &callTrackingIngester{
+		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
+		called: &ingestCalled,
+	})
+	bot.buffer.ttl = time.Millisecond
 
 	u := update{
 		UpdateID: 1,
-		Message: &struct {
-			Text    string `json:"text"`
-			Caption string `json:"caption"`
-			Chat    *struct {
-				ID int64 `json:"id"`
-			} `json:"chat"`
-			From *struct {
-				ID int64 `json:"id"`
-			} `json:"from"`
-		}{
-			Text: "hello",
+		Message: &message{
+			MessageID: 1,
+			Text:      "hello",
 			From: &struct {
 				ID int64 `json:"id"`
 			}{ID: 99999},
@@ -175,7 +117,7 @@ func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 
 	bot.handleUpdate(ctx, u)
 
-	assert.True(t, ingestCalled)
+	assert.Eventually(t, func() bool { return ingestCalled }, 100*time.Millisecond, time.Millisecond)
 }
 
 func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
@@ -191,31 +133,134 @@ func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
 			Metadata:   map[string]any{"type": "note"},
 		},
 	}
-	bot := &Bot{
-		token:    "token",
-		ownerID:  12345,
-		dataPath: "/data",
-		ingester: &callTrackingIngesterWithCapture{
-			inner:        mock,
-			called:       &ingestCalled,
-			capturedText: &capturedText,
-		},
-	}
+	bot := NewBot("token", 12345, &callTrackingIngesterWithCapture{
+		inner:        mock,
+		called:       &ingestCalled,
+		capturedText: &capturedText,
+	})
+	bot.buffer.ttl = time.Millisecond
 
 	u := update{
 		UpdateID: 1,
-		Message: &struct {
-			Text    string `json:"text"`
-			Caption string `json:"caption"`
-			Chat    *struct {
+		Message: &message{
+			MessageID: 1,
+			Caption:   "forwarded media caption",
+			From: &struct {
 				ID int64 `json:"id"`
-			} `json:"chat"`
-			From *struct {
+			}{ID: 12345},
+		},
+	}
+
+	bot.handleUpdate(ctx, u)
+
+	assert.Eventually(t, func() bool { return ingestCalled }, 100*time.Millisecond, time.Millisecond)
+	assert.Eventually(t, func() bool { return capturedText == "forwarded media caption" }, 100*time.Millisecond, time.Millisecond)
+}
+
+func TestHandleUpdate_WhenCommentThenForward_ExpectMergedIngest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var capturedText string
+	bot := NewBot("token", 12345, &callTrackingIngesterWithCapture{
+		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
+		capturedText: &capturedText,
+		called:       new(bool),
+	})
+
+	// Шаг 1: пользователь пишет комментарий как обычный текст
+	commentUpdate := update{
+		UpdateID: 1,
+		Message: &message{
+			MessageID: 1,
+			Text:      "Сохрани как заметку со ссылкой",
+			Chat: &struct {
 				ID int64 `json:"id"`
-			} `json:"from"`
-		}{
-			Text:    "",
-			Caption: "forwarded media caption",
+			}{ID: 12345},
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+	bot.handleUpdate(ctx, commentUpdate)
+
+	// Шаг 2: следом пересылает сообщение — бот должен объединить
+	forwardOrigin := json.RawMessage(`{"type":"user"}`)
+	fwdUpdate := update{
+		UpdateID: 2,
+		Message: &message{
+			MessageID:     2,
+			Text:          "Профессор Кнут... https://cs.stanford.edu/~knuth/papers/claude-cycles.pdf",
+			ForwardOrigin: forwardOrigin,
+			Chat: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+	bot.handleUpdate(ctx, fwdUpdate)
+
+	expected := "Инструкции пользователя: Сохрани как заметку со ссылкой\nПересланное сообщение: Профессор Кнут... https://cs.stanford.edu/~knuth/papers/claude-cycles.pdf"
+	assert.Eventually(t, func() bool { return capturedText == expected }, 100*time.Millisecond, time.Millisecond)
+}
+
+func TestHandleUpdate_WhenReplyToForwardedMessage_ExpectMergedIngest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var capturedText string
+	bot := NewBot("token", 12345, &callTrackingIngesterWithCapture{
+		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
+		capturedText: &capturedText,
+		called:       new(bool),
+	})
+
+	forwarded := &message{
+		MessageID: 10,
+		Text:      "https://habr.com/article",
+		From: &struct {
+			ID int64 `json:"id"`
+		}{ID: 12345},
+	}
+	reply := update{
+		UpdateID: 2,
+		Message: &message{
+			MessageID:      11,
+			Text:           "сохрани в ai/notes",
+			ReplyToMessage: forwarded,
+			Chat: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+
+	bot.handleUpdate(ctx, reply)
+
+	assert.Equal(t, "Инструкции пользователя: сохрани в ai/notes\nПересланное сообщение: https://habr.com/article", capturedText)
+}
+
+func TestHandleUpdate_WhenForwardedWithoutReply_ExpectBufferedThenFlushed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	ingestCalled := false
+	bot := NewBot("token", 12345, &callTrackingIngester{
+		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
+		called: &ingestCalled,
+	})
+
+	forwardOrigin := json.RawMessage(`{"type":"user"}`)
+	u := update{
+		UpdateID: 1,
+		Message: &message{
+			MessageID:     20,
+			Text:          "forwarded text",
+			ForwardOrigin: forwardOrigin,
 			Chat: &struct {
 				ID int64 `json:"id"`
 			}{ID: 12345},
@@ -227,8 +272,107 @@ func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
 
 	bot.handleUpdate(ctx, u)
 
-	assert.True(t, ingestCalled)
-	assert.Equal(t, "forwarded media caption", capturedText)
+	// сразу после handleUpdate ingestion ещё не вызван — сообщение в буфере
+	assert.False(t, ingestCalled, "ingest should not be called immediately, message is buffered")
+}
+
+func TestHandleUpdate_WhenForwardedWithoutReply_ExpectFlushedAfterTTL(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var capturedText string
+	bot := NewBot("token", 12345, &callTrackingIngesterWithCapture{
+		inner:        &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
+		capturedText: &capturedText,
+		called:       new(bool),
+	})
+	bot.buffer.ttl = time.Millisecond
+
+	forwardOrigin := json.RawMessage(`{"type":"user"}`)
+	u := update{
+		UpdateID: 1,
+		Message: &message{
+			MessageID:     21,
+			Text:          "forwarded after ttl",
+			ForwardOrigin: forwardOrigin,
+			Chat: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+
+	bot.handleUpdate(ctx, u)
+
+	// Таймер вызывает processIngest асинхронно; sendMessage к API может занять время
+	assert.Eventually(t, func() bool { return capturedText == "forwarded after ttl" }, 15*time.Second, 50*time.Millisecond)
+}
+
+func TestHandleUpdate_WhenReplyArrivesDuringBuffer_ExpectSingleIngest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var capturedTexts []string
+	var mu sync.Mutex
+	bot := NewBot("token", 12345, &captureAllIngester{
+		node: &kb.Node{Path: "go/test", Metadata: map[string]any{}},
+		capture: func(text string) {
+			mu.Lock()
+			defer mu.Unlock()
+			capturedTexts = append(capturedTexts, text)
+		},
+	})
+
+	forwardOrigin := json.RawMessage(`{"type":"user"}`)
+	fwd := update{
+		UpdateID: 1,
+		Message: &message{
+			MessageID:     30,
+			Text:          "https://example.com",
+			ForwardOrigin: forwardOrigin,
+			Chat: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+	bot.handleUpdate(ctx, fwd)
+
+	// сразу следует reply — бот должен удалить из буфера и обработать как пару
+	replyUpdate := update{
+		UpdateID: 2,
+		Message: &message{
+			MessageID: 31,
+			Text:      "сохрани",
+			ReplyToMessage: &message{
+				MessageID: 30,
+				Text:      "https://example.com",
+			},
+			Chat: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+	bot.handleUpdate(ctx, replyUpdate)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	require.Len(t, capturedTexts, 1, "exactly one ingest call expected")
+	assert.Equal(t, "Инструкции пользователя: сохрани\nПересланное сообщение: https://example.com", capturedTexts[0])
+}
+
+func TestCombineForwardWithComment_ExpectLabels(t *testing.T) {
+	t.Parallel()
+	result := combineForwardWithComment("сохрани в go/tips", "https://go.dev/blog/article")
+	assert.Equal(t, "Инструкции пользователя: сохрани в go/tips\nПересланное сообщение: https://go.dev/blog/article", result)
 }
 
 func TestBuildConfirmation_WhenNodeWithKeywords_ExpectFormattedMessage(t *testing.T) {
@@ -284,4 +428,19 @@ func (c *callTrackingIngesterWithCapture) IngestURL(ctx context.Context, url str
 	*c.called = true
 
 	return c.inner.IngestURL(ctx, url)
+}
+
+type captureAllIngester struct {
+	node    *kb.Node
+	capture func(text string)
+}
+
+func (c *captureAllIngester) IngestText(_ context.Context, text string) (*kb.Node, error) {
+	c.capture(text)
+
+	return c.node, nil
+}
+
+func (c *captureAllIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
+	return c.node, nil
 }
