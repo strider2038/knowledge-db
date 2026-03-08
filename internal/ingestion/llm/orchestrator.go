@@ -25,21 +25,24 @@ type LLMOrchestrator interface {
 // ProcessInput — входные данные для LLM-оркестратора.
 type ProcessInput struct {
 	Text             string
+	SourceURL        string
+	SourceAuthor     string
 	ExistingThemes   []string
 	ExistingKeywords []string
 }
 
 // ProcessResult — результат обработки.
 type ProcessResult struct {
-	Keywords   []string
-	Annotation string
-	ThemePath  string
-	Slug       string
-	Type       string
-	SourceURL  string
-	SourceDate *time.Time
-	Content    string
-	Title      string
+	Keywords     []string
+	Annotation   string
+	ThemePath    string
+	Slug         string
+	Type         string
+	SourceURL    string
+	SourceAuthor string
+	SourceDate   *time.Time
+	Content      string
+	Title        string
 }
 
 // responsesClient — внутренний интерфейс для тестирования.
@@ -158,6 +161,7 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 	return nil, errors.Errorf("llm process: max iterations exceeded")
 }
 
+//nolint:gocognit // processResponse handles multiple tool types in one loop
 func (o *OpenAIOrchestrator) processResponse(
 	ctx context.Context,
 	resp *responses.Response,
@@ -188,6 +192,12 @@ func (o *OpenAIOrchestrator) processResponse(
 					result.Content = cached.Content
 					if result.Title == "" && cached.Title != "" {
 						result.Title = cached.Title
+					}
+					if result.SourceAuthor == "" && cached.Author != "" {
+						result.SourceAuthor = cached.Author
+					}
+					if result.SourceDate == nil && cached.SourceDate != nil {
+						result.SourceDate = cached.SourceDate
 					}
 				}
 			}
@@ -295,29 +305,31 @@ func executeFetchURLMeta(ctx context.Context, argsJSON string) string {
 func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
 	//nolint:tagliatelle // snake_case required: these are LLM function call arguments defined in the system prompt
 	var args struct {
-		Keywords   []string `json:"keywords"`
-		Annotation string   `json:"annotation"`
-		ThemePath  string   `json:"theme_path"`
-		Slug       string   `json:"slug"`
-		Type       string   `json:"type"`
-		SourceURL  string   `json:"source_url"`
-		SourceDate string   `json:"source_date"`
-		Content    string   `json:"content"`
-		Title      string   `json:"title"`
+		Keywords     []string `json:"keywords"`
+		Annotation   string   `json:"annotation"`
+		ThemePath    string   `json:"theme_path"`
+		Slug         string   `json:"slug"`
+		Type         string   `json:"type"`
+		SourceURL    string   `json:"source_url"`
+		SourceDate   string   `json:"source_date"`
+		SourceAuthor string   `json:"source_author"`
+		Content      string   `json:"content"`
+		Title        string   `json:"title"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return nil, errors.Errorf("unmarshal: %w", err)
 	}
 
 	result := &ProcessResult{
-		Keywords:   args.Keywords,
-		Annotation: args.Annotation,
-		ThemePath:  args.ThemePath,
-		Slug:       args.Slug,
-		Type:       args.Type,
-		SourceURL:  args.SourceURL,
-		Content:    unescapeNewlines(args.Content),
-		Title:      args.Title,
+		Keywords:     args.Keywords,
+		Annotation:   args.Annotation,
+		ThemePath:    args.ThemePath,
+		Slug:         args.Slug,
+		Type:         args.Type,
+		SourceURL:    args.SourceURL,
+		SourceAuthor: args.SourceAuthor,
+		Content:      unescapeNewlines(args.Content),
+		Title:        args.Title,
 	}
 
 	if args.SourceDate != "" {

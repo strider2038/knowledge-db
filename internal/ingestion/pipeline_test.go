@@ -67,7 +67,7 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base)
 
-	node, err := pipeline.IngestText(ctx, "Notes about goroutines.")
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about goroutines."})
 
 	require.NoError(t, err)
 	assert.Equal(t, "go/concurrency/goroutine-basics", node.Path)
@@ -85,9 +85,37 @@ func TestPipelineIngester_IngestText_WhenOrchestratorFails_ExpectError(t *testin
 	orc := &mockOrchestrator{err: ingestion.ErrNotImplemented}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, testBasePath)
 
-	_, err := pipeline.IngestText(ctx, "text")
+	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "text"})
 
 	require.Error(t, err)
+}
+
+func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromSlug(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"knuth", "claude"},
+			Annotation: "Он назвал статью Claude Cycles",
+			ThemePath:  "ai",
+			Slug:       "professor-donald-knuth-clause-cycles",
+			Type:       "note",
+			Content:    "Content.",
+			Title:      "", // LLM не вернул title
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base)
+
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about Claude Cycles."})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Professor Donald Knuth Clause Cycles", node.Metadata["title"])
+	assert.Equal(t, []string{"Professor Donald Knuth Clause Cycles"}, node.Metadata["aliases"])
 }
 
 func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *testing.T) {
@@ -104,19 +132,21 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 			Title:      "Goroutine Leaks",
 			Content:    "# Goroutine Leaks\n\nContent.",
 			SourceDate: &date,
+			Author:     "Иван Петров",
 		},
 	}
 	orc := &mockOrchestrator{
 		result: &llm.ProcessResult{
-			Keywords:   []string{"goroutines", "leak"},
-			Annotation: "Article about goroutine leaks",
-			ThemePath:  "go/concurrency",
-			Slug:       "goroutine-leak",
-			Type:       "article",
-			Content:    "# Goroutine Leaks\n\nContent.",
-			Title:      "Goroutine Leaks",
-			SourceURL:  "https://habr.com/article/123",
-			SourceDate: &date,
+			Keywords:     []string{"goroutines", "leak"},
+			Annotation:   "Article about goroutine leaks",
+			ThemePath:    "go/concurrency",
+			Slug:         "goroutine-leak",
+			Type:         "article",
+			Content:      "# Goroutine Leaks\n\nContent.",
+			Title:        "Goroutine Leaks",
+			SourceURL:    "https://habr.com/article/123",
+			SourceAuthor: "Иван Петров",
+			SourceDate:   &date,
 		},
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base)
@@ -127,4 +157,5 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 	assert.Equal(t, "go/concurrency/goroutine-leak", node.Path)
 	assert.Equal(t, "article", node.Metadata["type"])
 	assert.Equal(t, "https://habr.com/article/123", node.Metadata["source_url"])
+	assert.Equal(t, "Иван Петров", node.Metadata["source_author"])
 }

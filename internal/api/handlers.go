@@ -88,7 +88,9 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Text string `json:"text"`
+		Text         string `json:"text"`
+		SourceURL    string `json:"source_url"`    //nolint:tagliatelle // REST API snake_case
+		SourceAuthor string `json:"source_author"` //nolint:tagliatelle // REST API snake_case
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -100,7 +102,11 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	node, err := h.ingester.IngestText(r.Context(), req.Text)
+	node, err := h.ingester.IngestText(r.Context(), ingestion.IngestRequest{
+		Text:         req.Text,
+		SourceURL:    req.SourceURL,
+		SourceAuthor: req.SourceAuthor,
+	})
 	if err != nil {
 		if errors.Is(err, ingestion.ErrNotImplemented) {
 			writeError(w, http.StatusNotImplemented, "ingestion not implemented")

@@ -39,33 +39,34 @@
 
 ### Requirement: Формат frontmatter
 
-Главный .md файл узла MUST содержать YAML frontmatter с полями: keywords (массив), created (ISO 8601), updated (ISO 8601), annotation (опционально — краткое описание). Дополнительные опциональные поля: type (тип контента: "article", "link", "note"), source_url (URL источника), source_date (дата оригинала, ISO 8601), title (человекочитаемый заголовок), aliases (список псевдонимов, совместим с Obsidian). Тело файла — markdown-контент (основное содержание).
+Главный .md файл узла MUST содержать YAML frontmatter с полями: keywords (массив), created (ISO 8601), updated (ISO 8601), type (тип контента: "article", "link", "note"), title (человекочитаемый заголовок), annotation (опционально — краткое описание). Дополнительные опциональные поля: source_url (URL источника), source_date (дата оригинала, ISO 8601), source_author (автор источника: имя, username, название канала и т.п.), aliases (список псевдонимов, совместим с Obsidian). Тело файла — markdown-контент (основное содержание).
 
 - `created` — дата добавления записи в базу знаний
 - `source_date` — дата создания оригинального контента (если известна)
+- `source_author` — автор источника (автор статьи, канал Telegram, username и т.п.)
 - `type` — классификация контента: `article` (копия статьи), `link` (ссылка-закладка), `note` (личная заметка)
 - `title` — человекочитаемый заголовок на естественном языке (не slug); используется Obsidian 1.4+
 - `aliases` — список псевдонимов узла (Obsidian-совместимо); первый элемент совпадает с `title`; позволяет искать и ссылаться на узел по естественному имени, а не по slug
 
 #### Сценарий: Валидный frontmatter
 
-- **WHEN** frontmatter содержит валидный YAML с полями keywords, created, updated
+- **WHEN** frontmatter содержит валидный YAML с обязательными полями keywords, created, updated, type, title
 - **THEN** узел проходит валидацию метаданных
 
 #### Сценарий: Отсутствует обязательное поле
 
-- **WHEN** во frontmatter отсутствует поле created или updated
+- **WHEN** во frontmatter отсутствует поле created, updated, type или title
 - **THEN** валидация сообщает об ошибке
 
 #### Сценарий: Frontmatter с опциональными полями
 
-- **WHEN** frontmatter содержит keywords, created, updated и дополнительно type, source_url, source_date, title, aliases
+- **WHEN** frontmatter содержит keywords, created, updated, type, title и дополнительно source_url, source_date, source_author, annotation, aliases
 - **THEN** узел проходит валидацию метаданных
 
-#### Сценарий: Frontmatter без опциональных полей
+#### Сценарий: Минимальный валидный frontmatter
 
-- **WHEN** frontmatter содержит только keywords, created, updated (без type, source_url, source_date, title, aliases)
-- **THEN** узел проходит валидацию (обратная совместимость)
+- **WHEN** frontmatter содержит только обязательные поля keywords, created, updated, type, title (без source_url, source_date, source_author, aliases)
+- **THEN** узел проходит валидацию метаданных
 
 ### Requirement: Создание узла через Store
 

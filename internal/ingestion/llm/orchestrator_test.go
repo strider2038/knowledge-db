@@ -110,6 +110,7 @@ func TestOpenAIOrchestrator_WhenArticleInput_ExpectFetchThenCreateNode(t *testin
 		"content":    "# Goroutine Leaks\n\nContent here.",
 		"title":      "Goroutine Leaks",
 		"source_url": "https://habr.com/article/123",
+		// source_author не передан LLM — должен подставиться из FetchResult
 	}
 	secondResp := buildCreateNodeResponse("resp2", "call2", createNodeArgs)
 
@@ -118,6 +119,7 @@ func TestOpenAIOrchestrator_WhenArticleInput_ExpectFetchThenCreateNode(t *testin
 		result: &fetcher.FetchResult{
 			Title:   "Goroutine Leaks",
 			Content: "# Goroutine Leaks\n\nContent here.",
+			Author:  "Иван Петров",
 		},
 	}
 
@@ -135,6 +137,7 @@ func TestOpenAIOrchestrator_WhenArticleInput_ExpectFetchThenCreateNode(t *testin
 	assert.Equal(t, "article", result.Type)
 	assert.Equal(t, "goroutine-leak", result.Slug)
 	assert.Equal(t, "https://habr.com/article/123", result.SourceURL)
+	assert.Equal(t, "Иван Петров", result.SourceAuthor, "SourceAuthor должен подставиться из FetchResult")
 	assert.Equal(t, 2, callCount)
 }
 

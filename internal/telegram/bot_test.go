@@ -20,7 +20,7 @@ type mockIngester struct {
 	err  error
 }
 
-func (m *mockIngester) IngestText(_ context.Context, _ string) (*kb.Node, error) {
+func (m *mockIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*kb.Node, error) {
 	return m.node, m.err
 }
 
@@ -425,10 +425,10 @@ type callTrackingIngester struct {
 	called *atomic.Bool
 }
 
-func (c *callTrackingIngester) IngestText(ctx context.Context, text string) (*kb.Node, error) {
+func (c *callTrackingIngester) IngestText(ctx context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
 	c.called.Store(true)
 
-	return c.inner.IngestText(ctx, text)
+	return c.inner.IngestText(ctx, req)
 }
 
 func (c *callTrackingIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
@@ -443,11 +443,11 @@ type callTrackingIngesterWithCapture struct {
 	capturedText *atomic.Value
 }
 
-func (c *callTrackingIngesterWithCapture) IngestText(ctx context.Context, text string) (*kb.Node, error) {
+func (c *callTrackingIngesterWithCapture) IngestText(ctx context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
 	c.called.Store(true)
-	c.capturedText.Store(text)
+	c.capturedText.Store(req.Text)
 
-	return c.inner.IngestText(ctx, text)
+	return c.inner.IngestText(ctx, req)
 }
 
 func (c *callTrackingIngesterWithCapture) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
@@ -461,12 +461,112 @@ type captureAllIngester struct {
 	capture func(text string)
 }
 
-func (c *captureAllIngester) IngestText(_ context.Context, text string) (*kb.Node, error) {
-	c.capture(text)
+func (c *captureAllIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+	c.capture(req.Text)
 
 	return c.node, nil
 }
 
 func (c *captureAllIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
+	return c.node, nil
+}
+
+func TestParseForwardOrigin_WhenChannel_ExpectURLAndAuthor(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{"type":"channel","date":1234567890,"chat":{"id":-1001234567890,"username":"testchannel","title":"Test Channel"},"message_id":42}`)
+	url, author := parseForwardOrigin(raw)
+
+	assert.Equal(t, "https://t.me/testchannel/42", url)
+	assert.Equal(t, "Test Channel", author)
+}
+
+func TestParseForwardOrigin_WhenChannelWithoutUsername_ExpectCLink(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{"type":"channel","date":1234567890,"chat":{"id":-1001234567890,"title":"Private Channel"},"message_id":99}`)
+	url, author := parseForwardOrigin(raw)
+
+	assert.Equal(t, "https://t.me/c/1234567890/99", url)
+	assert.Equal(t, "Private Channel", author)
+}
+
+func TestParseForwardOrigin_WhenUser_ExpectAuthorOnly(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{"type":"user","date":1234567890,"sender_user":{"id":123,"username":"johndoe","first_name":"John","last_name":"Doe"}}`)
+	url, author := parseForwardOrigin(raw)
+
+	assert.Empty(t, url)
+	assert.Equal(t, "@johndoe", author)
+}
+
+func TestParseForwardOrigin_WhenHiddenUser_ExpectAuthorOnly(t *testing.T) {
+	t.Parallel()
+
+	raw := json.RawMessage(`{"type":"hidden_user","date":1234567890,"sender_user_name":"Anonymous"}`)
+	url, author := parseForwardOrigin(raw)
+
+	assert.Empty(t, url)
+	assert.Equal(t, "Anonymous", author)
+}
+
+func TestHandleUpdate_WhenForwardedMessage_ExpectIngestWithSourceMetadata(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var capturedReq ingestion.IngestRequest
+	var captureMu sync.Mutex
+	mock := &captureRequestIngester{
+		node: &kb.Node{Path: "go/test", Metadata: map[string]any{}},
+		capture: func(req ingestion.IngestRequest) {
+			captureMu.Lock()
+			capturedReq = req
+			captureMu.Unlock()
+		},
+	}
+	bot := NewBot("token", 12345, mock)
+	bot.buffer.ttl = time.Millisecond
+
+	u := update{
+		UpdateID: 1,
+		Message: &message{
+			MessageID:     1,
+			Text:          "Forwarded content",
+			ForwardOrigin: json.RawMessage(`{"type":"channel","date":1234567890,"chat":{"id":-1001234567890,"username":"techchannel","title":"Tech Channel"},"message_id":10}`),
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+
+	bot.handleUpdate(ctx, u)
+
+	require.Eventually(t, func() bool {
+		captureMu.Lock()
+		defer captureMu.Unlock()
+
+		return capturedReq.Text != ""
+	}, 100*time.Millisecond, time.Millisecond)
+
+	captureMu.Lock()
+	defer captureMu.Unlock()
+	assert.Equal(t, "Forwarded content", capturedReq.Text)
+	assert.Equal(t, "https://t.me/techchannel/10", capturedReq.SourceURL)
+	assert.Equal(t, "Tech Channel", capturedReq.SourceAuthor)
+}
+
+type captureRequestIngester struct {
+	node    *kb.Node
+	capture func(ingestion.IngestRequest)
+}
+
+func (c *captureRequestIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+	c.capture(req)
+
+	return c.node, nil
+}
+
+func (c *captureRequestIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
 	return c.node, nil
 }

@@ -50,7 +50,7 @@ func ParseNodeFile(nodePath string) (map[string]any, string, string, error) {
 }
 
 // FormatFrontmatter сериализует метаданные в YAML frontmatter block (---\n...\n---\n).
-// Поля keywords, created, updated обязательны; type, source_url, source_date — опциональны.
+// Поля keywords, created, updated обязательны; type, source_url, source_date, source_author — опциональны.
 func FormatFrontmatter(matter map[string]any) ([]byte, error) {
 	data, err := yaml.Marshal(matter)
 	if err != nil {

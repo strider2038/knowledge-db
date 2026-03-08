@@ -24,7 +24,7 @@ type mockIngester struct {
 	err  error
 }
 
-func (m *mockIngester) IngestText(_ context.Context, _ string) (*kb.Node, error) {
+func (m *mockIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*kb.Node, error) {
 	return m.node, m.err
 }
 
@@ -165,6 +165,41 @@ func TestIngest_WhenSuccess_ExpectOKWithNode(t *testing.T) {
 		json.Node("path").IsString().EqualTo("go/concurrency/goroutine-leak")
 		json.Node("annotation").IsString().EqualTo("Article about goroutine leaks")
 	})
+}
+
+func TestIngest_WhenSourceMetadata_ExpectPassedToIngester(t *testing.T) {
+	t.Parallel()
+	var lastReq ingestion.IngestRequest
+	handler := setupTestHandlerWithIngester(t, &captureIngestRequestIngester{
+		node: &kb.Node{Path: "go/test", Metadata: map[string]any{}},
+		capture: func(req ingestion.IngestRequest) {
+			lastReq = req
+		},
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/ingest",
+		strings.NewReader(`{"text":"note","source_url":"https://t.me/channel/1","source_author":"Author"}`),
+		apitest.WithContentType("application/json"))
+
+	resp.IsOK()
+	require.Equal(t, "note", lastReq.Text)
+	require.Equal(t, "https://t.me/channel/1", lastReq.SourceURL)
+	require.Equal(t, "Author", lastReq.SourceAuthor)
+}
+
+type captureIngestRequestIngester struct {
+	node    *kb.Node
+	capture func(ingestion.IngestRequest)
+}
+
+func (c *captureIngestRequestIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+	c.capture(req)
+
+	return c.node, nil
+}
+
+func (c *captureIngestRequestIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
+	return c.node, nil
 }
 
 func TestIngest_WhenIngesterError_Expect500(t *testing.T) {

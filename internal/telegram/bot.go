@@ -141,15 +141,109 @@ func combineForwardWithComment(comment, forwarded string) string {
 	return "Инструкции пользователя: " + comment + "\nПересланное сообщение: " + forwarded
 }
 
+// parseForwardOrigin извлекает sourceURL и sourceAuthor из forward_origin Telegram API.
+func parseForwardOrigin(raw json.RawMessage) (string, string) {
+	var sourceURL, sourceAuthor string
+	if len(raw) == 0 {
+		return "", ""
+	}
+	var base struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &base); err != nil {
+		return "", ""
+	}
+	switch base.Type {
+	case "channel":
+		var o struct {
+			Chat struct {
+				ID       int64  `json:"id"`
+				Username string `json:"username"`
+				Title    string `json:"title"`
+			} `json:"chat"`
+			MessageID       int    `json:"message_id"`
+			AuthorSignature string `json:"author_signature"`
+		}
+		if err := json.Unmarshal(raw, &o); err != nil {
+			return "", ""
+		}
+		if o.Chat.Username != "" {
+			sourceURL = fmt.Sprintf("https://t.me/%s/%d", o.Chat.Username, o.MessageID)
+		} else if o.Chat.ID < 0 {
+			// -100xxxxxxxxxx -> xxxxxxxxxx для t.me/c/xxx/msgId
+			channelID := -o.Chat.ID - 1000000000000
+			sourceURL = fmt.Sprintf("https://t.me/c/%d/%d", channelID, o.MessageID)
+		}
+		switch {
+		case o.Chat.Title != "":
+			sourceAuthor = o.Chat.Title
+		case o.Chat.Username != "":
+			sourceAuthor = "@" + o.Chat.Username
+		case o.AuthorSignature != "":
+			sourceAuthor = o.AuthorSignature
+		}
+
+		return sourceURL, sourceAuthor
+	case "user":
+		var o struct {
+			SenderUser struct {
+				Username  string `json:"username"`
+				FirstName string `json:"first_name"`
+				LastName  string `json:"last_name"`
+			} `json:"sender_user"`
+		}
+		if err := json.Unmarshal(raw, &o); err != nil {
+			return "", ""
+		}
+		if o.SenderUser.Username != "" {
+			sourceAuthor = "@" + o.SenderUser.Username
+		} else {
+			sourceAuthor = strings.TrimSpace(o.SenderUser.FirstName + " " + o.SenderUser.LastName)
+		}
+
+		return "", sourceAuthor
+	case "hidden_user":
+		var o struct {
+			SenderUserName string `json:"sender_user_name"`
+		}
+		if err := json.Unmarshal(raw, &o); err != nil {
+			return "", ""
+		}
+
+		return "", o.SenderUserName
+	case "chat":
+		var o struct {
+			SenderChat struct {
+				Title    string `json:"title"`
+				Username string `json:"username"`
+			} `json:"sender_chat"`
+		}
+		if err := json.Unmarshal(raw, &o); err != nil {
+			return "", ""
+		}
+		if o.SenderChat.Title != "" {
+			sourceAuthor = o.SenderChat.Title
+		} else if o.SenderChat.Username != "" {
+			sourceAuthor = "@" + o.SenderChat.Username
+		}
+
+		return "", sourceAuthor
+	}
+
+	return "", ""
+}
+
 type bufferKey struct {
 	chatID    int64
 	messageID int
 }
 
 type pendingForward struct {
-	text   string
-	chatID int64
-	timer  *time.Timer
+	text         string
+	chatID       int64
+	sourceURL    string
+	sourceAuthor string
+	timer        *time.Timer
 }
 
 type pendingComment struct {
@@ -201,7 +295,7 @@ func (fb *forwardBuffer) addComment(_ context.Context, chatID int64, text string
 
 		ctx, cancel := context.WithTimeout(context.Background(), forwardFlushTimeout)
 		defer cancel()
-		fb.bot.processIngest(ctx, text, chatID)
+		fb.bot.processIngest(ctx, text, chatID, "", "")
 	})
 	fb.comments[chatID] = pc
 }
@@ -222,7 +316,7 @@ func (fb *forwardBuffer) takeComment(chatID int64) string {
 }
 
 //nolint:contextcheck,unparam // timer callback runs async; ctx kept for API consistency
-func (fb *forwardBuffer) add(ctx context.Context, chatID int64, messageID int, text string) bool {
+func (fb *forwardBuffer) add(ctx context.Context, chatID int64, messageID int, text, sourceURL, sourceAuthor string) bool {
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
 
@@ -236,30 +330,33 @@ func (fb *forwardBuffer) add(ctx context.Context, chatID int64, messageID int, t
 		oldest := keys[0]
 		if p, ok := fb.pending[oldest]; ok {
 			flushText, flushChatID := p.text, p.chatID
+			flushURL, flushAuthor := p.sourceURL, p.sourceAuthor
 			fb.removeLocked(oldest)
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), forwardFlushTimeout)
 				defer cancel()
-				fb.bot.processIngest(ctx, flushText, flushChatID)
+				fb.bot.processIngest(ctx, flushText, flushChatID, flushURL, flushAuthor)
 			}()
 		}
 		keys = keys[1:]
 	}
 
-	pf := &pendingForward{text: text, chatID: chatID}
+	pf := &pendingForward{text: text, chatID: chatID, sourceURL: sourceURL, sourceAuthor: sourceAuthor}
 	pf.timer = time.AfterFunc(fb.ttl, func() {
 		fb.mu.Lock()
 		var flushText string
 		var flushChatID int64
+		var flushURL, flushAuthor string
 		if p, ok := fb.pending[key]; ok {
 			flushText, flushChatID = p.text, p.chatID
+			flushURL, flushAuthor = p.sourceURL, p.sourceAuthor
 			fb.removeLocked(key)
 		}
 		fb.mu.Unlock()
 		if flushText != "" {
 			ctx, cancel := context.WithTimeout(context.Background(), forwardFlushTimeout)
 			defer cancel()
-			fb.bot.processIngest(ctx, flushText, flushChatID)
+			fb.bot.processIngest(ctx, flushText, flushChatID, flushURL, flushAuthor)
 		}
 	})
 	fb.pending[key] = pf
@@ -296,11 +393,15 @@ func (fb *forwardBuffer) removeLocked(key bufferKey) {
 	}
 }
 
-func (b *Bot) processIngest(ctx context.Context, text string, chatID int64) {
+func (b *Bot) processIngest(ctx context.Context, text string, chatID int64, sourceURL, sourceAuthor string) {
 	if chatID != 0 {
 		_ = b.sendMessage(ctx, chatID, "Принял, обрабатываю...")
 	}
-	node, err := b.ingester.IngestText(ctx, text)
+	node, err := b.ingester.IngestText(ctx, ingestion.IngestRequest{
+		Text:         text,
+		SourceURL:    sourceURL,
+		SourceAuthor: sourceAuthor,
+	})
 	if err != nil {
 		clog.Errorf(ctx, "ingest failed: %w", err)
 		if chatID != 0 {
@@ -355,9 +456,10 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 			return
 		}
 		text := combineForwardWithComment(comment, forwarded)
+		sourceURL, sourceAuthor := parseForwardOrigin(u.Message.ReplyToMessage.ForwardOrigin)
 		clog.FromContext(ctx).Info("telegram bot: merged forward+reply",
 			"chat_id", chatID, "message_id", u.Message.MessageID)
-		b.processIngest(ctx, text, chatID)
+		b.processIngest(ctx, text, chatID, sourceURL, sourceAuthor)
 
 		return
 	}
@@ -370,20 +472,24 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 
 			return
 		}
+		sourceURL, sourceAuthor := parseForwardOrigin(u.Message.ForwardOrigin)
 		// Если пользователь перед пересылкой написал комментарий — объединяем
 		if comment := b.buffer.takeComment(chatID); comment != "" {
 			text := combineForwardWithComment(comment, forwarded)
 			clog.FromContext(ctx).Info("telegram bot: merged comment+forward",
 				"chat_id", chatID, "message_id", u.Message.MessageID)
-			b.processIngest(ctx, text, chatID)
+			b.processIngest(ctx, text, chatID, sourceURL, sourceAuthor)
 
 			return
 		}
 		// Иначе — в буфер, ждём возможный reply с комментарием
-		if b.buffer.add(ctx, chatID, u.Message.MessageID, forwarded) {
+		if b.buffer.add(ctx, chatID, u.Message.MessageID, forwarded, sourceURL, sourceAuthor) {
 			return
 		}
 		// дубликат в буфере — обрабатываем пересланное как обычный текст
+		b.processIngest(ctx, forwarded, chatID, sourceURL, sourceAuthor)
+
+		return
 	}
 
 	// Ветка 3: обычное сообщение — буферизуем, ждём возможную пересылку следом

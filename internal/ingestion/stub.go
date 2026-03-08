@@ -13,7 +13,7 @@ var ErrNotImplemented = errors.New("ingestion not implemented")
 type StubIngester struct{}
 
 // IngestText возвращает ErrNotImplemented.
-func (s *StubIngester) IngestText(ctx context.Context, text string) (*kb.Node, error) {
+func (s *StubIngester) IngestText(ctx context.Context, req IngestRequest) (*kb.Node, error) {
 	return nil, ErrNotImplemented
 }
 

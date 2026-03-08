@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/muonsoft/clog"
@@ -42,10 +43,10 @@ func NewPipelineIngester(
 }
 
 // IngestText обрабатывает входной текст через LLM-оркестратор и сохраняет узел.
-func (p *PipelineIngester) IngestText(ctx context.Context, text string) (*kb.Node, error) {
-	clog.FromContext(ctx).Info("ingest text: start", "text_len", len(text))
+func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*kb.Node, error) {
+	clog.FromContext(ctx).Info("ingest text: start", "text_len", len(req.Text))
 
-	processInput, err := p.buildProcessInput(ctx, text)
+	processInput, err := p.buildProcessInput(ctx, req.Text, req.SourceURL, req.SourceAuthor)
 	if err != nil {
 		return nil, errors.Errorf("ingest text: build context: %w", err)
 	}
@@ -81,13 +82,15 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	}
 
 	var text string
+	var sourceAuthor string
 	if fetchResult != nil {
 		text = fmt.Sprintf("URL: %s\nTitle: %s\n\n%s", url, fetchResult.Title, fetchResult.Content)
+		sourceAuthor = fetchResult.Author
 	} else {
 		text = url
 	}
 
-	processInput, err := p.buildProcessInput(ctx, text)
+	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor)
 	if err != nil {
 		return nil, errors.Errorf("ingest url: build context: %w", err)
 	}
@@ -109,7 +112,7 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	return node, nil
 }
 
-func (p *PipelineIngester) buildProcessInput(ctx context.Context, text string) (llm.ProcessInput, error) {
+func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor string) (llm.ProcessInput, error) {
 	tree, err := p.store.ReadTree(ctx, p.basePath)
 	if err != nil {
 		return llm.ProcessInput{}, errors.Errorf("read tree: %w", err)
@@ -121,8 +124,14 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text string) (
 		clog.FromContext(ctx).Warn("ingest: failed to collect keywords, proceeding without them", "error", err)
 	}
 
+	if sourceURL != "" || sourceAuthor != "" {
+		text = fmt.Sprintf("Метаданные источника: ссылка: %s, автор: %s\n\n%s", sourceURL, sourceAuthor, text)
+	}
+
 	return llm.ProcessInput{
 		Text:             text,
+		SourceURL:        sourceURL,
+		SourceAuthor:     sourceAuthor,
 		ExistingThemes:   themes,
 		ExistingKeywords: keywords,
 	}, nil
@@ -137,9 +146,13 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 		"updated":    now,
 		"annotation": result.Annotation,
 	}
-	if result.Title != "" {
-		frontmatter["title"] = result.Title
-		frontmatter["aliases"] = []string{result.Title}
+	title := result.Title
+	if title == "" && result.Slug != "" {
+		title = slugToTitle(result.Slug)
+	}
+	if title != "" {
+		frontmatter["title"] = title
+		frontmatter["aliases"] = []string{title}
 	}
 	if result.Type != "" {
 		frontmatter["type"] = result.Type
@@ -149,6 +162,9 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	}
 	if result.SourceDate != nil {
 		frontmatter["source_date"] = result.SourceDate.Format("2006-01-02")
+	}
+	if result.SourceAuthor != "" {
+		frontmatter["source_author"] = result.SourceAuthor
 	}
 
 	node, err := p.store.CreateNode(ctx, p.basePath, kb.CreateNodeParams{
@@ -219,4 +235,20 @@ func collectThemes(tree *kb.TreeNode) []string {
 	walk(tree)
 
 	return themes
+}
+
+// slugToTitle converts a slug (e.g. "professor-donald-knuth-clause-cycles") to Title Case.
+// Used as fallback when LLM returns empty title.
+func slugToTitle(slug string) string {
+	if slug == "" {
+		return ""
+	}
+	parts := strings.Split(slug, "-")
+	for i, p := range parts {
+		if len(p) > 0 {
+			parts[i] = strings.ToUpper(string(p[0])) + strings.ToLower(p[1:])
+		}
+	}
+
+	return strings.Join(parts, " ")
 }

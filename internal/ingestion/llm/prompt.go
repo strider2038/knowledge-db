@@ -26,20 +26,22 @@ func buildSystemPrompt(existingThemes, existingKeywords []string) string {
 - Если пользователь дал явные инструкции (например, "сохрани в go/concurrency") → следуй им
 
 ## Язык метаданных
-- **annotation**: пиши на русском языке
+- **annotation**: 2–5 предложений на русском языке
 - **keywords**: пиши на русском языке; специфичные термины, аббревиатуры и имена собственные (TTS, API, Docker, Kubernetes и т.п.) можно оставлять на английском или дублировать на двух языках
+- **title**: обязателен; при отсутствии в источнике (заметка, пересланное сообщение) сгенерируй осмысленный заголовок на основе содержимого
 
 ## Создание узла
 Когда у тебя есть вся необходимая информация, вызови create_node:
 - keywords: 3-7 релевантных ключевых слов на русском (переиспользуй существующие ключевые слова из списка ниже, если применимо)
-- annotation: описание 1-2 предложения на русском
+- annotation: описание 2–5 предложений на русском
 - theme_path: путь в дереве тем (например, "go/concurrency", "devops/docker") — предпочитай существующие темы
 - slug: kebab-case идентификатор узла (из заголовка или содержимого, транслитерируй при необходимости)
 - type: "article", "link" или "note"
 - content: для articles — оставь ПУСТЫМ (""), полный контент будет взят из результата fetch_url_content автоматически; для notes — исходный текст; для links — пустое или краткое описание
 - source_url: URL источника, если есть
 - source_date: дата публикации, если известна (формат YYYY-MM-DD)
-- title: читаемый заголовок
+- source_author: автор источника (если указан в метаданных или в результате fetch_url_content)
+- title: читаемый заголовок (обязателен; при отсутствии в источнике — сгенерируй на основе контента)
 
 `)
 
@@ -103,14 +105,15 @@ func buildTools() []responses.ToolUnionParam {
 						"type":  "array",
 						"items": map[string]any{"type": "string"},
 					},
-					"annotation":  map[string]any{"type": "string"},
-					"theme_path":  map[string]any{"type": "string"},
-					"slug":        map[string]any{"type": "string"},
-					"type":        map[string]any{"type": "string", "enum": []string{"article", "link", "note"}},
-					"content":     map[string]any{"type": "string"},
-					"source_url":  map[string]any{"type": "string"},
-					"source_date": map[string]any{"type": "string"},
-					"title":       map[string]any{"type": "string"},
+					"annotation":    map[string]any{"type": "string"},
+					"theme_path":    map[string]any{"type": "string"},
+					"slug":          map[string]any{"type": "string"},
+					"type":          map[string]any{"type": "string", "enum": []string{"article", "link", "note"}},
+					"content":       map[string]any{"type": "string"},
+					"source_url":    map[string]any{"type": "string"},
+					"source_date":   map[string]any{"type": "string"},
+					"source_author": map[string]any{"type": "string"},
+					"title":         map[string]any{"type": "string"},
 				},
 				"required": []string{"keywords", "annotation", "theme_path", "slug", "type", "title"},
 			},
