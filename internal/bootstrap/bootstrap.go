@@ -45,7 +45,7 @@ func Run() error {
 	mux.Handle("GET /api/mcp", mcp.NewHandler(cfg.DataPath))
 	mux.Handle("POST /api/mcp", mcp.NewHandler(cfg.DataPath))
 
-	httpHandler := api.CORS(mux, cfg.HTTP.AllowedCORSOrigin)
+	httpHandler := api.Gzip(api.CORS(mux, cfg.HTTP.AllowedCORSOrigin))
 
 	srv := &http.Server{
 		Addr:    cfg.HTTP.Addr,
