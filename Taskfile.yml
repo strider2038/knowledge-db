@@ -25,6 +25,27 @@ tasks:
     cmds:
       - npm run build
 
+  web:test:
+    desc: Запустить тесты web (Vitest)
+    dir: "{{.WEB_DIR}}"
+    deps: [web:install]
+    cmds:
+      - npm run test
+
+  web:lint:
+    desc: Запустить ESLint для web
+    dir: "{{.WEB_DIR}}"
+    deps: [web:install]
+    cmds:
+      - npm run lint
+
+  web:lint:fix:
+    desc: ESLint с автоисправлением
+    dir: "{{.WEB_DIR}}"
+    deps: [web:install]
+    cmds:
+      - npm run lint -- --fix
+
   build-server:
     desc: Собрать kb-server (web → copy → go build)
     deps: [web:build]
@@ -71,19 +92,22 @@ tasks:
         echo "Откройте http://localhost:5173 (Vite)"
 
   test:
-    desc: Запустить тесты (с детектором гонок)
+    desc: Запустить тесты (Go + web)
     cmds:
       - go test ./... -race
+      - task: web:test
 
   lint:
-    desc: Запустить golangci-lint
+    desc: Запустить линтеры (golangci-lint + ESLint)
     cmds:
       - golangci-lint run ./...
+      - task: web:lint
 
   lint:fix:
-    desc: golangci-lint с автоисправлением
+    desc: Линтеры с автоисправлением (golangci-lint + ESLint)
     cmds:
       - golangci-lint run ./... --fix
+      - task: web:lint:fix
 
   lint:install:
     desc: Установить golangci-lint
