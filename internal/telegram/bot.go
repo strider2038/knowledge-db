@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,14 +24,24 @@ const (
 	maxPendingPerChat   = 10
 )
 
+// messageEntity — сущность разметки Telegram API (MessageEntity).
+type messageEntity struct {
+	Type   string `json:"type"`
+	Offset int    `json:"offset"`
+	Length int    `json:"length"`
+	URL    string `json:"url,omitempty"` // для text_link
+}
+
 // message — структура сообщения Telegram API (подмножество полей).
 type message struct {
-	MessageID      int             `json:"message_id"`
-	Text           string          `json:"text"`
-	Caption        string          `json:"caption"`
-	ReplyToMessage *message        `json:"reply_to_message"`
-	ForwardOrigin  json.RawMessage `json:"forward_origin,omitempty"`
-	Chat           *struct {
+	MessageID       int             `json:"message_id"`
+	Text            string          `json:"text"`
+	Caption         string          `json:"caption"`
+	Entities        []messageEntity `json:"entities,omitempty"`
+	CaptionEntities []messageEntity `json:"caption_entities,omitempty"`
+	ReplyToMessage  *message        `json:"reply_to_message"`
+	ForwardOrigin   json.RawMessage `json:"forward_origin,omitempty"`
+	Chat            *struct {
 		ID int64 `json:"id"`
 	} `json:"chat"`
 	From *struct {
@@ -124,16 +135,112 @@ func (b *Bot) getUpdates(ctx context.Context, baseURL string, offset int) ([]upd
 	return result.Result, nextOffset, nil
 }
 
-// extractText извлекает text или caption из сообщения.
-func extractText(msg *message) string {
+// extractTextWithFormatting извлекает text или caption с учётом entities, конвертируя в Markdown.
+func extractTextWithFormatting(msg *message) string {
 	if msg == nil {
 		return ""
 	}
-	if msg.Text != "" {
-		return msg.Text
+	var text string
+	var entities []messageEntity
+	switch {
+	case msg.Text != "":
+		text = msg.Text
+		entities = msg.Entities
+	case msg.Caption != "":
+		text = msg.Caption
+		entities = msg.CaptionEntities
+	default:
+		return ""
 	}
 
-	return msg.Caption
+	return entitiesToMarkdown(text, entities)
+}
+
+// entitiesToMarkdown конвертирует текст с Telegram entities в Markdown.
+// offset и length в entities заданы в UTF-16 code units (Telegram API).
+func entitiesToMarkdown(text string, entities []messageEntity) string {
+	if len(entities) == 0 {
+		return text
+	}
+	// Сортируем по offset descending, чтобы вставлять разметку с конца и не сбивать позиции.
+	sorted := make([]messageEntity, len(entities))
+	copy(sorted, entities)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Offset > sorted[j].Offset
+	})
+
+	runes := []rune(text)
+	utf16ToRune := buildUTF16ToRuneMap(runes)
+
+	for _, e := range sorted {
+		startRune, ok := utf16ToRune[e.Offset]
+		if !ok || startRune >= len(runes) {
+			continue
+		}
+		endUTF16 := e.Offset + e.Length
+		endRune, ok := utf16ToRune[endUTF16]
+		if !ok {
+			endRune = len(runes)
+		}
+		if endRune <= startRune {
+			continue
+		}
+		slice := string(runes[startRune:endRune])
+		var wrapped string
+		switch e.Type {
+		case "bold":
+			wrapped = "**" + slice + "**"
+		case "italic":
+			wrapped = "*" + slice + "*"
+		case "underline":
+			wrapped = "<u>" + slice + "</u>" // Obsidian поддерживает HTML
+		case "strikethrough":
+			wrapped = "~~" + slice + "~~"
+		case "spoiler":
+			wrapped = "||" + slice + "||"
+		case "blockquote", "expandable_blockquote":
+			wrapped = "> " + strings.ReplaceAll(slice, "\n", "\n> ")
+		case "code":
+			wrapped = "`" + slice + "`"
+		case "pre":
+			wrapped = "```\n" + slice + "\n```"
+		case "text_link":
+			if e.URL != "" {
+				wrapped = "[" + slice + "](" + e.URL + ")"
+			} else {
+				wrapped = slice
+			}
+		case "url":
+			wrapped = "[" + slice + "](" + slice + ")"
+		default:
+			// mention, hashtag, bot_command, email, phone_number, text_mention, custom_emoji — оставляем как есть
+			continue
+		}
+		runes = append(runes[:startRune], append([]rune(wrapped), runes[endRune:]...)...)
+	}
+
+	return string(runes)
+}
+
+// buildUTF16ToRuneMap строит маппинг: UTF-16 offset -> индекс rune в слайсе.
+func buildUTF16ToRuneMap(runes []rune) map[int]int {
+	m := make(map[int]int)
+	m[0] = 0
+	utf16Pos := 0
+	for i, r := range runes {
+		utf16Pos += utf16Len(r)
+		m[utf16Pos] = i + 1
+	}
+
+	return m
+}
+
+func utf16Len(r rune) int {
+	if r <= 0xFFFF {
+		return 1
+	}
+
+	return 2 // surrogate pair
 }
 
 // combineForwardWithComment объединяет комментарий и пересланный контент с явными метками для LLM.
@@ -448,8 +555,8 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 	// Ветка 1: reply с reply_to_message — объединяем и обрабатываем
 	if u.Message.ReplyToMessage != nil {
 		b.buffer.remove(chatID, u.Message.ReplyToMessage.MessageID)
-		comment := extractText(u.Message)
-		forwarded := extractText(u.Message.ReplyToMessage)
+		comment := extractTextWithFormatting(u.Message)
+		forwarded := extractTextWithFormatting(u.Message.ReplyToMessage)
 		if comment == "" && forwarded == "" {
 			clog.FromContext(ctx).Warn("telegram bot: empty reply message ignored")
 
@@ -466,7 +573,7 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 
 	// Ветка 2: пересланное без reply
 	if len(u.Message.ForwardOrigin) > 0 {
-		forwarded := extractText(u.Message)
+		forwarded := extractTextWithFormatting(u.Message)
 		if forwarded == "" {
 			clog.FromContext(ctx).Warn("telegram bot: empty forwarded message ignored")
 
@@ -493,7 +600,7 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 	}
 
 	// Ветка 3: обычное сообщение — буферизуем, ждём возможную пересылку следом
-	text := extractText(u.Message)
+	text := extractTextWithFormatting(u.Message)
 	if text == "" {
 		clog.FromContext(ctx).Warn("telegram bot: empty message ignored")
 

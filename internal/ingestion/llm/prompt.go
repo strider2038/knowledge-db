@@ -19,6 +19,9 @@ func buildSystemPrompt(existingThemes, existingKeywords []string) string {
 - **link**: Ссылка на сервис, инструмент или ресурс (не статья). Используй fetch_url_meta для получения заголовка и описания.
 - **note**: Личная заметка или текст без URL, либо сообщение с URL только для контекста.
 
+## Правила для notes
+- Для type: note сохраняй markdown-разметку (bold, italic, code, ссылки) в content без изменений — она может приходить из Telegram и других источников.
+
 ## Правила выбора типа
 - Если в тексте есть URL на блог-пост, туториал или статью → type: article, вызови fetch_url_content
 - Если в тексте есть URL на сервис, документацию, библиотеку или инструмент → type: link, вызови fetch_url_meta
@@ -37,7 +40,7 @@ func buildSystemPrompt(existingThemes, existingKeywords []string) string {
 - theme_path: путь в дереве тем (например, "go/concurrency", "devops/docker") — предпочитай существующие темы
 - slug: kebab-case идентификатор узла (из заголовка или содержимого, транслитерируй при необходимости)
 - type: "article", "link" или "note"
-- content: для articles — оставь ПУСТЫМ (""), полный контент будет взят из результата fetch_url_content автоматически; для notes — исходный текст; для links — пустое или краткое описание
+- content: для articles — оставь ПУСТЫМ (""), полный контент будет взят из результата fetch_url_content автоматически; для notes — исходный текст, сохраняй markdown-разметку (bold, italic, code, ссылки) без изменений; для links — пустое или краткое описание
 - source_url: URL источника, если есть
 - source_date: дата публикации, если известна (формат YYYY-MM-DD)
 - source_author: автор источника (если указан в метаданных или в результате fetch_url_content)

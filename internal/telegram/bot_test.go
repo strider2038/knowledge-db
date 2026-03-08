@@ -395,6 +395,92 @@ func TestHandleUpdate_WhenReplyArrivesDuringBuffer_ExpectSingleIngest(t *testing
 	assert.Equal(t, "Инструкции пользователя: сохрани\nПересланное сообщение: https://example.com", capturedTexts[0])
 }
 
+func TestEntitiesToMarkdown_WhenBold_ExpectMarkdown(t *testing.T) {
+	t.Parallel()
+	text := "Hello world"
+	entities := []messageEntity{{Type: "bold", Offset: 0, Length: 5}} // "Hello" = 5 chars
+	result := entitiesToMarkdown(text, entities)
+	assert.Equal(t, "**Hello** world", result)
+}
+
+func TestEntitiesToMarkdown_WhenItalic_ExpectMarkdown(t *testing.T) {
+	t.Parallel()
+	text := "Hello world"
+	entities := []messageEntity{{Type: "italic", Offset: 6, Length: 5}}
+	result := entitiesToMarkdown(text, entities)
+	assert.Equal(t, "Hello *world*", result)
+}
+
+func TestEntitiesToMarkdown_WhenCode_ExpectBackticks(t *testing.T) {
+	t.Parallel()
+	text := "Use the fmt package"
+	entities := []messageEntity{{Type: "code", Offset: 8, Length: 3}}
+	result := entitiesToMarkdown(text, entities)
+	assert.Equal(t, "Use the `fmt` package", result)
+}
+
+func TestEntitiesToMarkdown_WhenTextLink_ExpectMarkdownLink(t *testing.T) {
+	t.Parallel()
+	text := "Click here"
+	entities := []messageEntity{{Type: "text_link", Offset: 0, Length: 10, URL: "https://example.com"}}
+	result := entitiesToMarkdown(text, entities)
+	assert.Equal(t, "[Click here](https://example.com)", result)
+}
+
+func TestEntitiesToMarkdown_WhenMultipleEntities_ExpectAllConverted(t *testing.T) {
+	t.Parallel()
+	text := "Bold and italic"
+	entities := []messageEntity{
+		{Type: "bold", Offset: 0, Length: 4},
+		{Type: "italic", Offset: 9, Length: 6},
+	}
+	result := entitiesToMarkdown(text, entities)
+	assert.Equal(t, "**Bold** and *italic*", result)
+}
+
+func TestEntitiesToMarkdown_WhenNoEntities_ExpectOriginalText(t *testing.T) {
+	t.Parallel()
+	text := "Plain text"
+	result := entitiesToMarkdown(text, nil)
+	assert.Equal(t, "Plain text", result)
+}
+
+func TestEntitiesToMarkdown_WhenStrikethrough_ExpectGFM(t *testing.T) {
+	t.Parallel()
+	text := "deleted text"
+	entities := []messageEntity{{Type: "strikethrough", Offset: 0, Length: 12}}
+	result := entitiesToMarkdown(text, entities)
+	assert.Equal(t, "~~deleted text~~", result)
+}
+
+func TestEntitiesToMarkdown_WhenBlockquote_ExpectQuotePrefix(t *testing.T) {
+	t.Parallel()
+	text := "Quoted line"
+	entities := []messageEntity{{Type: "blockquote", Offset: 0, Length: 11}}
+	result := entitiesToMarkdown(text, entities)
+	assert.Equal(t, "> Quoted line", result)
+}
+
+func TestExtractTextWithFormatting_WhenBoldInMessage_ExpectMarkdown(t *testing.T) {
+	t.Parallel()
+	msg := &message{
+		Text:     "Important note",
+		Entities: []messageEntity{{Type: "bold", Offset: 0, Length: 9}}, // "Important" = 9 chars
+	}
+	result := extractTextWithFormatting(msg)
+	assert.Equal(t, "**Important** note", result)
+}
+
+func TestExtractTextWithFormatting_WhenCaptionWithEntities_ExpectMarkdown(t *testing.T) {
+	t.Parallel()
+	msg := &message{
+		Caption:         "Photo with caption",                                     // plain text from Telegram
+		CaptionEntities: []messageEntity{{Type: "italic", Offset: 11, Length: 7}}, // "caption" = 7 chars
+	}
+	result := extractTextWithFormatting(msg)
+	assert.Equal(t, "Photo with *caption*", result)
+}
+
 func TestCombineForwardWithComment_ExpectLabels(t *testing.T) {
 	t.Parallel()
 	result := combineForwardWithComment("сохрани в go/tips", "https://go.dev/blog/article")
