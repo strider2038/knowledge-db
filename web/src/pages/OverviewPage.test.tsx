@@ -59,4 +59,18 @@ describe('OverviewPage', () => {
       expect.objectContaining({ recursive: true })
     )
   })
+
+  it('renders node link when at overview with query params', async () => {
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={['/?path=topic&type=article']}>
+          <Routes>
+            <Route path="/" element={<OverviewPage />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>
+    )
+    const links = await screen.findAllByRole('link', { name: 'Node 1' })
+    expect(links[0]).toHaveAttribute('href', '/node/topic/node1')
+  })
 })

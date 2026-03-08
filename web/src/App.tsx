@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { Navbar } from './components/Navbar'
+import { ScrollToTop } from './components/ScrollToTop'
 import { AddPage } from './pages/AddPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { NodePage } from './pages/NodePage'
@@ -15,6 +16,7 @@ function App() {
           <Route path="/node/*" element={<NodePage />} />
         </Routes>
       </main>
+      <ScrollToTop />
     </div>
   )
 }

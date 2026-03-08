@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { ExternalLink } from 'lucide-react'
 import {
   getTree,
@@ -56,6 +56,7 @@ function filterTreeByNodePaths(
 }
 
 export function OverviewPage() {
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const path = searchParams.get('path') ?? ''
   const typeFilter = searchParams.get('type')?.split(',').filter(Boolean) ?? []
@@ -357,6 +358,7 @@ export function OverviewPage() {
                             <TooltipTrigger asChild>
                               <Link
                                 to={`/node/${n.path}`}
+                                state={{ returnTo: location.pathname + location.search }}
                                 className="text-primary hover:underline"
                               >
                                 {n.title || n.path}
