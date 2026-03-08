@@ -37,6 +37,7 @@ type Config struct {
 	JinaAPIKey      string        `env:"JINA_API_KEY" envDefault:""`
 	GitDisabled     bool          `env:"KB_GIT_DISABLED" envDefault:"false"`
 	GitSyncInterval time.Duration `env:"GIT_SYNC_INTERVAL" envDefault:"5m"`
+	AutoTranslate   bool          `env:"KB_AUTO_TRANSLATE" envDefault:"true"`
 
 	HTTP     HTTP
 	LLM      LLM

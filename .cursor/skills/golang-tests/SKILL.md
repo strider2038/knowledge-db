@@ -79,6 +79,25 @@ assert.Contains(t, slice, element)  // slice содержит element
 - `require` — когда дальнейшие проверки бессмысленны (нет данных, паника и т.п.)
 - `assert` — для обычных проверок значений
 
+### Хелперы и setup: без panic
+
+В тестовом коде **не использовать panic** — даже в хелперах и setup. При ошибках вызывать `tb.Fatalf`:
+
+```go
+func buildTestData(tb testing.TB, input string) *Response {
+    tb.Helper()
+    data, err := json.Marshal(input)
+    if err != nil {
+        tb.Fatalf("marshal: %v", err)
+    }
+    // ...
+}
+```
+
+- Хелперы принимают `testing.TB` (работает с `*testing.T` и `*testing.B`)
+- Вызывать `tb.Helper()` в начале хелпера — корректный stack trace при падении
+- `tb.Fatalf` останавливает тест с понятным сообщением
+
 ## Afero: in-memory fs в тестах
 
 Для тестов с файловой структурой используй **afero** вместо `t.TempDir()` и `os.WriteFile`:
@@ -119,4 +138,5 @@ func seedMemFS(files map[string]string) (*Store, string) {
 - [ ] Arrange–Act–Assert
 - [ ] Именование TestXxx_WhenYyy_ExpectZzz
 - [ ] Проверки через testify (require/assert), не t.Error/t.Fatal
+- [ ] Хелперы без panic — использовать tb.Fatalf (testing.TB)
 - [ ] Тесты с файлами — через afero MemMapFs, не t.TempDir

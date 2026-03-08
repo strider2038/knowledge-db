@@ -13,6 +13,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
 	"github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
+	"github.com/strider2038/knowledge-db/internal/ingestion/translation"
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
@@ -23,6 +24,8 @@ type PipelineIngester struct {
 	contentFetcher fetcher.ContentFetcher
 	committer      git.GitCommitter
 	basePath       string
+	autoTranslate  bool
+	translator     translation.Translator
 }
 
 // NewPipelineIngester создаёт PipelineIngester.
@@ -32,6 +35,8 @@ func NewPipelineIngester(
 	contentFetcher fetcher.ContentFetcher,
 	committer git.GitCommitter,
 	basePath string,
+	autoTranslate bool,
+	translator translation.Translator,
 ) *PipelineIngester {
 	return &PipelineIngester{
 		store:          store,
@@ -39,6 +44,8 @@ func NewPipelineIngester(
 		contentFetcher: contentFetcher,
 		committer:      committer,
 		basePath:       basePath,
+		autoTranslate:  autoTranslate,
+		translator:     translator,
 	}
 }
 
@@ -62,6 +69,9 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	node, err := p.saveNode(ctx, result)
 	if err != nil {
 		return nil, err
+	}
+	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
+		clog.Errorf(ctx, "ingest text: translation failed: %w", err)
 	}
 	clog.FromContext(ctx).Info("ingest text: complete", "theme", result.ThemePath, "slug", result.Slug)
 
@@ -106,6 +116,9 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	node, err := p.saveNode(ctx, result)
 	if err != nil {
 		return nil, err
+	}
+	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
+		clog.Errorf(ctx, "ingest url: translation failed: %w", err)
 	}
 	clog.FromContext(ctx).Info("ingest url: complete", "url", url, "theme", result.ThemePath, "slug", result.Slug)
 
@@ -185,6 +198,73 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	}
 
 	return node, nil
+}
+
+func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *llm.ProcessResult, node *kb.Node) error {
+	if !p.autoTranslate || p.translator == nil {
+		return nil
+	}
+	if result.Type != "article" {
+		return nil
+	}
+	if !translation.NeedsTranslation(result.Content) {
+		return nil
+	}
+
+	translated, err := p.translator.Translate(ctx, result.Content)
+	if err != nil {
+		return errors.Errorf("translate: %w", err)
+	}
+
+	translationFrontmatter := map[string]any{
+		"translation_of": result.Slug,
+		"lang":           "ru",
+		"keywords":       result.Keywords,
+		"created":        node.Metadata["created"],
+		"updated":        node.Metadata["updated"],
+		"annotation":     result.Annotation,
+		"type":           "article",
+	}
+	if title, ok := node.Metadata["title"]; ok {
+		translationFrontmatter["title"] = title
+	}
+	if aliases, ok := node.Metadata["aliases"]; ok {
+		translationFrontmatter["aliases"] = aliases
+	}
+	if result.SourceURL != "" {
+		translationFrontmatter["source_url"] = result.SourceURL
+	}
+	if result.SourceDate != nil {
+		translationFrontmatter["source_date"] = result.SourceDate.Format("2006-01-02")
+	}
+	if result.SourceAuthor != "" {
+		translationFrontmatter["source_author"] = result.SourceAuthor
+	}
+
+	contentWithLink := translated
+	if !strings.HasSuffix(contentWithLink, fmt.Sprintf("[[%s|Original]]", result.Slug)) {
+		contentWithLink = strings.TrimSuffix(contentWithLink, "\n") + "\n\n" + fmt.Sprintf("[[%s|Original]]", result.Slug) + "\n"
+	}
+
+	if err := p.store.CreateTranslationFile(ctx, p.basePath, result.ThemePath, result.Slug, "ru", translationFrontmatter, contentWithLink); err != nil {
+		return errors.Errorf("create translation file: %w", err)
+	}
+	if err := p.store.AppendTranslationsToOriginal(ctx, p.basePath, result.ThemePath, result.Slug, result.Slug+".ru"); err != nil {
+		return errors.Errorf("append translations to original: %w", err)
+	}
+
+	translationPath := filepath.Join(p.basePath, filepath.FromSlash(result.ThemePath), result.Slug+".ru.md")
+	if err := p.committer.CommitNode(ctx, translationPath, fmt.Sprintf("add: %s/%s.ru (translation)", result.ThemePath, result.Slug)); err != nil {
+		clog.Errorf(ctx, "maybeTranslateAndSave: git commit translation failed: %w", err)
+	}
+	originalPath := filepath.Join(p.basePath, filepath.FromSlash(result.ThemePath), result.Slug+".md")
+	if err := p.committer.CommitNode(ctx, originalPath, fmt.Sprintf("add: %s/%s (translation link)", result.ThemePath, result.Slug)); err != nil {
+		clog.Errorf(ctx, "maybeTranslateAndSave: git commit original update failed: %w", err)
+	}
+
+	clog.FromContext(ctx).Info("translation: added", "theme", result.ThemePath, "slug", result.Slug, "translation_slug", result.Slug+".ru")
+
+	return nil
 }
 
 func (p *PipelineIngester) collectKeywords(ctx context.Context) ([]string, error) {

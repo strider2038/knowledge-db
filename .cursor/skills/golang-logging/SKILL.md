@@ -37,8 +37,8 @@ ctx := clog.NewContext(r.Context(), logger)
 |---------|---------------|
 | Debug | Отладочная информация |
 | Info | Нормальный ход работы |
-| Warn | Нештатные, некритичные ситуации |
-| Error | Ошибки, требующие внимания |
+| Warn | Нештатные, некритичные ситуации (fallback, опциональный шаг) |
+| Error | Ошибки важных частей логики — с `clog.Errorf` и `%w` для сохранения стека |
 
 ## Логирование ошибок (Error-уровень)
 
@@ -52,9 +52,24 @@ clog.Error(ctx, "failed", slog.String("error", err.Error()))
 clog.Errorf(ctx, "get node failed: %w", err)
 ```
 
+## Важные части логики: Error, не Warn
+
+Для ошибок **важных частей логики** (перевод, сохранение, критичные шаги pipeline) — использовать **`clog.Errorf`** с `%w`, а не `Warn`:
+
+```go
+// Неправильно — теряется стек, уровень занижен
+clog.FromContext(ctx).Warn("translation failed", "error", err)
+
+// Правильно — стек сохраняется через %w
+clog.Errorf(ctx, "ingest text: translation failed: %w", err)
+```
+
+Warn — для некритичных ситуаций (fallback, опциональный шаг). Error — когда сбой влияет на результат.
+
 ## Правила
 
 1. Логгер только из контекста (`clog.FromContext`)
 2. Воркеры (Telegram bot и т.п.) — только `clog.FromContext(ctx)`, не `slog.*` напрямую
 3. Не логировать чувствительные данные (токены, пароли)
 4. Сообщения в нотации действия: `"get node"`, `"validate base"`
+5. Важные ошибки — `clog.Errorf` с `%w`, не `Warn` с атрибутом

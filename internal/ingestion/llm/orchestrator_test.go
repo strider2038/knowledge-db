@@ -36,27 +36,32 @@ func (m *mockContentFetcher) Fetch(_ context.Context, _ string) (*fetcher.FetchR
 	return m.result, m.err
 }
 
-func buildFunctionCallResponse(id, callID, name, arguments string) *responses.Response {
-	data := `{"id":"` + id + `","created_at":0,"error":{},"incomplete_details":{},"instructions":"","metadata":{},"model":"gpt-4o","object":"response","parallel_tool_calls":false,"temperature":1,"output":[{"type":"function_call","id":"` + callID + `","call_id":"` + callID + `","name":"` + name + `","arguments":` + jsonString(arguments) + `,"status":"completed"}],"usage":{},"status":"completed","tool_choice":"auto"}`
+func buildFunctionCallResponse(tb testing.TB, id, callID, name, arguments string) *responses.Response {
+	tb.Helper()
+	data := `{"id":"` + id + `","created_at":0,"error":{},"incomplete_details":{},"instructions":"","metadata":{},"model":"gpt-4o","object":"response","parallel_tool_calls":false,"temperature":1,"output":[{"type":"function_call","id":"` + callID + `","call_id":"` + callID + `","name":"` + name + `","arguments":` + jsonString(tb, arguments) + `,"status":"completed"}],"usage":{},"status":"completed","tool_choice":"auto"}`
 	var resp responses.Response
-	_ = json.Unmarshal([]byte(data), &resp)
+	if err := json.Unmarshal([]byte(data), &resp); err != nil {
+		tb.Fatalf("unmarshal: %v", err)
+	}
 
 	return &resp
 }
 
-func buildCreateNodeResponse(id, callID string, args map[string]any) *responses.Response {
+func buildCreateNodeResponse(tb testing.TB, id, callID string, args map[string]any) *responses.Response {
+	tb.Helper()
 	argsJSON, err := json.Marshal(args)
 	if err != nil {
-		panic("marshal args: " + err.Error())
+		tb.Fatalf("marshal args: %v", err)
 	}
 
-	return buildFunctionCallResponse(id, callID, "create_node", string(argsJSON))
+	return buildFunctionCallResponse(tb, id, callID, "create_node", string(argsJSON))
 }
 
-func jsonString(s string) string {
+func jsonString(tb testing.TB, s string) string {
+	tb.Helper()
 	b, err := json.Marshal(s)
 	if err != nil {
-		panic("marshal string: " + err.Error())
+		tb.Fatalf("marshal string: %v", err)
 	}
 
 	return string(b)
@@ -76,7 +81,7 @@ func TestOpenAIOrchestrator_WhenNoteInput_ExpectDirectCreateNode(t *testing.T) {
 		"title":      "Go Patterns Note",
 	}
 	mockClient := &mockResponsesClient{
-		response: buildCreateNodeResponse("resp1", "call1", createNodeArgs),
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
 	}
 	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", nil)
 
@@ -99,7 +104,7 @@ func TestOpenAIOrchestrator_WhenArticleInput_ExpectFetchThenCreateNode(t *testin
 	ctx := context.Background()
 
 	fetchArgs := `{"url":"https://habr.com/article/123"}`
-	firstResp := buildFunctionCallResponse("resp1", "call1", "fetch_url_content", fetchArgs)
+	firstResp := buildFunctionCallResponse(t, "resp1", "call1", "fetch_url_content", fetchArgs)
 
 	createNodeArgs := map[string]any{
 		"keywords":   []any{"goroutines", "memory"},
@@ -112,7 +117,7 @@ func TestOpenAIOrchestrator_WhenArticleInput_ExpectFetchThenCreateNode(t *testin
 		"source_url": "https://habr.com/article/123",
 		// source_author не передан LLM — должен подставиться из FetchResult
 	}
-	secondResp := buildCreateNodeResponse("resp2", "call2", createNodeArgs)
+	secondResp := buildCreateNodeResponse(t, "resp2", "call2", createNodeArgs)
 
 	callCount := 0
 	mockFetcher := &mockContentFetcher{
@@ -163,7 +168,7 @@ func TestOpenAIOrchestrator_WhenLinkInput_ExpectFetchMetaThenCreateNode(t *testi
 	ctx := context.Background()
 
 	fetchMetaArgs := `{"url":"https://pkg.go.dev/net/http"}`
-	firstResp := buildFunctionCallResponse("resp1", "call1", "fetch_url_meta", fetchMetaArgs)
+	firstResp := buildFunctionCallResponse(t, "resp1", "call1", "fetch_url_meta", fetchMetaArgs)
 
 	createNodeArgs := map[string]any{
 		"keywords":   []any{"go", "http", "stdlib"},
@@ -175,7 +180,7 @@ func TestOpenAIOrchestrator_WhenLinkInput_ExpectFetchMetaThenCreateNode(t *testi
 		"title":      "net/http - Go",
 		"source_url": "https://pkg.go.dev/net/http",
 	}
-	secondResp := buildCreateNodeResponse("resp2", "call2", createNodeArgs)
+	secondResp := buildCreateNodeResponse(t, "resp2", "call2", createNodeArgs)
 
 	callCount := 0
 	seqClient := &sequenceMockClient{

@@ -2,6 +2,7 @@ package ingestion_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -65,7 +66,7 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 			Title:      "Goroutine Basics",
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about goroutines."})
 
@@ -83,7 +84,7 @@ func TestPipelineIngester_IngestText_WhenOrchestratorFails_ExpectError(t *testin
 	store := kb.NewStore(fs)
 
 	orc := &mockOrchestrator{err: ingestion.ErrNotImplemented}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, testBasePath)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, testBasePath, false, nil)
 
 	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "text"})
 
@@ -109,7 +110,7 @@ func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromSlug(t *testi
 			Title:      "", // LLM не вернул title
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about Claude Cycles."})
 
@@ -149,7 +150,7 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 			SourceDate:   &date,
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base)
+	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, nil)
 
 	node, err := pipeline.IngestURL(ctx, "https://habr.com/article/123")
 
@@ -158,4 +159,106 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 	assert.Equal(t, "article", node.Metadata["type"])
 	assert.Equal(t, "https://habr.com/article/123", node.Metadata["source_url"])
 	assert.Equal(t, "Иван Петров", node.Metadata["source_author"])
+}
+
+type mockTranslator struct {
+	translateFunc func(ctx context.Context, content string) (string, error)
+}
+
+func (m *mockTranslator) Translate(ctx context.Context, content string) (string, error) {
+	if m.translateFunc != nil {
+		return m.translateFunc(ctx, content)
+	}
+
+	return "translated: " + content, nil
+}
+
+func TestPipelineIngester_IngestText_WhenArticleAndEnglish_ExpectTranslationCreated(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	englishContent := `This is a long article written entirely in English. It contains multiple paragraphs
+with various topics and discussions. The content is substantial enough to trigger
+the translation heuristic. We need at least two hundred characters of text.`
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"go", "article"},
+			Annotation: "English article",
+			ThemePath:  "go",
+			Slug:       "english-article",
+			Type:       "article",
+			Content:    englishContent,
+			Title:      "English Article",
+		},
+	}
+	translator := &mockTranslator{
+		translateFunc: func(_ context.Context, content string) (string, error) {
+			return "Переведённый контент: " + content[:50] + "...", nil
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator)
+
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "English article content."})
+
+	require.NoError(t, err)
+	assert.Equal(t, "go/english-article", node.Path)
+
+	translationPath := filepath.Join(base, "go", "english-article.ru.md")
+	_, err = fs.Stat(translationPath)
+	require.NoError(t, err, "translation file should exist")
+
+	// Verify original has translations field
+	origNode, err := store.GetNode(ctx, base, "go/english-article")
+	require.NoError(t, err)
+	translations, ok := origNode.Metadata["translations"]
+	require.True(t, ok)
+	assert.Contains(t, translations, "english-article.ru")
+}
+
+func TestPipelineIngester_IngestText_WhenArticleAndRussian_ExpectNoTranslation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	russianContent := `Это длинная статья на русском языке. Она содержит несколько абзацев
+с различными темами и обсуждениями. Контент достаточно объёмный.
+Кириллицы здесь более чем достаточно для порога.`
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"go"},
+			Annotation: "Russian article",
+			ThemePath:  "go",
+			Slug:       "russian-article",
+			Type:       "article",
+			Content:    russianContent,
+			Title:      "Russian Article",
+		},
+	}
+	translateCalled := false
+	translator := &mockTranslator{
+		translateFunc: func(_ context.Context, _ string) (string, error) {
+			translateCalled = true
+
+			return "", nil
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator)
+
+	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Russian content."})
+
+	require.NoError(t, err)
+	assert.False(t, translateCalled, "translator should not be called for Russian content")
+
+	translationPath := filepath.Join(base, "go", "russian-article.ru.md")
+	_, err = fs.Stat(translationPath)
+	assert.Error(t, err, "translation file should not exist")
 }

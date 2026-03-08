@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/adrg/frontmatter"
 	"github.com/muonsoft/errors"
 	"github.com/spf13/afero"
 )
@@ -32,6 +34,15 @@ func (s *Store) Validate(ctx context.Context, basePath string) ([]ValidationErro
 	}
 	if !info.IsDir() {
 		return nil, errors.Errorf("validate base: %w", ErrInvalidPath)
+	}
+
+	allNodes, err := s.ListAllNodes(ctx, basePath)
+	if err != nil {
+		return nil, errors.Errorf("validate: list nodes: %w", err)
+	}
+	nodePaths := make(map[string]struct{})
+	for _, n := range allNodes {
+		nodePaths[n.Path] = struct{}{}
 	}
 
 	var violations []ValidationError
@@ -64,9 +75,15 @@ func (s *Store) Validate(ctx context.Context, basePath string) ([]ValidationErro
 		if !strings.HasSuffix(info.Name(), ".md") {
 			return nil
 		}
-		stemRel := strings.TrimSuffix(rel, ".md")
-		if err := s.validateNode(path, stemRel, &violations); err != nil {
-			return err
+		stemRel := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
+		if strings.HasSuffix(info.Name(), ".ru.md") {
+			if err := s.validateTranslationFile(basePath, path, stemRel, nodePaths, &violations); err != nil {
+				return err
+			}
+		} else {
+			if err := s.validateNode(path, stemRel, &violations); err != nil {
+				return err
+			}
 		}
 
 		return nil
@@ -202,6 +219,116 @@ func (s *Store) isNode(stemPath string) bool {
 	_, err := s.fs.Stat(stemPath + ".md")
 
 	return err == nil
+}
+
+func (s *Store) validateTranslationFile(basePath, filePath, stemRel string, nodePaths map[string]struct{}, violations *[]ValidationError) error {
+	data, err := afero.ReadFile(s.fs, filePath)
+	if err != nil {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "cannot read translation file: " + err.Error()})
+
+		return nil //nolint:nilerr
+	}
+	var matter map[string]any
+	rest, err := frontmatter.Parse(strings.NewReader(string(data)), &matter)
+	if err != nil {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "invalid frontmatter: " + err.Error()})
+
+		return nil //nolint:nilerr
+	}
+	content := string(rest)
+
+	translationOf, _ := matter["translation_of"].(string)
+	if translationOf == "" {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "translation file: translation_of required"})
+
+		return nil
+	}
+	lang, _ := matter["lang"].(string)
+	if lang == "" {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "translation file: lang required"})
+
+		return nil
+	}
+
+	// stemRel = "theme/slug.ru", extract themePath and baseSlug
+	lastSlash := strings.LastIndex(stemRel, "/")
+	var themePath, baseSlug string
+	if lastSlash >= 0 {
+		themePath = stemRel[:lastSlash]
+		baseSlug = stemRel[lastSlash+1 : len(stemRel)-3] // remove ".ru"
+	} else {
+		baseSlug = stemRel[:len(stemRel)-3]
+	}
+	if translationOf != baseSlug {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "translation_of must match base slug"})
+
+		return nil
+	}
+
+	originalPath := themePath
+	if themePath != "" {
+		originalPath += "/"
+	}
+	originalPath += baseSlug
+	if _, ok := nodePaths[originalPath]; !ok {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "original node " + originalPath + " not found"})
+
+		return nil
+	}
+
+	targets := ParseWikilinks(content)
+	for _, target := range targets {
+		if !s.wikilinkTargetExists(target, nodePaths) {
+			*violations = append(*violations, ValidationError{Path: stemRel, Message: "wikilink target " + target + " not found"})
+		}
+	}
+
+	// Check original has translations field
+	originalStem := filepath.Join(basePath, filepath.FromSlash(originalPath))
+	origMatter, _, _, parseErr := parseNodeFile(s.fs, originalStem)
+	if parseErr != nil {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "cannot read original: " + parseErr.Error()})
+
+		return nil //nolint:nilerr
+	}
+	translations := origMatter["translations"]
+	var hasTranslation bool
+	switch v := translations.(type) {
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s == baseSlug+".ru" {
+				hasTranslation = true
+
+				break
+			}
+		}
+	case []string:
+		if slices.Contains(v, baseSlug+".ru") {
+			hasTranslation = true
+		}
+	}
+	if !hasTranslation {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "original must have translations containing " + baseSlug + ".ru"})
+
+		return nil
+	}
+
+	return nil
+}
+
+func (s *Store) wikilinkTargetExists(target string, nodePaths map[string]struct{}) bool {
+	// Direct match
+	if _, ok := nodePaths[target]; ok {
+		return true
+	}
+	// Check themePath/target or any path ending with /target
+	for path := range nodePaths {
+		if path == target || strings.HasSuffix(path, "/"+target) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Store) validateNode(filePath, stemRel string, violations *[]ValidationError) error {

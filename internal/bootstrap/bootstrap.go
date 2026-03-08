@@ -15,6 +15,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
 	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
+	"github.com/strider2038/knowledge-db/internal/ingestion/translation"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/mcp"
 	"github.com/strider2038/knowledge-db/internal/telegram"
@@ -88,7 +89,9 @@ func buildIngester(cfg *config.Config) ingestion.Ingester {
 		committer = igit.NewExecGitCommitter(cfg.DataPath)
 	}
 
-	return ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath)
+	translator := translation.NewLLMTranslator(orchestrator)
+
+	return ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, translator)
 }
 
 func buildContentFetcher(cfg *config.Config) fetcher.ContentFetcher {
