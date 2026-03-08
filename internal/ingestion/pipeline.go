@@ -17,6 +17,13 @@ import (
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
+// TitleGenerator — интерфейс для генерации заголовка через LLM.
+// Используется как fallback, когда LLM-оркестратор вернул пустой title
+// и извлечь его из контента не получилось.
+type TitleGenerator interface {
+	GenerateTitle(ctx context.Context, content string) (string, error)
+}
+
 // PipelineIngester — полноценный ingestion pipeline с LLM-оркестратором.
 type PipelineIngester struct {
 	store          *kb.Store
@@ -26,6 +33,7 @@ type PipelineIngester struct {
 	basePath       string
 	autoTranslate  bool
 	translator     translation.Translator
+	titleGenerator TitleGenerator
 }
 
 // NewPipelineIngester создаёт PipelineIngester.
@@ -37,6 +45,7 @@ func NewPipelineIngester(
 	basePath string,
 	autoTranslate bool,
 	translator translation.Translator,
+	titleGenerator TitleGenerator,
 ) *PipelineIngester {
 	return &PipelineIngester{
 		store:          store,
@@ -46,6 +55,7 @@ func NewPipelineIngester(
 		basePath:       basePath,
 		autoTranslate:  autoTranslate,
 		translator:     translator,
+		titleGenerator: titleGenerator,
 	}
 }
 
@@ -160,6 +170,17 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 		"annotation": result.Annotation,
 	}
 	title := result.Title
+	if title == "" {
+		title = extractTitleFromContent(result.Content)
+	}
+	if title == "" && p.titleGenerator != nil {
+		generated, genErr := p.titleGenerator.GenerateTitle(ctx, result.Content)
+		if genErr != nil {
+			clog.Errorf(ctx, "saveNode: generate title: %w", genErr)
+		} else {
+			title = generated
+		}
+	}
 	if title == "" && result.Slug != "" {
 		title = slugToTitle(result.Slug)
 	}
@@ -317,8 +338,30 @@ func collectThemes(tree *kb.TreeNode) []string {
 	return themes
 }
 
+// extractTitleFromContent извлекает заголовок из первой непустой строки контента.
+// Обрабатывает markdown-заголовки (# Title). Возвращает пустую строку, если
+// подходящего заголовка нет (пустой контент, первая строка слишком длинная).
+func extractTitleFromContent(content string) string {
+	const maxTitleLen = 150
+	for line := range strings.SplitSeq(content, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimLeft(line, "#")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if len(line) <= maxTitleLen {
+			return line
+		}
+
+		return ""
+	}
+
+	return ""
+}
+
 // slugToTitle converts a slug (e.g. "professor-donald-knuth-clause-cycles") to Title Case.
-// Used as fallback when LLM returns empty title.
+// Used as last resort fallback when LLM returns empty title.
 func slugToTitle(slug string) string {
 	if slug == "" {
 		return ""

@@ -26,6 +26,16 @@ func (m *mockOrchestrator) Process(_ context.Context, _ llm.ProcessInput) (*llm.
 	return m.result, m.err
 }
 
+// mockTitleGenerator — мок TitleGenerator.
+type mockTitleGenerator struct {
+	title string
+	err   error
+}
+
+func (m *mockTitleGenerator) GenerateTitle(_ context.Context, _ string) (string, error) {
+	return m.title, m.err
+}
+
 // mockFetcher — мок ContentFetcher.
 type mockFetcher struct {
 	result *fetcher.FetchResult
@@ -66,7 +76,7 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 			Title:      "Goroutine Basics",
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about goroutines."})
 
@@ -84,14 +94,42 @@ func TestPipelineIngester_IngestText_WhenOrchestratorFails_ExpectError(t *testin
 	store := kb.NewStore(fs)
 
 	orc := &mockOrchestrator{err: ingestion.ErrNotImplemented}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, testBasePath, false, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, testBasePath, false, nil, nil)
 
 	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "text"})
 
 	require.Error(t, err)
 }
 
-func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromSlug(t *testing.T) {
+func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromContent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"микросервисы", "exactly-once"},
+			Annotation: "Заметка о exactly-once",
+			ThemePath:  "ai",
+			Slug:       "gde-mozhet-poteryatsya-exactly-once",
+			Type:       "note",
+			Content:    "Где может потеряться \"exactly-once\"\n\nПредставим классическую схему...",
+			Title:      "", // LLM не вернул title
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
+
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про exactly-once."})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Где может потеряться \"exactly-once\"", node.Metadata["title"])
+	assert.Equal(t, []string{"Где может потеряться \"exactly-once\""}, node.Metadata["aliases"])
+}
+
+func TestPipelineIngester_IngestText_WhenTitleAndContentEmpty_ExpectTitleFromSlug(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	fs := afero.NewMemMapFs()
@@ -106,17 +144,45 @@ func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromSlug(t *testi
 			ThemePath:  "ai",
 			Slug:       "professor-donald-knuth-clause-cycles",
 			Type:       "note",
-			Content:    "Content.",
+			Content:    "", // Пустой контент — нечего извлекать
 			Title:      "", // LLM не вернул title
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about Claude Cycles."})
 
 	require.NoError(t, err)
 	assert.Equal(t, "Professor Donald Knuth Clause Cycles", node.Metadata["title"])
 	assert.Equal(t, []string{"Professor Donald Knuth Clause Cycles"}, node.Metadata["aliases"])
+}
+
+func TestPipelineIngester_IngestText_WhenTitleEmptyAndContentEmpty_ExpectTitleFromGenerator(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"knuth", "claude"},
+			Annotation: "Профессор Кнут о цикле Клода",
+			ThemePath:  "ai",
+			Slug:       "professor-donald-knuth-clause-cycles",
+			Type:       "note",
+			Content:    "", // Пустой контент
+			Title:      "", // LLM не вернул title
+		},
+	}
+	gen := &mockTitleGenerator{title: "Профессор Кнут: цикл Клода"}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, gen)
+
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про Claude Cycles."})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Профессор Кнут: цикл Клода", node.Metadata["title"])
 }
 
 func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *testing.T) {
@@ -150,7 +216,7 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 			SourceDate:   &date,
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, nil, nil)
 
 	node, err := pipeline.IngestURL(ctx, "https://habr.com/article/123")
 
@@ -201,7 +267,7 @@ the translation heuristic. We need at least two hundred characters of text.`
 			return "Переведённый контент: " + content[:50] + "...", nil
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "English article content."})
 
@@ -251,7 +317,7 @@ func TestPipelineIngester_IngestText_WhenArticleAndRussian_ExpectNoTranslation(t
 			return "", nil
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator, nil)
 
 	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Russian content."})
 

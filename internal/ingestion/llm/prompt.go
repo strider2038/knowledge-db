@@ -113,7 +113,10 @@ func buildTools() []responses.ToolUnionParam {
 					"source_url":    map[string]any{"type": "string"},
 					"source_date":   map[string]any{"type": "string"},
 					"source_author": map[string]any{"type": "string"},
-					"title":         map[string]any{"type": "string"},
+					"title": map[string]any{
+						"type":        "string",
+						"description": "Читаемый заголовок узла. Обязателен. Никогда не оставляй пустым. Если заголовок отсутствует в источнике — сгенерируй осмысленный заголовок на основе содержимого.",
+					},
 				},
 				"required": []string{"keywords", "annotation", "theme_path", "slug", "type", "title"},
 			},

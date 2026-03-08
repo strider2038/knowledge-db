@@ -91,7 +91,7 @@ func buildIngester(cfg *config.Config) ingestion.Ingester {
 
 	translator := translation.NewLLMTranslator(orchestrator)
 
-	return ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, translator)
+	return ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, translator, orchestrator)
 }
 
 func buildContentFetcher(cfg *config.Config) fetcher.ContentFetcher {
