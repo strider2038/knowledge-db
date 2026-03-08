@@ -199,7 +199,20 @@ func NewSPAHandler() (http.Handler, error) {
 		// Файл существует — FileServer
 		trimmed := strings.TrimPrefix(path, "/")
 		if _, err := sub.Open(trimmed); err == nil {
+			// Хешированные assets — immutable, index.html — no-cache
+			if trimmed == "index.html" {
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			} else if strings.HasPrefix(trimmed, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
 			fileServer.ServeHTTP(w, r)
+
+			return
+		}
+
+		// /assets/* — статика; 404 вместо index.html (иначе MIME type error)
+		if strings.HasPrefix(trimmed, "assets/") {
+			http.NotFound(w, r)
 
 			return
 		}

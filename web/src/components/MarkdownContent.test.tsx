@@ -1,9 +1,29 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import type React from 'react'
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import { ThemeProvider } from '@/components/theme-provider'
 import { MarkdownContent } from './MarkdownContent'
+
+vi.mock('mermaid', () => ({
+  default: {
+    initialize: vi.fn(),
+    render: vi.fn().mockResolvedValue({
+      svg: '<svg data-testid="mermaid-svg">Mermaid Diagram</svg>',
+      bindFunctions: undefined,
+    }),
+  },
+}))
+
+function renderWithTheme(ui: React.ReactElement) {
+  return render(
+    <ThemeProvider defaultTheme="light" attribute="class">
+      {ui}
+    </ThemeProvider>
+  )
+}
 
 describe('MarkdownContent', () => {
   it('renders markdown headings, lists, and paragraphs', () => {
@@ -52,5 +72,22 @@ describe('MarkdownContent', () => {
     expect(link).toHaveAttribute('href', 'https://example.com')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('renders mermaid diagrams in code blocks', async () => {
+    renderWithTheme(
+      <MarkdownContent
+        content={
+          '```mermaid\ngraph TD\n  A-->B\n```'
+        }
+      />
+    )
+    const container = document.querySelector('[data-mermaid-diagram]')
+    expect(container).toBeInTheDocument()
+    await waitFor(() => {
+      const svg = screen.getByTestId('mermaid-svg')
+      expect(svg).toBeInTheDocument()
+      expect(container).toContainElement(svg)
+    })
   })
 })

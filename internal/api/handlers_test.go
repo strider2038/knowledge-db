@@ -371,3 +371,12 @@ func TestSPA_WhenAddRoute_ExpectIndexHTML(t *testing.T) {
 	resp.IsOK()
 	resp.HasContentType("text/html; charset=utf-8")
 }
+
+func TestSPA_WhenMissingAsset_Expect404(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandler(t)
+
+	resp := apitest.HandleGET(t, handler, "/assets/nonexistent-chunk-123.js")
+
+	resp.HasCode(http.StatusNotFound)
+}
