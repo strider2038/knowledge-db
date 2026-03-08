@@ -38,7 +38,7 @@ description: Структура backend knowledge-db (cmd/, internal/). Испо
 ## internal/ingestion
 
 - Интерфейс `Ingester`: `IngestText(text)`, `IngestURL(url)`
-- В scaffold — заглушка (not implemented или минимальный узел)
+- LLM-оркестратор в `internal/ingestion/llm` — использует **OpenAI Responses API** (не Chat Completions)
 
 ## internal/mcp
 

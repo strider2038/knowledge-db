@@ -1,0 +1,15 @@
+---
+description: Использовать OpenAI Responses API, не Chat Completions
+globs: internal/ingestion/**/*.go
+---
+
+# OpenAI: Responses API
+
+При интеграции с OpenAI используй **Responses API** (github.com/openai/openai-go, `client.Responses`), а не Chat Completions API.
+
+**Почему:**
+- Responses API — более новый подход (2025), Chat Completions — legacy
+- Проект уже использует Responses API в internal/ingestion/llm (orchestrator)
+- Единый протокол упрощает код и конфигурацию
+
+**Для простых single-turn запросов** (например, перевод текста) — используй Responses API без tools: Input (user message) + Instructions. Ответ извлекай из output items.
