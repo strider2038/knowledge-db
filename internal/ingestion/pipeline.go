@@ -148,7 +148,15 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 	}
 
 	if sourceURL != "" || sourceAuthor != "" {
-		text = fmt.Sprintf("Метаданные источника: ссылка: %s, автор: %s\n\n%s", sourceURL, sourceAuthor, text)
+		var sourcePrefix string
+		if strings.HasPrefix(sourceURL, "https://t.me/") {
+			// t.me — это канал доставки (Telegram), а не URL сохраняемого ресурса.
+			// Даём явный лейбл, чтобы LLM не использовал его как source_url при type: link/article.
+			sourcePrefix = fmt.Sprintf("Telegram-канал (откуда получен контент, НЕ является source_url ресурса): %s, автор: %s", sourceURL, sourceAuthor)
+		} else {
+			sourcePrefix = fmt.Sprintf("Метаданные источника: ссылка: %s, автор: %s", sourceURL, sourceAuthor)
+		}
+		text = sourcePrefix + "\n\n" + text
 	}
 
 	return llm.ProcessInput{
