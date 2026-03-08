@@ -231,21 +231,32 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 }
 
 func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *llm.ProcessResult, node *kb.Node) error {
+	log := clog.FromContext(ctx)
 	if !p.autoTranslate || p.translator == nil {
+		log.Debug("translation: skipped", "reason", "auto_translate_disabled_or_no_translator", "theme", result.ThemePath, "slug", result.Slug)
+
 		return nil
 	}
 	if result.Type != "article" {
+		log.Debug("translation: skipped", "reason", "type_not_article", "type", result.Type, "theme", result.ThemePath, "slug", result.Slug)
+
 		return nil
 	}
 	if !translation.NeedsTranslation(result.Content) {
+		log.Debug("translation: skipped", "reason", "content_already_russian", "theme", result.ThemePath, "slug", result.Slug)
+
 		return nil
 	}
 
+	log.Info("translation: start", "theme", result.ThemePath, "slug", result.Slug, "content_len", len(result.Content))
+	translateStart := time.Now()
 	translated, err := p.translator.Translate(ctx, result.Content)
 	if err != nil {
 		return errors.Errorf("translate: %w", err)
 	}
+	log.Info("translation: llm done", "theme", result.ThemePath, "slug", result.Slug, "duration_ms", time.Since(translateStart).Milliseconds(), "translated_len", len(translated))
 
+	saveStart := time.Now()
 	translationFrontmatter := map[string]any{
 		"translation_of": result.Slug,
 		"lang":           "ru",
@@ -292,7 +303,7 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 		clog.Errorf(ctx, "maybeTranslateAndSave: git commit original update failed: %w", err)
 	}
 
-	clog.FromContext(ctx).Info("translation: added", "theme", result.ThemePath, "slug", result.Slug, "translation_slug", result.Slug+".ru")
+	log.Info("translation: complete", "theme", result.ThemePath, "slug", result.Slug, "translation_slug", result.Slug+".ru", "save_duration_ms", time.Since(saveStart).Milliseconds())
 
 	return nil
 }
