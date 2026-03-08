@@ -185,6 +185,7 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 		title = slugToTitle(result.Slug)
 	}
 	if title != "" {
+		title = stripMarkdownFromTitle(title)
 		frontmatter["title"] = title
 		frontmatter["aliases"] = []string{title}
 	}
@@ -336,6 +337,29 @@ func collectThemes(tree *kb.TreeNode) []string {
 	walk(tree)
 
 	return themes
+}
+
+// stripMarkdownFromTitle убирает markdown-разметку (**bold**, __bold__, `code`) из заголовка.
+func stripMarkdownFromTitle(s string) string {
+	s = strings.TrimSpace(s)
+	for {
+		before := s
+		if strings.HasPrefix(s, "**") && strings.HasSuffix(s, "**") && len(s) > 4 {
+			s = strings.TrimPrefix(strings.TrimSuffix(s, "**"), "**")
+		}
+		if strings.HasPrefix(s, "__") && strings.HasSuffix(s, "__") && len(s) > 4 {
+			s = strings.TrimPrefix(strings.TrimSuffix(s, "__"), "__")
+		}
+		if strings.HasPrefix(s, "`") && strings.HasSuffix(s, "`") && len(s) > 2 {
+			s = strings.TrimPrefix(strings.TrimSuffix(s, "`"), "`")
+		}
+		s = strings.TrimSpace(s)
+		if s == before {
+			break
+		}
+	}
+
+	return s
 }
 
 // extractTitleFromContent извлекает заголовок из первой непустой строки контента.

@@ -101,6 +101,34 @@ func TestPipelineIngester_IngestText_WhenOrchestratorFails_ExpectError(t *testin
 	require.Error(t, err)
 }
 
+func TestPipelineIngester_IngestText_WhenTitleHasMarkdown_ExpectStripped(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"микросервисы", "exactly-once"},
+			Annotation: "Заметка о exactly-once",
+			ThemePath:  "microservices/messaging",
+			Slug:       "gde-mozhet-poteryatsya-exactly-once",
+			Type:       "note",
+			Content:    "Где может потеряться \"exactly-once\"\n\nПредставим классическую схему...",
+			Title:      "**Где может потеряться \"exactly-once\"**", // LLM вернул с markdown
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
+
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про exactly-once."})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Где может потеряться \"exactly-once\"", node.Metadata["title"])
+	assert.Equal(t, []string{"Где может потеряться \"exactly-once\""}, node.Metadata["aliases"])
+}
+
 func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromContent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
