@@ -101,6 +101,7 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 	// fetchCache хранит результаты fetch_url_content, чтобы избежать усечения контента LLM-ом.
 	fetchCache := make(map[string]*fetcher.FetchResult)
 
+	var totalTokens int64
 	const maxIterations = 10
 	for i := range maxIterations {
 		iterStart := time.Now()
@@ -119,24 +120,40 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 		if err != nil {
 			return nil, errors.Errorf("llm process: %w", err)
 		}
-		clog.FromContext(ctx).Info("ingest: llm response", "iteration", i+1, "output_items", len(resp.Output), "duration_ms", time.Since(iterStart).Milliseconds())
+		usage := resp.Usage
+		totalTokens += usage.TotalTokens
+		clog.FromContext(ctx).Info("ingest: llm response",
+			"iteration", i+1,
+			"output_items", len(resp.Output),
+			"duration_ms", time.Since(iterStart).Milliseconds(),
+			"input_tokens", usage.InputTokens,
+			"output_tokens", usage.OutputTokens,
+			"total_tokens", usage.TotalTokens)
 
 		result, nextInputItems, err := o.processResponse(ctx, resp, inputItems, fetchCache)
 		if err != nil {
+			clog.FromContext(ctx).Info("ingest: llm process failed", "total_tokens", totalTokens)
+
 			return nil, errors.Errorf("llm process: %w", err)
 		}
 
 		if result != nil {
+			clog.FromContext(ctx).Info("ingest: llm process complete", "total_tokens", totalTokens)
+
 			return result, nil
 		}
 
 		if len(nextInputItems) == 0 {
+			clog.FromContext(ctx).Info("ingest: llm process failed (no create_node, no tool calls)", "total_tokens", totalTokens)
+
 			return nil, errors.Errorf("llm process: no create_node call and no tool calls")
 		}
 		clog.FromContext(ctx).Info("ingest: llm tool calls executed, continuing", "iteration", i+1)
 
 		inputItems = nextInputItems
 	}
+
+	clog.FromContext(ctx).Info("ingest: llm process failed (max iterations)", "total_tokens", totalTokens)
 
 	return nil, errors.Errorf("llm process: max iterations exceeded")
 }
