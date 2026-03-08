@@ -54,7 +54,8 @@ description: Правила и лучшие практики для Go-кода 
 
 ## Логирование (muonsoft/clog)
 
-- Логгер из контекста: `clog.FromContext(ctx)`
+- Логгер из контекста: `clog.FromContext(ctx)` или сокращённо `clog.Info(ctx, msg, args...)`, `clog.Warn(ctx, ...)`
+- Не вызывать `FromContext` многократно — либо `logger := clog.FromContext(ctx)` и переиспользовать, либо `clog.Info(ctx, ...)`
 - Не создавать `slog.Logger` в бизнес-коде
 - Error-уровень: `clog.Errorf(ctx, "msg: %w", err)` — не `slog.String("error", ...)`
 

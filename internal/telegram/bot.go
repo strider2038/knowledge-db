@@ -20,7 +20,7 @@ import (
 
 const (
 	forwardBufferTTL    = 3 * time.Second
-	forwardFlushTimeout = 90 * time.Second
+	forwardFlushTimeout = 120 * time.Second
 	maxPendingPerChat   = 10
 )
 
@@ -534,7 +534,7 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 	}
 
 	if u.Message.From == nil || (b.ownerID != 0 && u.Message.From.ID != b.ownerID) {
-		clog.FromContext(ctx).Warn("telegram bot: unauthorized message ignored",
+		clog.Warn(ctx, "telegram bot: unauthorized message ignored",
 			"from_id", func() int64 {
 				if u.Message.From != nil {
 					return u.Message.From.ID
@@ -558,13 +558,13 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 		comment := extractTextWithFormatting(u.Message)
 		forwarded := extractTextWithFormatting(u.Message.ReplyToMessage)
 		if comment == "" && forwarded == "" {
-			clog.FromContext(ctx).Warn("telegram bot: empty reply message ignored")
+			clog.Warn(ctx, "telegram bot: empty reply message ignored")
 
 			return
 		}
 		text := combineForwardWithComment(comment, forwarded)
 		sourceURL, sourceAuthor := parseForwardOrigin(u.Message.ReplyToMessage.ForwardOrigin)
-		clog.FromContext(ctx).Info("telegram bot: merged forward+reply",
+		clog.Info(ctx, "telegram bot: merged forward+reply",
 			"chat_id", chatID, "message_id", u.Message.MessageID)
 		b.processIngest(ctx, text, chatID, sourceURL, sourceAuthor)
 
@@ -575,7 +575,7 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 	if len(u.Message.ForwardOrigin) > 0 {
 		forwarded := extractTextWithFormatting(u.Message)
 		if forwarded == "" {
-			clog.FromContext(ctx).Warn("telegram bot: empty forwarded message ignored")
+			clog.Warn(ctx, "telegram bot: empty forwarded message ignored")
 
 			return
 		}
@@ -583,7 +583,7 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 		// Если пользователь перед пересылкой написал комментарий — объединяем
 		if comment := b.buffer.takeComment(chatID); comment != "" {
 			text := combineForwardWithComment(comment, forwarded)
-			clog.FromContext(ctx).Info("telegram bot: merged comment+forward",
+			clog.Info(ctx, "telegram bot: merged comment+forward",
 				"chat_id", chatID, "message_id", u.Message.MessageID)
 			b.processIngest(ctx, text, chatID, sourceURL, sourceAuthor)
 
@@ -602,7 +602,7 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 	// Ветка 3: обычное сообщение — буферизуем, ждём возможную пересылку следом
 	text := extractTextWithFormatting(u.Message)
 	if text == "" {
-		clog.FromContext(ctx).Warn("telegram bot: empty message ignored")
+		clog.Warn(ctx, "telegram bot: empty message ignored")
 
 		return
 	}

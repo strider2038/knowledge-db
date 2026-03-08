@@ -58,7 +58,7 @@ clog.Errorf(ctx, "get node failed: %w", err)
 
 ```go
 // Неправильно — теряется стек, уровень занижен
-clog.FromContext(ctx).Warn("translation failed", "error", err)
+clog.Warn(ctx, "translation failed", "error", err)
 
 // Правильно — стек сохраняется через %w
 clog.Errorf(ctx, "ingest text: translation failed: %w", err)
@@ -66,10 +66,32 @@ clog.Errorf(ctx, "ingest text: translation failed: %w", err)
 
 Warn — для некритичных ситуаций (fallback, опциональный шаг). Error — когда сбой влияет на результат.
 
+## Использование логгера
+
+**Не вызывать** `clog.FromContext(ctx)` многократно в одной функции — только для однократного извлечения, если логгер переиспользуется:
+
+```go
+// Неправильно — многократный вызов FromContext
+clog.FromContext(ctx).Info("start", "x", 1)
+clog.FromContext(ctx).Info("done", "x", 2)
+
+// Правильно — сокращённый метод
+clog.Info(ctx, "start", "x", 1)
+clog.Info(ctx, "done", "x", 2)
+
+// Либо — однократное извлечение при частом переиспользовании
+logger := clog.FromContext(ctx)
+logger.Info("start", "x", 1)
+logger.Debug("step", "y", 2)
+logger.Info("done", "x", 2)
+```
+
+Сокращённые методы: `clog.Info(ctx, msg, args...)`, `clog.Warn(ctx, msg, args...)`, `clog.Debug(ctx, msg, args...)`.
+
 ## Правила
 
-1. Логгер только из контекста (`clog.FromContext`)
-2. Воркеры (Telegram bot и т.п.) — только `clog.FromContext(ctx)`, не `slog.*` напрямую
+1. Логгер только из контекста (`clog.FromContext` или `clog.Info(ctx, ...)` и т.п.)
+2. Воркеры (Telegram bot и т.п.) — только `clog.FromContext(ctx)` или `clog.*(ctx, ...)`, не `slog.*` напрямую
 3. Не логировать чувствительные данные (токены, пароли)
 4. Сообщения в нотации действия: `"get node"`, `"validate base"`
 5. Важные ошибки — `clog.Errorf` с `%w`, не `Warn` с атрибутом

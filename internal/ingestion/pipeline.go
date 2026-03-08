@@ -61,7 +61,7 @@ func NewPipelineIngester(
 
 // IngestText обрабатывает входной текст через LLM-оркестратор и сохраняет узел.
 func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*kb.Node, error) {
-	clog.FromContext(ctx).Info("ingest text: start", "text_len", len(req.Text))
+	clog.Info(ctx, "ingest text: start", "text_len", len(req.Text))
 
 	processInput, err := p.buildProcessInput(ctx, req.Text, req.SourceURL, req.SourceAuthor)
 	if err != nil {
@@ -69,12 +69,12 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	}
 
 	llmStart := time.Now()
-	clog.FromContext(ctx).Info("ingest: llm process")
+	clog.Info(ctx, "ingest: llm process")
 	result, err := p.orchestrator.Process(ctx, processInput)
 	if err != nil {
 		return nil, errors.Errorf("ingest text: orchestrate: %w", err)
 	}
-	clog.FromContext(ctx).Info("ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
+	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
 
 	node, err := p.saveNode(ctx, result)
 	if err != nil {
@@ -83,22 +83,22 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
 		clog.Errorf(ctx, "ingest text: translation failed: %w", err)
 	}
-	clog.FromContext(ctx).Info("ingest text: complete", "theme", result.ThemePath, "slug", result.Slug)
+	clog.Info(ctx, "ingest text: complete", "theme", result.ThemePath, "slug", result.Slug)
 
 	return node, nil
 }
 
 // IngestURL явно загружает контент по URL через ContentFetcher, затем обрабатывает через LLM.
 func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
-	clog.FromContext(ctx).Info("ingest url: start", "url", url)
+	clog.Info(ctx, "ingest url: start", "url", url)
 
 	fetchStart := time.Now()
 	fetchResult, err := p.contentFetcher.Fetch(ctx, url)
 	if err != nil {
-		clog.FromContext(ctx).Warn("ingest url: fetch failed, passing url as text", "url", url, "error", err)
+		clog.Warn(ctx, "ingest url: fetch failed, passing url as text", "url", url, "error", err)
 		fetchResult = nil
 	} else {
-		clog.FromContext(ctx).Info("ingest url: fetch complete", "url", url, "title", fetchResult.Title, "duration_ms", time.Since(fetchStart).Milliseconds())
+		clog.Info(ctx, "ingest url: fetch complete", "url", url, "title", fetchResult.Title, "duration_ms", time.Since(fetchStart).Milliseconds())
 	}
 
 	var text string
@@ -116,12 +116,12 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	}
 
 	llmStart := time.Now()
-	clog.FromContext(ctx).Info("ingest: llm process")
+	clog.Info(ctx, "ingest: llm process")
 	result, err := p.orchestrator.Process(ctx, processInput)
 	if err != nil {
 		return nil, errors.Errorf("ingest url: orchestrate: %w", err)
 	}
-	clog.FromContext(ctx).Info("ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
+	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
 
 	node, err := p.saveNode(ctx, result)
 	if err != nil {
@@ -130,7 +130,7 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
 		clog.Errorf(ctx, "ingest url: translation failed: %w", err)
 	}
-	clog.FromContext(ctx).Info("ingest url: complete", "url", url, "theme", result.ThemePath, "slug", result.Slug)
+	clog.Info(ctx, "ingest url: complete", "url", url, "theme", result.ThemePath, "slug", result.Slug)
 
 	return node, nil
 }
@@ -144,7 +144,7 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 	themes := collectThemes(tree)
 	keywords, err := p.collectKeywords(ctx)
 	if err != nil {
-		clog.FromContext(ctx).Warn("ingest: failed to collect keywords, proceeding without them", "error", err)
+		clog.Warn(ctx, "ingest: failed to collect keywords, proceeding without them", "error", err)
 	}
 
 	if sourceURL != "" || sourceAuthor != "" {
@@ -219,7 +219,7 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	if err != nil {
 		return nil, errors.Errorf("save node: %w", err)
 	}
-	clog.FromContext(ctx).Info("ingest: node created", "theme", result.ThemePath, "slug", result.Slug, "duration_ms", time.Since(saveStart).Milliseconds())
+	clog.Info(ctx, "ingest: node created", "theme", result.ThemePath, "slug", result.Slug, "duration_ms", time.Since(saveStart).Milliseconds())
 
 	commitMsg := fmt.Sprintf("add: %s/%s", result.ThemePath, result.Slug)
 	nodeMdPath := filepath.Join(p.basePath, filepath.FromSlash(result.ThemePath), result.Slug+".md")

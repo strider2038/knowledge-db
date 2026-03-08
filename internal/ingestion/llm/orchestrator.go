@@ -92,7 +92,7 @@ func newOpenAIOrchestratorWithClient(client responsesClient, model string, conte
 // Контент, полученный через fetch_url_content, кешируется в памяти и подставляется
 // в результат напрямую — LLM не воспроизводит его в create_node, чтобы избежать усечения.
 func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*ProcessResult, error) {
-	clog.FromContext(ctx).Info("ingest: llm process start", "text_len", len(input.Text), "themes", len(input.ExistingThemes), "keywords", len(input.ExistingKeywords))
+	clog.Info(ctx, "ingest: llm process start", "text_len", len(input.Text), "themes", len(input.ExistingThemes), "keywords", len(input.ExistingKeywords))
 
 	instructions := buildSystemPrompt(input.ExistingThemes, input.ExistingKeywords)
 	tools := buildTools()
@@ -108,7 +108,7 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 	const maxIterations = 10
 	for i := range maxIterations {
 		iterStart := time.Now()
-		clog.FromContext(ctx).Info("ingest: llm iteration", "iteration", i+1, "max", maxIterations)
+		clog.Info(ctx, "ingest: llm iteration", "iteration", i+1, "max", maxIterations)
 
 		params := responses.ResponseNewParams{
 			Model:        shared.ResponsesModel(o.model), //nolint:unconvert // required: type ResponsesModel string ≠ string
@@ -125,7 +125,7 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 		}
 		usage := resp.Usage
 		totalTokens += usage.TotalTokens
-		clog.FromContext(ctx).Info("ingest: llm response",
+		clog.Info(ctx, "ingest: llm response",
 			"iteration", i+1,
 			"output_items", len(resp.Output),
 			"duration_ms", time.Since(iterStart).Milliseconds(),
@@ -135,28 +135,28 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 
 		result, nextInputItems, err := o.processResponse(ctx, resp, inputItems, fetchCache)
 		if err != nil {
-			clog.FromContext(ctx).Info("ingest: llm process failed", "total_tokens", totalTokens)
+			clog.Info(ctx, "ingest: llm process failed", "total_tokens", totalTokens)
 
 			return nil, errors.Errorf("llm process: %w", err)
 		}
 
 		if result != nil {
-			clog.FromContext(ctx).Info("ingest: llm process complete", "total_tokens", totalTokens)
+			clog.Info(ctx, "ingest: llm process complete", "total_tokens", totalTokens)
 
 			return result, nil
 		}
 
 		if len(nextInputItems) == 0 {
-			clog.FromContext(ctx).Info("ingest: llm process failed (no create_node, no tool calls)", "total_tokens", totalTokens)
+			clog.Info(ctx, "ingest: llm process failed (no create_node, no tool calls)", "total_tokens", totalTokens)
 
 			return nil, errors.Errorf("llm process: no create_node call and no tool calls")
 		}
-		clog.FromContext(ctx).Info("ingest: llm tool calls executed, continuing", "iteration", i+1)
+		clog.Info(ctx, "ingest: llm tool calls executed, continuing", "iteration", i+1)
 
 		inputItems = nextInputItems
 	}
 
-	clog.FromContext(ctx).Info("ingest: llm process failed (max iterations)", "total_tokens", totalTokens)
+	clog.Info(ctx, "ingest: llm process failed (max iterations)", "total_tokens", totalTokens)
 
 	return nil, errors.Errorf("llm process: max iterations exceeded")
 }
@@ -182,13 +182,13 @@ func (o *OpenAIOrchestrator) processResponse(
 			if err != nil {
 				return nil, nil, errors.Errorf("parse create_node args: %w", err)
 			}
-			clog.FromContext(ctx).Info("ingest: llm create_node", "theme", result.ThemePath, "slug", result.Slug)
+			clog.Info(ctx, "ingest: llm create_node", "theme", result.ThemePath, "slug", result.Slug)
 
 			// Если есть кешированный контент для source_url — используем его напрямую,
 			// не полагаясь на то что LLM воспроизвёл контент без усечения.
 			if result.SourceURL != "" {
 				if cached, ok := fetchCache[result.SourceURL]; ok && cached.Content != "" {
-					clog.FromContext(ctx).Info("ingest: using cached fetch content", "url", result.SourceURL, "content_len", len(cached.Content))
+					clog.Info(ctx, "ingest: using cached fetch content", "url", result.SourceURL, "content_len", len(cached.Content))
 					result.Content = cached.Content
 					if result.Title == "" && cached.Title != "" {
 						result.Title = cached.Title
@@ -206,7 +206,7 @@ func (o *OpenAIOrchestrator) processResponse(
 
 		case "fetch_url_content":
 			url := extractURLFromArgs(item.Arguments)
-			clog.FromContext(ctx).Info("ingest: llm call fetch_url_content", "url", url)
+			clog.Info(ctx, "ingest: llm call fetch_url_content", "url", url)
 			functionCalls = append(functionCalls, responses.ResponseInputItemParamOfFunctionCall(item.Arguments, item.CallID, item.Name))
 			fetchStart := time.Now()
 			output, fetchResult := o.executeFetchURLContent(ctx, item.Arguments)
@@ -214,16 +214,16 @@ func (o *OpenAIOrchestrator) processResponse(
 				fetchCache[url] = fetchResult
 			}
 			toolOutputs = append(toolOutputs, responses.ResponseInputItemParamOfFunctionCallOutput(item.CallID, output))
-			clog.FromContext(ctx).Info("ingest: llm fetch_url_content done", "url", url, "duration_ms", time.Since(fetchStart).Milliseconds())
+			clog.Info(ctx, "ingest: llm fetch_url_content done", "url", url, "duration_ms", time.Since(fetchStart).Milliseconds())
 
 		case "fetch_url_meta":
 			url := extractURLFromArgs(item.Arguments)
-			clog.FromContext(ctx).Info("ingest: llm call fetch_url_meta", "url", url)
+			clog.Info(ctx, "ingest: llm call fetch_url_meta", "url", url)
 			functionCalls = append(functionCalls, responses.ResponseInputItemParamOfFunctionCall(item.Arguments, item.CallID, item.Name))
 			metaStart := time.Now()
 			output := executeFetchURLMeta(ctx, item.Arguments)
 			toolOutputs = append(toolOutputs, responses.ResponseInputItemParamOfFunctionCallOutput(item.CallID, output))
-			clog.FromContext(ctx).Info("ingest: llm fetch_url_meta done", "url", url, "duration_ms", time.Since(metaStart).Milliseconds())
+			clog.Info(ctx, "ingest: llm fetch_url_meta done", "url", url, "duration_ms", time.Since(metaStart).Milliseconds())
 		}
 	}
 
