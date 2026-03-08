@@ -4,13 +4,18 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/adrg/frontmatter"
 	"github.com/muonsoft/errors"
 	"github.com/spf13/afero"
 )
+
+// translationFilePattern — *.[a-z]{2}.md (переводы не включаются в список).
+var translationFilePattern = regexp.MustCompile(`\.[a-z]{2}\.md$`)
 
 // Store — хранилище базы знаний с абстракцией файловой системы.
 // Позволяет использовать in-memory fs в тестах (afero.MemMapFs).
@@ -191,6 +196,194 @@ func (s *Store) ListAllNodes(ctx context.Context, basePath string) ([]*TreeNode,
 	}
 
 	return nodes, nil
+}
+
+// ListNodesWithOptions возвращает список узлов с метаданными, фильтрацией, поиском, сортировкой и пагинацией.
+// Переводы (*.[a-z]{2}.md) не включаются в список.
+//
+//nolint:gocognit,gocyclo,maintidx // walk + filters + sort in one pass
+func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts ListNodesOptions) ([]*NodeListItem, int, error) {
+	basePath = filepath.Clean(basePath)
+	info, err := s.fs.Stat(basePath)
+	if err != nil {
+		return nil, 0, errors.Errorf("list nodes: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, 0, errors.Errorf("list nodes: %w", ErrInvalidPath)
+	}
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := max(opts.Offset, 0)
+	sortField := opts.Sort
+	if sortField == "" {
+		sortField = "title"
+	}
+	order := opts.Order
+	if order == "" {
+		order = "asc"
+	}
+
+	var items []*NodeListItem
+	err = afero.Walk(s.fs, basePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		name := info.Name()
+		if !strings.HasSuffix(name, ".md") || strings.HasPrefix(name, ".") {
+			return nil
+		}
+		if translationFilePattern.MatchString(name) {
+			return nil
+		}
+		rel, _ := filepath.Rel(basePath, path)
+		stemRel := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
+		if stemRel == "" {
+			return nil
+		}
+
+		if opts.Path != "" {
+			if stemRel != opts.Path && !strings.HasPrefix(stemRel, opts.Path+"/") {
+				return nil
+			}
+			if !opts.Recursive && stemRel != opts.Path {
+				rest := strings.TrimPrefix(stemRel, opts.Path+"/")
+				if strings.Contains(rest, "/") {
+					return nil
+				}
+			}
+		}
+
+		meta, annotation, _, err := parseNodeFile(s.fs, strings.TrimSuffix(path, ".md"))
+		if err != nil {
+			return nil //nolint:nilerr // skip unreadable nodes
+		}
+
+		nodeType := "note"
+		if t, ok := meta["type"].(string); ok && t != "" {
+			nodeType = t
+		}
+		if len(opts.Types) > 0 && !slices.Contains(opts.Types, nodeType) {
+			return nil
+		}
+
+		title := ""
+		if t, ok := meta["title"].(string); ok && t != "" {
+			title = t
+		}
+		if title == "" {
+			parts := strings.Split(stemRel, "/")
+			title = parts[len(parts)-1]
+		}
+
+		created := ""
+		if c, ok := meta["created"].(string); ok {
+			created = c
+		}
+
+		sourceURL := ""
+		if u, ok := meta["source_url"].(string); ok {
+			sourceURL = u
+		}
+
+		var translations []string
+		switch v := meta["translations"].(type) {
+		case []any:
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					translations = append(translations, str)
+				}
+			}
+		case []string:
+			translations = append(translations, v...)
+		}
+
+		var keywords []string
+		switch k := meta["keywords"].(type) {
+		case []any:
+			for _, item := range k {
+				if str, ok := item.(string); ok {
+					keywords = append(keywords, str)
+				}
+			}
+		case []string:
+			keywords = append(keywords, k...)
+		}
+
+		if opts.Q != "" {
+			q := strings.ToLower(opts.Q)
+			searchable := strings.ToLower(title) + " " + strings.ToLower(annotation)
+			if kw, ok := meta["keywords"]; ok {
+				switch k := kw.(type) {
+				case []any:
+					var searchableSb316 strings.Builder
+					for _, item := range k {
+						if str, ok := item.(string); ok {
+							searchableSb316.WriteString(" " + strings.ToLower(str))
+						}
+					}
+					searchable += searchableSb316.String()
+				case []string:
+					searchable += " " + strings.ToLower(strings.Join(k, " "))
+				}
+			}
+			if !strings.Contains(searchable, q) {
+				return nil
+			}
+		}
+
+		items = append(items, &NodeListItem{
+			Path:         stemRel,
+			Title:        title,
+			Type:         nodeType,
+			Created:      created,
+			SourceURL:    sourceURL,
+			Translations: translations,
+			Annotation:   annotation,
+			Keywords:     keywords,
+		})
+
+		return nil
+	})
+	if err != nil {
+		return nil, 0, errors.Errorf("list nodes: %w", err)
+	}
+
+	total := len(items)
+
+	sort.Slice(items, func(i, j int) bool {
+		var less bool
+		switch sortField {
+		case "title":
+			less = items[i].Title < items[j].Title
+		case "type":
+			less = items[i].Type < items[j].Type
+		case "source_url":
+			less = items[i].SourceURL < items[j].SourceURL
+		default:
+			less = items[i].Created < items[j].Created
+		}
+		if order == "desc" {
+			return !less
+		}
+
+		return less
+	})
+
+	if offset >= len(items) {
+		return []*NodeListItem{}, total, nil
+	}
+	end := min(offset+limit, len(items))
+
+	return items[offset:end], total, nil
 }
 
 // GetNode читает узел по пути стема (relative path от корня базы, без расширения .md).

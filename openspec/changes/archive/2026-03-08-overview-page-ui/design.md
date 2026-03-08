@@ -81,7 +81,7 @@ Proposal требует: рекурсивный список поддерева,
 
 ### 6. Состояние в URL
 
-**Решение:** Query-параметры: `?path=programming&type=article,link&q=go&sort=created&order=desc&page=2`. `page` маппится на offset (page*limit). При загрузке страницы — чтение из `useSearchParams`, при изменении фильтров — `navigate` с обновлённым URL.
+**Решение:** Query-параметры: `?path=programming&type=article,link&q=go&sort=title&order=asc&page=2`. `page` маппится на offset (page*limit). При загрузке страницы — чтение из `useSearchParams`, при изменении фильтров — `navigate` с обновлённым URL.
 
 **Альтернатива:** localStorage — не shareable, хуже для закладок.
 
@@ -93,7 +93,7 @@ Proposal требует: рекурсивный список поддерева,
 
 ### 8. Сортировка
 
-**Решение:** Сортировка на бэкенде. Параметры `sort` (title, type, created, source_url) и `order` (asc, desc). Default: `sort=created`, `order=desc`.
+**Решение:** Сортировка на бэкенде. Параметры `sort` (title, type, created, source_url) и `order` (asc, desc). Default: `sort=title`, `order=asc`.
 
 **Альтернатива:** Сортировка на фронте — при пагинации не работает (данные неполные).
 

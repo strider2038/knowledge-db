@@ -1,7 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import { Navbar } from './components/Navbar'
 import { AddPage } from './pages/AddPage'
-import { SearchPage } from './pages/SearchPage'
+import { OverviewPage } from './pages/OverviewPage'
 import { NodePage } from './pages/NodePage'
 
 function App() {
@@ -10,7 +10,7 @@ function App() {
       <Navbar />
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<SearchPage />} />
+          <Route path="/" element={<OverviewPage />} />
           <Route path="/add" element={<AddPage />} />
           <Route path="/node/*" element={<NodePage />} />
         </Routes>

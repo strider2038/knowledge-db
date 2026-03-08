@@ -13,7 +13,7 @@ export function Navbar() {
             : 'text-muted-foreground hover:text-foreground'
         }
       >
-        Поиск
+        Обзор
       </Link>
       <Link
         to="/add"

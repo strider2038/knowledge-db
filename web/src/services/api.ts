@@ -13,6 +13,28 @@ export interface Node {
   metadata: Record<string, unknown>;
 }
 
+export interface NodeListItem {
+  path: string;
+  title: string;
+  type: string;
+  created: string;
+  source_url: string;
+  translations?: string[];
+  annotation?: string;
+  keywords?: string[];
+}
+
+export interface GetNodesParams {
+  path?: string;
+  recursive?: boolean;
+  q?: string;
+  type?: string;
+  limit?: number;
+  offset?: number;
+  sort?: string;
+  order?: string;
+}
+
 export async function getTree(): Promise<TreeNode> {
   const res = await fetch(`${API_URL}/api/tree`);
   if (!res.ok) throw new Error('Failed to load tree');
@@ -24,6 +46,24 @@ export async function getNodes(path: string): Promise<TreeNode[]> {
   if (!res.ok) throw new Error('Failed to load nodes');
   const data = await res.json();
   return data.nodes || [];
+}
+
+export async function getNodesWithParams(
+  params: GetNodesParams
+): Promise<{ nodes: NodeListItem[]; total: number }> {
+  const searchParams = new URLSearchParams();
+  if (params.path !== undefined && params.path !== '') searchParams.set('path', params.path);
+  searchParams.set('recursive', 'true');
+  if (params.q) searchParams.set('q', params.q);
+  if (params.type) searchParams.set('type', params.type);
+  if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+  if (params.offset !== undefined) searchParams.set('offset', String(params.offset));
+  if (params.sort) searchParams.set('sort', params.sort);
+  if (params.order) searchParams.set('order', params.order);
+  const res = await fetch(`${API_URL}/api/nodes?${searchParams.toString()}`);
+  if (!res.ok) throw new Error('Failed to load nodes');
+  const data = await res.json();
+  return { nodes: data.nodes || [], total: data.total ?? 0 };
 }
 
 export async function getNode(path: string): Promise<Node> {

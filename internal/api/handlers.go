@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/muonsoft/errors"
@@ -58,9 +59,63 @@ func (h *Handler) GetTree(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListNodes обрабатывает GET /api/nodes (список узлов по path query).
+// При recursive=true возвращает {nodes: NodeListItem[], total: number}.
+// При recursive=false — обратная совместимость: {nodes: TreeNode[]}.
 func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Query().Get("path")
-	nodes, err := kb.ListNodes(r.Context(), h.dataPath, path)
+	q := r.URL.Query()
+	path := q.Get("path")
+	recursive, _ := strconv.ParseBool(q.Get("recursive"))
+
+	if !recursive {
+		nodes, err := kb.ListNodes(r.Context(), h.dataPath, path)
+		if err != nil {
+			if errors.Is(err, kb.ErrNodeNotFound) {
+				writeError(w, http.StatusNotFound, "path not found")
+
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+
+			return
+		}
+		writeJSON(w, map[string]any{"nodes": nodes})
+
+		return
+	}
+
+	opts := kb.ListNodesOptions{
+		Path:      path,
+		Recursive: true,
+		Q:         q.Get("q"),
+		Sort:      q.Get("sort"),
+		Order:     q.Get("order"),
+	}
+	if opts.Sort == "" {
+		opts.Sort = "title"
+	}
+	if opts.Order == "" {
+		opts.Order = "asc"
+	}
+	if limit, err := strconv.Atoi(q.Get("limit")); err == nil && limit > 0 {
+		opts.Limit = limit
+	} else {
+		opts.Limit = 50
+	}
+	if opts.Limit > 200 {
+		opts.Limit = 200
+	}
+	if offset, err := strconv.Atoi(q.Get("offset")); err == nil && offset >= 0 {
+		opts.Offset = offset
+	}
+	if typeParam := q.Get("type"); typeParam != "" {
+		for t := range strings.SplitSeq(typeParam, ",") {
+			if s := strings.TrimSpace(t); s != "" {
+				opts.Types = append(opts.Types, s)
+			}
+		}
+	}
+
+	nodes, total, err := kb.ListNodesWithOptions(r.Context(), h.dataPath, opts)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
 			writeError(w, http.StatusNotFound, "path not found")
@@ -71,7 +126,7 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	writeJSON(w, map[string]any{"nodes": nodes})
+	writeJSON(w, map[string]any{"nodes": nodes, "total": total})
 }
 
 // Search обрабатывает GET /api/search?q=... (заглушка).

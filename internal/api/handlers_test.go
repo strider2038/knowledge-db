@@ -111,6 +111,144 @@ func TestListNodes_WhenValidPath_ExpectOK(t *testing.T) {
 	})
 }
 
+func setupTestHandlerForRecursive(t *testing.T) http.Handler {
+	t.Helper()
+	tmp := t.TempDir()
+	for path, content := range map[string]string{
+		"programming/node1.md": `---
+keywords: [go, golang]
+type: article
+title: Go Basics
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Article about Go"
+source_url: "https://example.com/go"
+---
+
+Content`,
+		"programming/scaling/node2.md": `---
+keywords: [load, balancing]
+type: link
+title: Load Balancing
+created: "2024-01-02T00:00:00Z"
+updated: "2024-01-02T00:00:00Z"
+annotation: "Link about load balancing"
+source_url: "https://example.com/lb"
+---
+
+Content`,
+		"programming/scaling/node3.md": `---
+keywords: [kubernetes]
+type: note
+title: K8s Notes
+created: "2024-01-03T00:00:00Z"
+updated: "2024-01-03T00:00:00Z"
+annotation: "Personal notes"
+---
+
+Content`,
+		"ai/node4.md": `---
+keywords: [ml, ai]
+type: article
+title: AI Overview
+created: "2024-01-04T00:00:00Z"
+updated: "2024-01-04T00:00:00Z"
+annotation: "Machine learning intro"
+---
+
+Content`,
+	} {
+		fullPath := filepath.Join(tmp, path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+		require.NoError(t, os.WriteFile(fullPath, []byte(content), 0o644))
+	}
+	h := api.NewHandler(tmp, &ingestion.StubIngester{})
+	mux, err := api.NewMux(h)
+	require.NoError(t, err)
+
+	return mux
+}
+
+func TestListNodes_WhenRecursiveTrue_ExpectNodesFromSubtree(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=programming&recursive=true")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("nodes").IsArray().WithLength(3)
+		json.Node("total").IsInteger().EqualTo(3)
+	})
+}
+
+func TestListNodes_WhenQueryQ_ExpectFilteredBySearch(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&q=go")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("nodes").IsArray().WithLength(1)
+		json.Node("total").IsInteger().EqualTo(1)
+		json.Node("nodes", 0, "title").IsString().EqualTo("Go Basics")
+	})
+}
+
+func TestListNodes_WhenTypeFilter_ExpectFilteredByType(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&type=article,link")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("nodes").IsArray().WithLength(3)
+		json.Node("total").IsInteger().EqualTo(3)
+	})
+}
+
+func TestListNodes_WhenLimitOffset_ExpectPaginated(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&limit=2&offset=1")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("nodes").IsArray().WithLength(2)
+		json.Node("total").IsInteger().EqualTo(4)
+	})
+}
+
+func TestListNodes_WhenSortOrder_ExpectSorted(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&sort=title&order=asc")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("nodes").IsArray().WithLength(4)
+		json.Node("nodes", 0, "title").IsString().EqualTo("AI Overview")
+	})
+}
+
+func TestListNodes_WhenRecursiveFalse_ExpectBackwardCompatible(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=programming")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("nodes").IsArray().WithLength(1)
+		json.Node("total").DoesNotExist()
+		json.Node("nodes", 0, "name").IsString().EqualTo("node1")
+	})
+}
+
 func TestSearch_WhenQuery_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandler(t)
