@@ -16,6 +16,7 @@ import (
 
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/kb"
+	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 )
 
 const (
@@ -501,6 +502,11 @@ func (fb *forwardBuffer) removeLocked(key bufferKey) {
 }
 
 func (b *Bot) processIngest(ctx context.Context, text string, chatID int64, sourceURL, sourceAuthor string) {
+	if sourceURL != "" {
+		if normalized, err := urlutil.NormalizeURL(ctx, sourceURL); err == nil {
+			sourceURL = normalized
+		}
+	}
 	if chatID != 0 {
 		_ = b.sendMessage(ctx, chatID, "Принял, обрабатываю...")
 	}

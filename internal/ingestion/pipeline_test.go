@@ -2,6 +2,8 @@ package ingestion_test
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -221,6 +223,13 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 	_ = fs.MkdirAll(base, 0o755)
 	store := kb.NewStore(fs)
 
+	// Local server for NormalizeURL HEAD — no redirects
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	articleURL := srv.URL + "/article/123"
+
 	date := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	f := &mockFetcher{
 		result: &fetcher.FetchResult{
@@ -239,19 +248,19 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 			Type:         "article",
 			Content:      "# Goroutine Leaks\n\nContent.",
 			Title:        "Goroutine Leaks",
-			SourceURL:    "https://habr.com/article/123",
+			SourceURL:    articleURL,
 			SourceAuthor: "Иван Петров",
 			SourceDate:   &date,
 		},
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, nil, nil)
 
-	node, err := pipeline.IngestURL(ctx, "https://habr.com/article/123")
+	node, err := pipeline.IngestURL(ctx, articleURL)
 
 	require.NoError(t, err)
 	assert.Equal(t, "go/concurrency/goroutine-leak", node.Path)
 	assert.Equal(t, "article", node.Metadata["type"])
-	assert.Equal(t, "https://habr.com/article/123", node.Metadata["source_url"])
+	assert.Equal(t, articleURL, node.Metadata["source_url"])
 	assert.Equal(t, "Иван Петров", node.Metadata["source_author"])
 }
 

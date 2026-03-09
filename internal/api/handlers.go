@@ -12,6 +12,7 @@ import (
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/kb"
+	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 	"github.com/strider2038/knowledge-db/internal/ui"
 )
 
@@ -176,9 +177,15 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	sourceURL := req.SourceURL
+	if sourceURL != "" {
+		if normalized, err := urlutil.NormalizeURL(r.Context(), sourceURL); err == nil {
+			sourceURL = normalized
+		}
+	}
 	node, err := h.ingester.IngestText(r.Context(), ingestion.IngestRequest{
 		Text:         req.Text,
-		SourceURL:    req.SourceURL,
+		SourceURL:    sourceURL,
 		SourceAuthor: req.SourceAuthor,
 	})
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translation"
 	"github.com/strider2038/knowledge-db/internal/kb"
+	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 )
 
 // TitleGenerator — интерфейс для генерации заголовка через LLM.
@@ -90,6 +91,11 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 
 // IngestURL явно загружает контент по URL через ContentFetcher, затем обрабатывает через LLM.
 func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
+	if url != "" {
+		if normalized, err := urlutil.NormalizeURL(ctx, url); err == nil {
+			url = normalized
+		}
+	}
 	clog.Info(ctx, "ingest url: start", "url", url)
 
 	fetchStart := time.Now()
@@ -201,7 +207,11 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 		frontmatter["type"] = result.Type
 	}
 	if result.SourceURL != "" {
-		frontmatter["source_url"] = result.SourceURL
+		sourceURL := result.SourceURL
+		if normalized, err := urlutil.NormalizeURL(ctx, sourceURL); err == nil {
+			sourceURL = normalized
+		}
+		frontmatter["source_url"] = sourceURL
 	}
 	if result.SourceDate != nil {
 		frontmatter["source_date"] = result.SourceDate.Format("2006-01-02")
@@ -273,7 +283,15 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 		translationFrontmatter["aliases"] = aliases
 	}
 	if result.SourceURL != "" {
-		translationFrontmatter["source_url"] = result.SourceURL
+		if u, ok := node.Metadata["source_url"].(string); ok && u != "" {
+			translationFrontmatter["source_url"] = u
+		} else {
+			sourceURL := result.SourceURL
+			if normalized, err := urlutil.NormalizeURL(ctx, sourceURL); err == nil {
+				sourceURL = normalized
+			}
+			translationFrontmatter["source_url"] = sourceURL
+		}
 	}
 	if result.SourceDate != nil {
 		translationFrontmatter["source_date"] = result.SourceDate.Format("2006-01-02")
