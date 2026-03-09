@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
-  <style>svg{color:#4f46e5}</style>
-  <!-- Open book: minimal, symmetric pages -->
-  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-    d="M32 12 L32 52
-       M12 20 C12 20 32 28 52 20 L52 44 C52 44 32 52 12 44 Z
-       M12 20 L12 44
-       M52 20 L52 44"/>
-</svg>

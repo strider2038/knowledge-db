@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
-  <style>svg{color:#4f46e5}</style>
-  <!-- Open book: curved pages, more organic -->
-  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-    d="M32 14 L32 50
-       M32 14 Q14 20 14 32 Q14 44 32 50
-       M32 14 Q50 20 50 32 Q50 44 32 50"/>
-</svg>
