@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#2563eb}</style>
+  <!-- Database: cylinder with stack lines (background) -->
+  <g fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.65">
+    <ellipse cx="32" cy="50" rx="20" ry="5"/>
+    <path d="M12 22 v28 M52 22 v28"/>
+    <ellipse cx="32" cy="22" rx="20" ry="5"/>
+    <ellipse cx="32" cy="32" rx="16" ry="4"/>
+    <ellipse cx="32" cy="40" rx="16" ry="4"/>
+  </g>
+  <!-- Brain: symmetric two-lobe outline -->
+  <path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+    d="M32 8 
+       C20 8 12 18 12 28 
+       C12 34 16 38 20 40 
+       C16 42 12 48 12 54 
+       C12 58 20 58 32 58 
+       C44 58 52 58 52 54 
+       C52 48 48 42 44 40 
+       C48 38 52 34 52 28 
+       C52 18 44 8 32 8 Z"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.2" d="M32 14 v40"/>
+</svg>
