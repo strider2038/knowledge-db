@@ -51,7 +51,11 @@ const markdownContentClass = cn(
   'prose-p:my-4 prose-p:leading-7',
   'prose-ul:my-4 prose-ol:my-4 prose-li:my-1',
   'prose-blockquote:my-4 prose-blockquote:border-l-4 prose-blockquote:border-primary prose-blockquote:pl-4 prose-blockquote:italic',
-  '[&_pre]:my-4'
+  '[&_pre]:my-4',
+  // Inline formula images (inside paragraphs with text) — как на Хабре
+  '[&_p_img]:inline [&_p_img]:align-middle [&_p_img]:my-0',
+  // Standalone images (paragraph with only img) — оставляем block
+  '[&_p:has(>img:only-child)_img]:block [&_p:has(>img:only-child)_img]:my-4'
 )
 
 export function NodePage() {
