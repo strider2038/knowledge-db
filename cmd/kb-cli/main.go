@@ -13,6 +13,7 @@ func main() {
 	}
 	root.AddCommand(validateCmd())
 	root.AddCommand(initCmd())
+	root.AddCommand(dumpImagesCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}

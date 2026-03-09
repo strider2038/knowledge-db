@@ -1,4 +1,10 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
+/** URL для статики базы (изображения, вложения узлов). */
+export function getAssetUrl(path: string): string {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  return `${API_URL}/api/assets/${encoded}`;
+}
 
 export interface TreeNode {
   name: string;

@@ -380,3 +380,20 @@ func TestSPA_WhenMissingAsset_Expect404(t *testing.T) {
 
 	resp.HasCode(http.StatusNotFound)
 }
+
+func TestGetAsset_WhenValidPath_ExpectOK(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	assetDir := filepath.Join(tmp, "topic", "node1", "images")
+	_ = os.MkdirAll(assetDir, 0o755)
+	pngBytes := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	_ = os.WriteFile(filepath.Join(assetDir, "test.png"), pngBytes, 0o644)
+	h := api.NewHandler(tmp, &ingestion.StubIngester{})
+	mux, err := api.NewMux(h)
+	require.NoError(t, err)
+
+	resp := apitest.HandleGET(t, mux, "/api/assets/topic/node1/images/test.png")
+
+	resp.IsOK()
+	resp.HasContentType("image/png")
+}

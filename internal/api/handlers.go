@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -127,6 +128,24 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"nodes": nodes, "total": total})
+}
+
+// GetAsset обрабатывает GET /api/assets/{path...} — раздаёт файлы из базы (изображения, вложения).
+func (h *Handler) GetAsset(w http.ResponseWriter, r *http.Request) {
+	path := r.PathValue("path")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	clean := filepath.Clean(filepath.FromSlash(path))
+	fullPath := filepath.Join(h.dataPath, clean)
+	if rel, err := filepath.Rel(h.dataPath, fullPath); err != nil || strings.HasPrefix(rel, "..") {
+		writeError(w, http.StatusBadRequest, "invalid path")
+
+		return
+	}
+	http.ServeFile(w, r, fullPath)
 }
 
 // Search обрабатывает GET /api/search?q=... (заглушка).

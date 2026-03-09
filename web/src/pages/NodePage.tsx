@@ -252,7 +252,7 @@ export function NodePage() {
           <CardTitle>Аннотация</CardTitle>
         </CardHeader>
         <CardContent className={markdownContentClass}>
-          <MarkdownContent content={node.annotation || '(нет)'} />
+          <MarkdownContent content={node.annotation || '(нет)'} nodePath={node.path} />
         </CardContent>
       </Card>
       {nodeType !== 'link' && (
@@ -261,7 +261,7 @@ export function NodePage() {
             <CardTitle>Содержание</CardTitle>
           </CardHeader>
           <CardContent className={markdownContentClass}>
-            <MarkdownContent content={node.content || '(нет)'} />
+            <MarkdownContent content={node.content || '(нет)'} nodePath={node.path} />
           </CardContent>
         </Card>
       )}

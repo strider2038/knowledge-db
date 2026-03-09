@@ -5,10 +5,13 @@ import rehypeHighlight from 'rehype-highlight'
 import rehypeSlug from 'rehype-slug'
 import { MermaidDiagram } from '@/components/MermaidDiagram'
 import { CodeBlock } from '@/components/CodeBlock'
+import { getAssetUrl } from '@/services/api'
 import '@/lib/highlight'
 
 interface MarkdownContentProps {
   content: string
+  /** Путь узла (theme/slug) для разрешения относительных путей изображений. */
+  nodePath?: string
 }
 
 function isMermaidCodeBlock(
@@ -26,12 +29,26 @@ function isMermaidCodeBlock(
   return { code: codeStr }
 }
 
-export function MarkdownContent({ content }: MarkdownContentProps) {
+function resolveImageSrc(src: string | undefined, nodePath: string | undefined): string | undefined {
+  if (!src || !nodePath) return src
+  if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('/')) return src
+  const imagesIdx = src.indexOf('images/')
+  const assetPath =
+    imagesIdx >= 0
+      ? `${nodePath}/images/${src.slice(imagesIdx + 7)}`
+      : `${nodePath}/${src.replace(/^\.\//, '')}`
+  return getAssetUrl(assetPath)
+}
+
+export function MarkdownContent({ content, nodePath }: MarkdownContentProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeSlug, rehypeHighlight]}
       components={{
+        img: ({ src, alt, ...props }) => (
+          <img {...props} src={resolveImageSrc(src, nodePath)} alt={alt ?? ''} />
+        ),
         a: ({ href, children, ...props }) => (
           <a
             {...props}
