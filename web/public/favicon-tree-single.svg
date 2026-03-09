@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#0d9488}</style>
+  <!-- Single tree: one trunk, symmetric Y-branches, very simple -->
+  <path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
+    d="M32 56 L32 28
+       M32 28 L18 10 M32 28 L46 10"/>
+</svg>

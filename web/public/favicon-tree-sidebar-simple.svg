@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#059669}</style>
+  <!-- Simple sidebar: root + 2 children, one with nested -->
+  <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 14 v14 M14 28 h10 v-8 M24 20 v12 M14 28 v20 M14 48 h8"/>
+  </g>
+  <circle cx="14" cy="14" r="4" fill="currentColor"/>
+  <circle cx="14" cy="28" r="3" fill="currentColor"/>
+  <circle cx="24" cy="20" r="2.5" fill="currentColor"/>
+  <circle cx="24" cy="32" r="2.5" fill="currentColor"/>
+  <circle cx="14" cy="48" r="3" fill="currentColor"/>
+  <circle cx="22" cy="48" r="2.5" fill="currentColor"/>
+</svg>

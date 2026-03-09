@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#1e3a5f}</style>
+  <!-- Abstract tree: triangular shape, branching upward -->
+  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    d="M32 56 L32 20
+       M32 20 L16 8 M32 20 L48 8
+       M16 8 L8 24 M16 8 L24 24
+       M48 8 L40 24 M48 8 L56 24"/>
+  <circle cx="32" cy="20" r="2.5" fill="currentColor"/>
+</svg>

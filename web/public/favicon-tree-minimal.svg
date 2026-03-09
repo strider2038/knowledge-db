@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#0d9488}</style>
+  <!-- Minimal tree: trunk + 3 levels of branches -->
+  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    d="M32 56 L32 36
+       M32 36 L20 24 M32 36 L44 24
+       M20 24 L14 14 M20 24 L26 14
+       M44 24 L38 14 M44 24 L50 14"/>
+</svg>

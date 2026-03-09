@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#334155}</style>
+  <!-- Single book: closed, spine on left -->
+  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+    d="M18 14 L18 50 L42 46 L42 18 Z
+       M18 32 L42 32"/>
+</svg>

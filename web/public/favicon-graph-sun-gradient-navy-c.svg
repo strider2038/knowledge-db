@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <defs>
+    <radialGradient id="sunGradNavyC" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="50%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </radialGradient>
+  </defs>
+  <style>svg{color:#1e3a5f}</style>
+  <circle cx="32" cy="32" r="32" fill="url(#sunGradNavyC)"/>
+  <!-- Variant C: center 31,33; top 28,10; tr 54,30; rb 50,46; bot 30,54; bl 10,44; tl 10,24 -->
+  <g fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M31 33 L28 10 M31 33 L54 30 M31 33 L10 44 M31 33 L10 24"/>
+    <path d="M28 10 L54 30 M50 46 L30 54 M30 54 L10 44"/>
+  </g>
+  <circle cx="31" cy="33" r="5" fill="currentColor"/>
+  <circle cx="28" cy="10" r="4" fill="currentColor"/>
+  <circle cx="54" cy="30" r="4" fill="currentColor"/>
+  <circle cx="50" cy="46" r="4" fill="currentColor"/>
+  <circle cx="30" cy="54" r="4" fill="currentColor"/>
+  <circle cx="10" cy="44" r="4" fill="currentColor"/>
+  <circle cx="10" cy="24" r="4" fill="currentColor"/>
+</svg>

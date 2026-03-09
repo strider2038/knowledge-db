@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#4f46e5}</style>
+  <!-- Stacked books: 3 books, slightly offset -->
+  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+    d="M14 44 L14 20 L50 20 L50 44 L14 44
+       M14 36 L50 36"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+    d="M18 48 L18 28 L54 28 L54 48 L18 48
+       M18 40 L54 40"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+    d="M22 52 L22 36 L58 36 L58 52 L22 52
+       M22 46 L58 46"/>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#059669}</style>
+  <!-- Wider spread: more horizontal space -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 14 v12 M12 26 h14 v-6 M26 20 v16 M12 26 v14 M12 40 h14 v-6 M26 34 v12 M12 40 v8 M12 48 h16"/>
+  </g>
+  <circle cx="12" cy="14" r="3" fill="currentColor"/>
+  <circle cx="12" cy="26" r="2.5" fill="currentColor"/>
+  <circle cx="26" cy="20" r="2" fill="currentColor"/>
+  <circle cx="26" cy="36" r="2" fill="currentColor"/>
+  <circle cx="12" cy="40" r="2.5" fill="currentColor"/>
+  <circle cx="26" cy="34" r="2" fill="currentColor"/>
+  <circle cx="26" cy="46" r="2" fill="currentColor"/>
+  <circle cx="12" cy="48" r="2.5" fill="currentColor"/>
+  <circle cx="28" cy="48" r="2" fill="currentColor"/>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <style>svg{color:#334155}</style>
+  <!-- Same as original but slate color -->
+  <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 56 L32 36 L20 24 L14 14"/>
+    <path d="M32 36 L20 24 L26 14"/>
+    <path d="M32 36 L44 24 L38 14"/>
+    <path d="M32 36 L44 24 L50 14"/>
+  </g>
+  <circle cx="32" cy="56" r="3" fill="currentColor"/>
+  <circle cx="32" cy="36" r="4" fill="currentColor"/>
+  <circle cx="20" cy="24" r="3" fill="currentColor"/>
+  <circle cx="44" cy="24" r="3" fill="currentColor"/>
+  <circle cx="14" cy="14" r="2.5" fill="currentColor"/>
+  <circle cx="26" cy="14" r="2.5" fill="currentColor"/>
+  <circle cx="38" cy="14" r="2.5" fill="currentColor"/>
+  <circle cx="50" cy="14" r="2.5" fill="currentColor"/>
+</svg>
