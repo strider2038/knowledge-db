@@ -51,7 +51,7 @@ const markdownContentClass = cn(
   'prose-p:my-4 prose-p:leading-7',
   'prose-ul:my-4 prose-ol:my-4 prose-li:my-1',
   'prose-blockquote:my-4 prose-blockquote:border-l-4 prose-blockquote:border-primary prose-blockquote:pl-4 prose-blockquote:italic',
-  '[&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:p-3'
+  '[&_pre]:my-4'
 )
 
 export function NodePage() {

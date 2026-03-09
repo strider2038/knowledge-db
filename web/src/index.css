@@ -116,10 +116,10 @@
 }
 
 @layer base {
-  * {
+  *:not(pre):not(code):not(pre *) {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
     @apply bg-background text-foreground;
-    }
+  }
 }

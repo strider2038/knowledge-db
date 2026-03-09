@@ -5,6 +5,7 @@ import type React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { ThemeProvider } from '@/components/theme-provider'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { MarkdownContent } from './MarkdownContent'
 
 vi.mock('mermaid', () => ({
@@ -55,9 +56,11 @@ describe('MarkdownContent', () => {
 
   it('renders code blocks with highlight.js classes', () => {
     render(
-      <MarkdownContent
-        content={'```javascript\nconst x = 1;\n```'}
-      />
+      <TooltipProvider>
+        <MarkdownContent
+          content={'```javascript\nconst x = 1;\n```'}
+        />
+      </TooltipProvider>
     )
     const code = document.querySelector('pre code')
     expect(code).toBeInTheDocument()

@@ -4,6 +4,26 @@
  */
 @import 'highlight.js/styles/github.css';
 
+/* CodeBlock: единый фон, без двойных полос. Переопределяем prose и highlight.js. */
+[data-code-block] {
+  background: #ffffff;
+}
+.dark [data-code-block] {
+  background: #0d1117;
+}
+[data-code-block] pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+[data-code-block] pre code.hljs {
+  padding: 0;
+  background: transparent;
+}
+.dark [data-code-block] pre code.hljs {
+  background: transparent;
+}
+
 /* Dark theme — переопределение для .dark */
 .dark .hljs {
   color: #c9d1d9;

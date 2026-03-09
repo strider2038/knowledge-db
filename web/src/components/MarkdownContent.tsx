@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeSlug from 'rehype-slug'
 import { MermaidDiagram } from '@/components/MermaidDiagram'
+import { CodeBlock } from '@/components/CodeBlock'
 import '@/lib/highlight'
 
 interface MarkdownContentProps {
@@ -46,7 +47,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
           if (mermaidData) {
             return <MermaidDiagram code={mermaidData.code} />
           }
-          return <pre {...props}>{children}</pre>
+          return <CodeBlock preProps={props}>{children}</CodeBlock>
         },
       }}
     >
