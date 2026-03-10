@@ -7,8 +7,12 @@ import (
 	"github.com/openai/openai-go/responses"
 )
 
-func buildSystemPrompt(existingThemes, existingKeywords []string) string {
+func buildSystemPrompt(existingThemes, existingKeywords []string, typeHint string) string {
 	var sb strings.Builder
+
+	if typeHint != "" && typeHint != "auto" && (typeHint == "article" || typeHint == "link" || typeHint == "note") {
+		fmt.Fprintf(&sb, "Пользователь указал тип: %s. Используй именно этот тип при вызове create_node.\n\n", typeHint)
+	}
 
 	sb.WriteString(`Ты — ассистент для управления базой знаний. Твоя задача — проанализировать входные данные (текст, URL или их сочетание) и сохранить их как структурированный узел базы знаний.
 

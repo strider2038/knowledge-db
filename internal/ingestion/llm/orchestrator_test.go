@@ -163,6 +163,35 @@ func (s *sequenceMockClient) New(_ context.Context, _ responses.ResponseNewParam
 	return s.responses[i], nil
 }
 
+func TestOpenAIOrchestrator_WhenTypeHint_ExpectInInstructions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"go"},
+		"annotation": "A note",
+		"theme_path": "go",
+		"slug":       "test",
+		"type":       "article",
+		"content":    "",
+		"title":      "Test",
+	}
+	mockClient := &mockResponsesClient{
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
+	}
+	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", nil)
+
+	_, err := orch.Process(ctx, llm.ProcessInput{
+		Text:     "https://example.com/article",
+		TypeHint: "article",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, mockClient.calls, 1)
+	instructions := mockClient.calls[0].Instructions.Or("")
+	assert.Contains(t, instructions, "Пользователь указал тип: article")
+}
+
 func TestOpenAIOrchestrator_WhenLinkInput_ExpectFetchMetaThenCreateNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

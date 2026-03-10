@@ -27,6 +27,7 @@ type ProcessInput struct {
 	Text             string
 	SourceURL        string
 	SourceAuthor     string
+	TypeHint         string // auto, article, link, note
 	ExistingThemes   []string
 	ExistingKeywords []string
 }
@@ -94,7 +95,7 @@ func newOpenAIOrchestratorWithClient(client responsesClient, model string, conte
 func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*ProcessResult, error) {
 	clog.Info(ctx, "ingest: llm process start", "text_len", len(input.Text), "themes", len(input.ExistingThemes), "keywords", len(input.ExistingKeywords))
 
-	instructions := buildSystemPrompt(input.ExistingThemes, input.ExistingKeywords)
+	instructions := buildSystemPrompt(input.ExistingThemes, input.ExistingKeywords, input.TypeHint)
 	tools := buildTools()
 
 	inputItems := responses.ResponseInputParam{

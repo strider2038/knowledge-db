@@ -78,11 +78,18 @@ export async function getNode(path: string): Promise<Node> {
   return res.json();
 }
 
-export async function ingestText(text: string): Promise<Node> {
+export async function ingestText(
+  text: string,
+  typeHint?: 'auto' | 'article' | 'link' | 'note'
+): Promise<Node> {
+  const body =
+    typeHint && typeHint !== 'auto'
+      ? { text, type_hint: typeHint }
+      : { text };
   const res = await fetch(`${API_URL}/api/ingest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

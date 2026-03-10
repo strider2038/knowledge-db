@@ -325,6 +325,25 @@ func TestIngest_WhenSourceMetadata_ExpectPassedToIngester(t *testing.T) {
 	require.Equal(t, "Author", lastReq.SourceAuthor)
 }
 
+func TestIngest_WhenTypeHint_ExpectPassedToIngester(t *testing.T) {
+	t.Parallel()
+	var lastReq ingestion.IngestRequest
+	handler := setupTestHandlerWithIngester(t, &captureIngestRequestIngester{
+		node: &kb.Node{Path: "go/test", Metadata: map[string]any{}},
+		capture: func(req ingestion.IngestRequest) {
+			lastReq = req
+		},
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/ingest",
+		strings.NewReader(`{"text":"note","type_hint":"article"}`),
+		apitest.WithContentType("application/json"))
+
+	resp.IsOK()
+	require.Equal(t, "note", lastReq.Text)
+	require.Equal(t, "article", lastReq.TypeHint)
+}
+
 type captureIngestRequestIngester struct {
 	node    *kb.Node
 	capture func(ingestion.IngestRequest)

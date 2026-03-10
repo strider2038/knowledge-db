@@ -24,6 +24,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import {
+  getTypeBadgeColor,
+  getTypeButtonClass,
+} from '@/lib/type-styles'
 
 const NODE_TYPES = ['article', 'link', 'note'] as const
 const DEFAULT_LIMIT = 50
@@ -243,17 +247,6 @@ export function OverviewPage() {
     )
   }
 
-  const typeBadgeColor = (t: string) => {
-    switch (t) {
-      case 'article':
-        return 'bg-blue-500/20 text-blue-700 dark:text-blue-300'
-      case 'link':
-        return 'bg-green-500/20 text-green-700 dark:text-green-300'
-      default:
-        return 'bg-muted text-muted-foreground'
-    }
-  }
-
   if (loading && !nodes.length) return <p className="p-4 text-muted-foreground">Загрузка...</p>
   if (error) return <p className="p-4 text-destructive">{error}</p>
 
@@ -275,23 +268,12 @@ export function OverviewPage() {
           <div className="flex gap-1">
             {NODE_TYPES.map((t) => {
               const isActive = typeFilter.includes(t)
-              const typeButtonClass = {
-                article: isActive
-                  ? 'bg-blue-500/20 text-blue-700 border-blue-500/40 hover:bg-blue-500/30 dark:text-blue-300 dark:border-blue-400/50'
-                  : 'border-blue-500/30 text-blue-600 hover:bg-blue-500/10 dark:text-blue-400',
-                link: isActive
-                  ? 'bg-green-500/20 text-green-700 border-green-500/40 hover:bg-green-500/30 dark:text-green-300 dark:border-green-400/50'
-                  : 'border-green-500/30 text-green-600 hover:bg-green-500/10 dark:text-green-400',
-                note: isActive
-                  ? 'bg-muted text-muted-foreground border-border'
-                  : 'border-border text-muted-foreground hover:bg-muted',
-              }[t]
               return (
                 <Button
                   key={t}
                   variant="outline"
                   size="sm"
-                  className={typeButtonClass}
+                  className={getTypeButtonClass(t, isActive)}
                   onClick={() => toggleType(t)}
                 >
                   {t === 'article' ? 'статья' : t === 'link' ? 'ссылка' : 'заметка'}
@@ -391,7 +373,7 @@ export function OverviewPage() {
                           <span
                             className={cn(
                               'rounded px-1.5 py-0.5 text-xs',
-                              typeBadgeColor(n.type)
+                              getTypeBadgeColor(n.type)
                             )}
                           >
                             {n.type}

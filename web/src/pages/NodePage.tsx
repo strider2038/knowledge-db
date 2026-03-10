@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { getTypeBadgeColor } from '@/lib/type-styles'
 
 function translationPath(basePath: string, translationSlug: string): string {
   const lastSlash = basePath.lastIndexOf('/')
@@ -20,17 +21,6 @@ function translationPath(basePath: string, translationSlug: string): string {
     return basePath.slice(0, lastSlash + 1) + translationSlug
   }
   return translationSlug
-}
-
-function typeBadgeColor(t: string): string {
-  switch (t) {
-    case 'article':
-      return 'bg-blue-500/20 text-blue-700 dark:text-blue-300'
-    case 'link':
-      return 'bg-green-500/20 text-green-700 dark:text-green-300'
-    default:
-      return 'bg-muted text-muted-foreground'
-  }
 }
 
 function formatDate(value: unknown): string {
@@ -181,7 +171,7 @@ export function NodePage() {
         <span
           className={cn(
             'rounded px-1.5 py-0.5 text-xs',
-            typeBadgeColor(nodeType)
+            getTypeBadgeColor(nodeType)
           )}
         >
           {nodeType}

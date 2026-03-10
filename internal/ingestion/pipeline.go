@@ -64,7 +64,7 @@ func NewPipelineIngester(
 func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*kb.Node, error) {
 	clog.Info(ctx, "ingest text: start", "text_len", len(req.Text))
 
-	processInput, err := p.buildProcessInput(ctx, req.Text, req.SourceURL, req.SourceAuthor)
+	processInput, err := p.buildProcessInput(ctx, req.Text, req.SourceURL, req.SourceAuthor, req.TypeHint)
 	if err != nil {
 		return nil, errors.Errorf("ingest text: build context: %w", err)
 	}
@@ -116,7 +116,7 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 		text = url
 	}
 
-	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor)
+	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor, "")
 	if err != nil {
 		return nil, errors.Errorf("ingest url: build context: %w", err)
 	}
@@ -141,7 +141,7 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	return node, nil
 }
 
-func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor string) (llm.ProcessInput, error) {
+func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor, typeHint string) (llm.ProcessInput, error) {
 	tree, err := p.store.ReadTree(ctx, p.basePath)
 	if err != nil {
 		return llm.ProcessInput{}, errors.Errorf("read tree: %w", err)
@@ -169,6 +169,7 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 		Text:             text,
 		SourceURL:        sourceURL,
 		SourceAuthor:     sourceAuthor,
+		TypeHint:         typeHint,
 		ExistingThemes:   themes,
 		ExistingKeywords: keywords,
 	}, nil

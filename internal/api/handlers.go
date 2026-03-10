@@ -166,6 +166,7 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		Text         string `json:"text"`
 		SourceURL    string `json:"source_url"`    //nolint:tagliatelle // REST API snake_case
 		SourceAuthor string `json:"source_author"` //nolint:tagliatelle // REST API snake_case
+		TypeHint     string `json:"type_hint"`     //nolint:tagliatelle // REST API snake_case
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -183,10 +184,15 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 			sourceURL = normalized
 		}
 	}
+	typeHint := req.TypeHint
+	if typeHint != "" && typeHint != "auto" && typeHint != "article" && typeHint != "link" && typeHint != "note" {
+		typeHint = ""
+	}
 	node, err := h.ingester.IngestText(r.Context(), ingestion.IngestRequest{
 		Text:         req.Text,
 		SourceURL:    sourceURL,
 		SourceAuthor: req.SourceAuthor,
+		TypeHint:     typeHint,
 	})
 	if err != nil {
 		if errors.Is(err, ingestion.ErrNotImplemented) {
