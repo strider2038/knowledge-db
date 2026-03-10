@@ -173,7 +173,7 @@ func TestImportTelegramAccept_WhenSessionComplete_Expect409(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 
 	// Accept both items
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
 			strings.NewReader(`{}`),
 			apitest.WithContentType("application/json"))
