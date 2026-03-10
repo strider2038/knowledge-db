@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/muonsoft/errors"
+	"github.com/strider2038/knowledge-db/internal/import/session"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
@@ -18,13 +19,27 @@ import (
 
 // Handler — HTTP handlers для API.
 type Handler struct {
-	dataPath string
-	ingester ingestion.Ingester
+	dataPath     string
+	uploadsDir   string
+	ingester     ingestion.Ingester
+	sessionStore session.SessionStore
 }
 
 // NewHandler создаёт Handler.
 func NewHandler(dataPath string, ingester ingestion.Ingester) *Handler {
 	return &Handler{dataPath: dataPath, ingester: ingester}
+}
+
+// NewHandlerWithUploads создаёт Handler с поддержкой импорта (KB_UPLOADS_DIR).
+func NewHandlerWithUploads(dataPath, uploadsDir string, ingester ingestion.Ingester) *Handler {
+	store := session.NewFileStore(uploadsDir, ingester)
+
+	return &Handler{
+		dataPath:     dataPath,
+		uploadsDir:   uploadsDir,
+		ingester:     ingester,
+		sessionStore: store,
+	}
 }
 
 // GetNode обрабатывает GET /api/nodes/{path...}.

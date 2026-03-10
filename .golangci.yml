@@ -152,8 +152,11 @@ linters:
         linters:
           - forbidigo
           - err113
-      # Telegram API использует snake_case в JSON
+      # Telegram API и import (Telegram export, session file) используют snake_case в JSON
       - path: internal/telegram
+        linters:
+          - tagliatelle
+      - path: internal/import
         linters:
           - tagliatelle
       # Проект использует fmt.Errorf для простых ошибок (err113 — sentinel)

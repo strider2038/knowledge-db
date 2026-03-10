@@ -78,14 +78,27 @@ export async function getNode(path: string): Promise<Node> {
   return res.json();
 }
 
+export interface IngestTextOptions {
+  typeHint?: 'auto' | 'article' | 'link' | 'note';
+  sourceUrl?: string;
+  sourceAuthor?: string;
+}
+
 export async function ingestText(
   text: string,
-  typeHint?: 'auto' | 'article' | 'link' | 'note'
+  typeHint?: 'auto' | 'article' | 'link' | 'note',
+  options?: Pick<IngestTextOptions, 'sourceUrl' | 'sourceAuthor'>
 ): Promise<Node> {
-  const body =
-    typeHint && typeHint !== 'auto'
-      ? { text, type_hint: typeHint }
-      : { text };
+  const body: Record<string, string> = { text };
+  if (typeHint && typeHint !== 'auto') {
+    body.type_hint = typeHint;
+  }
+  if (options?.sourceUrl) {
+    body.source_url = options.sourceUrl;
+  }
+  if (options?.sourceAuthor) {
+    body.source_author = options.sourceAuthor;
+  }
   const res = await fetch(`${API_URL}/api/ingest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -94,6 +107,91 @@ export async function ingestText(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Ingestion failed');
+  }
+  return res.json();
+}
+
+export interface ImportItem {
+  id: number;
+  date_unixtime: string;
+  text: string;
+  source_author: string;
+  source_url: string;
+}
+
+export interface ImportSessionCreateResponse {
+  session_id: string;
+  total: number;
+  current_index: number;
+  current_item: ImportItem | null;
+}
+
+export interface ImportSessionState {
+  session_id: string;
+  total: number;
+  current_index: number;
+  processed_count: number;
+  rejected_count: number;
+  current_item: ImportItem | null;
+}
+
+export interface ImportAcceptResponse {
+  node: Node;
+  next_item: ImportItem | null;
+}
+
+export interface ImportRejectResponse {
+  next_item: ImportItem | null;
+}
+
+export async function createImportSession(json: string): Promise<ImportSessionCreateResponse> {
+  const res = await fetch(`${API_URL}/api/import/telegram`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: json,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Import failed');
+  }
+  return res.json();
+}
+
+export async function getImportSession(id: string): Promise<ImportSessionState> {
+  const res = await fetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get session');
+  }
+  return res.json();
+}
+
+export async function acceptImportItem(
+  id: string,
+  typeHint?: 'auto' | 'article' | 'link' | 'note'
+): Promise<ImportAcceptResponse> {
+  const body = typeHint && typeHint !== 'auto' ? { type_hint: typeHint } : {};
+  const res = await fetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Accept failed');
+  }
+  return res.json();
+}
+
+export async function rejectImportItem(id: string): Promise<ImportRejectResponse> {
+  const res = await fetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Reject failed');
   }
   return res.json();
 }

@@ -34,6 +34,7 @@ type Telegram struct {
 // Config — конфигурация приложения.
 type Config struct {
 	DataPath        string        `env:"KB_DATA_PATH" envDefault:""`
+	UploadsDir      string        `env:"KB_UPLOADS_DIR" envDefault:""`
 	JinaAPIKey      string        `env:"JINA_API_KEY" envDefault:""`
 	GitDisabled     bool          `env:"KB_GIT_DISABLED" envDefault:"false"`
 	GitSyncInterval time.Duration `env:"GIT_SYNC_INTERVAL" envDefault:"5m"`

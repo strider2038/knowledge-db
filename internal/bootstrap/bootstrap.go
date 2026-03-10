@@ -36,7 +36,7 @@ func Run() error {
 	}
 
 	ingester := buildIngester(cfg)
-	handler := api.NewHandler(cfg.DataPath, ingester)
+	handler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester)
 	mux, err := api.NewMux(handler)
 	if err != nil {
 		return errors.Errorf("new mux: %w", err)
