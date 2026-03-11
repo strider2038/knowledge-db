@@ -6,6 +6,9 @@ import (
 )
 
 // commitJob — задача для сериализованного выполнения CommitNode.
+// ctx хранится в job, т.к. передаётся асинхронно через канал и нужен при выполнении.
+//
+//nolint:containedctx // job carries context for async processing
 type commitJob struct {
 	ctx      context.Context
 	nodePath string
@@ -35,18 +38,6 @@ func NewSerializedGitCommitter(inner GitCommitter) *SerializedGitCommitter {
 	return s
 }
 
-func (s *SerializedGitCommitter) worker() {
-	defer s.wg.Done()
-	for job := range s.jobs {
-		err := s.inner.CommitNode(job.ctx, job.nodePath, job.message)
-		select {
-		case job.errCh <- err:
-		default:
-			// Caller may have given up (context cancelled)
-		}
-	}
-}
-
 // CommitNode ставит задачу в очередь и ждёт её выполнения.
 func (s *SerializedGitCommitter) CommitNode(ctx context.Context, nodePath, message string) error {
 	errCh := make(chan error, 1)
@@ -69,4 +60,16 @@ func (s *SerializedGitCommitter) CommitNode(ctx context.Context, nodePath, messa
 // Sync делегирует вызов underlying committer.
 func (s *SerializedGitCommitter) Sync(ctx context.Context) error {
 	return s.inner.Sync(ctx)
+}
+
+func (s *SerializedGitCommitter) worker() {
+	defer s.wg.Done()
+	for job := range s.jobs {
+		err := s.inner.CommitNode(job.ctx, job.nodePath, job.message)
+		select {
+		case job.errCh <- err:
+		default:
+			// Caller may have given up (context cancelled)
+		}
+	}
 }

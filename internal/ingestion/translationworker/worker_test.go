@@ -39,8 +39,7 @@ func (m *mockTranslator) callCount() int {
 
 func TestWorker_WhenTranslationExists_ExpectIdempotent(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	fs := afero.NewMemMapFs()
 	basePath := "/data"

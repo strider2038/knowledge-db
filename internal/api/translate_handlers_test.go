@@ -14,8 +14,9 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
 )
 
-func setupTranslateTestHandler(t *testing.T, withQueue bool, articlePath string) http.Handler {
+func setupTranslateTestHandler(t *testing.T, withQueue bool) http.Handler {
 	t.Helper()
+	const articlePath = "go/test-article"
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, filepath.FromSlash(articlePath))
 	_ = os.MkdirAll(filepath.Dir(dir), 0o755)
@@ -45,7 +46,7 @@ Content in English.`
 
 func TestPostArticleTranslate_WhenQueueNil_Expect503(t *testing.T) {
 	t.Parallel()
-	handler := setupTranslateTestHandler(t, false, "go/test-article")
+	handler := setupTranslateTestHandler(t, false)
 
 	resp := apitest.HandlePOST(t, handler, "/api/articles/translate/go/test-article", nil)
 
@@ -57,7 +58,7 @@ func TestPostArticleTranslate_WhenQueueNil_Expect503(t *testing.T) {
 
 func TestGetArticleTranslate_WhenQueueNil_Expect503(t *testing.T) {
 	t.Parallel()
-	handler := setupTranslateTestHandler(t, false, "go/test-article")
+	handler := setupTranslateTestHandler(t, false)
 
 	resp := apitest.HandleGET(t, handler, "/api/articles/translate/go/test-article")
 
@@ -66,7 +67,7 @@ func TestGetArticleTranslate_WhenQueueNil_Expect503(t *testing.T) {
 
 func TestPostArticleTranslate_WhenNodeNotFound_Expect404(t *testing.T) {
 	t.Parallel()
-	handler := setupTranslateTestHandler(t, true, "go/test-article")
+	handler := setupTranslateTestHandler(t, true)
 
 	resp := apitest.HandlePOST(t, handler, "/api/articles/translate/go/missing-article", nil)
 
@@ -106,7 +107,7 @@ Content`
 
 func TestPostArticleTranslate_WhenNoTranslation_ExpectPending(t *testing.T) {
 	t.Parallel()
-	handler := setupTranslateTestHandler(t, true, "go/test-article")
+	handler := setupTranslateTestHandler(t, true)
 
 	resp := apitest.HandlePOST(t, handler, "/api/articles/translate/go/test-article", nil)
 
@@ -118,7 +119,7 @@ func TestPostArticleTranslate_WhenNoTranslation_ExpectPending(t *testing.T) {
 
 func TestPostArticleTranslate_WhenAlreadyPending_ExpectNoDuplicate(t *testing.T) {
 	t.Parallel()
-	handler := setupTranslateTestHandler(t, true, "go/test-article")
+	handler := setupTranslateTestHandler(t, true)
 
 	resp1 := apitest.HandlePOST(t, handler, "/api/articles/translate/go/test-article", nil)
 	resp1.IsOK()
@@ -135,7 +136,7 @@ func TestPostArticleTranslate_WhenAlreadyPending_ExpectNoDuplicate(t *testing.T)
 
 func TestGetArticleTranslate_WhenNoTranslation_ExpectNoneOrPending(t *testing.T) {
 	t.Parallel()
-	handler := setupTranslateTestHandler(t, true, "go/test-article")
+	handler := setupTranslateTestHandler(t, true)
 
 	resp := apitest.HandleGET(t, handler, "/api/articles/translate/go/test-article")
 

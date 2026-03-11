@@ -21,8 +21,8 @@ const translateTimeout = 5 * time.Minute
 
 // Worker — фоновой воркер перевода статей.
 type Worker struct {
-	queue     *translationqueue.Queue
-	store     *kb.Store
+	queue      *translationqueue.Queue
+	store      *kb.Store
 	translator translation.Translator
 	committer  git.GitCommitter
 	basePath   string
@@ -37,8 +37,8 @@ func New(
 	basePath string,
 ) *Worker {
 	return &Worker{
-		queue:     queue,
-		store:     store,
+		queue:      queue,
+		store:      store,
 		translator: translator,
 		committer:  committer,
 		basePath:   basePath,
@@ -174,6 +174,7 @@ func buildTranslationFrontmatter(node *kb.Node, slug string) map[string]any {
 	if v, ok := meta["source_author"]; ok {
 		fm["source_author"] = v
 	}
+
 	return fm
 }
 

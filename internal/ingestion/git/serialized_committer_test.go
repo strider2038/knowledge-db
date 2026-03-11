@@ -40,16 +40,19 @@ func TestSerializedGitCommitter_WhenConcurrentCalls_ExpectSequential(t *testing.
 	committer := gittool.NewSerializedGitCommitter(inner)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
+	errs := make([]error, 5)
+	for i := range 5 {
 		wg.Add(1)
-		go func() {
+		go func(idx int) {
 			defer wg.Done()
-			err := committer.CommitNode(ctx, "/path/node.md", "test")
-			require.NoError(t, err)
-		}()
+			errs[idx] = committer.CommitNode(ctx, "/path/node.md", "test")
+		}(i)
 	}
 	wg.Wait()
 
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
 	assert.Equal(t, int32(1), inner.maxSeen.Load(),
 		"at most one CommitNode must run at a time")
 }

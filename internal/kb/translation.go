@@ -45,6 +45,7 @@ func (s *Store) CreateTranslationFile(
 	}
 	if err := s.fs.Rename(tmpPath, mdPath); err != nil {
 		_ = s.fs.Remove(tmpPath)
+
 		return errors.Errorf("create translation file: rename: %w", err)
 	}
 
@@ -112,6 +113,7 @@ func (s *Store) AppendTranslationsToOriginal(
 	}
 	if err := s.fs.Rename(tmpPath, mdPath); err != nil {
 		_ = s.fs.Remove(tmpPath)
+
 		return errors.Errorf("append translations: rename: %w", err)
 	}
 

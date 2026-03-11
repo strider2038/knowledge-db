@@ -83,6 +83,7 @@ func buildCommitter(cfg *config.Config) igit.GitCommitter {
 		return &igit.NoopGitCommitter{}
 	}
 	exec := igit.NewExecGitCommitter(cfg.DataPath)
+
 	return igit.NewSerializedGitCommitter(exec)
 }
 
@@ -90,6 +91,7 @@ func buildTranslationQueue(cfg *config.Config) *translationqueue.Queue {
 	if !cfg.LLM.IsConfigured() {
 		return nil
 	}
+
 	return translationqueue.New(100)
 }
 

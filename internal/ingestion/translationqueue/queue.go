@@ -32,6 +32,7 @@ func (k ArticleKey) String() string {
 	if k.ThemePath == "" {
 		return k.Slug
 	}
+
 	return k.ThemePath + "/" + k.Slug
 }
 
@@ -47,6 +48,7 @@ func New(channelCapacity int) *Queue {
 	if channelCapacity <= 0 {
 		channelCapacity = 100
 	}
+
 	return &Queue{
 		status:  make(map[string]*TranslationStatus),
 		channel: make(chan ArticleKey, channelCapacity),
@@ -61,7 +63,7 @@ func (q *Queue) Channel() <-chan ArticleKey {
 // Enqueue ставит статью в очередь. Если статус уже pending или in_progress,
 // не создаёт дубликат и возвращает текущий статус.
 // Возвращает (status, alreadyQueued).
-func (q *Queue) Enqueue(themePath, slug string) (status string, alreadyQueued bool) {
+func (q *Queue) Enqueue(themePath, slug string) (string, bool) {
 	key := ArticleKey{ThemePath: themePath, Slug: slug}
 	keyStr := key.String()
 
@@ -80,11 +82,12 @@ func (q *Queue) Enqueue(themePath, slug string) (status string, alreadyQueued bo
 	}
 
 	q.channel <- key
+
 	return StatusPending, false
 }
 
 // GetStatus возвращает статус по ключу статьи. Если записи нет — "none".
-func (q *Queue) GetStatus(themePath, slug string) (status, errorMessage string) {
+func (q *Queue) GetStatus(themePath, slug string) (string, string) {
 	keyStr := ArticleKey{ThemePath: themePath, Slug: slug}.String()
 
 	q.mu.RLock()
@@ -93,6 +96,7 @@ func (q *Queue) GetStatus(themePath, slug string) (status, errorMessage string) 
 	if s, ok := q.status[keyStr]; ok {
 		return s.Status, s.ErrorMessage
 	}
+
 	return StatusNone, ""
 }
 
