@@ -19,6 +19,8 @@ func NewMux(h *Handler) (*http.ServeMux, error) {
 	mux.HandleFunc("GET /api/import/telegram/session/{id}", h.ImportTelegramGetSession)
 	mux.HandleFunc("POST /api/import/telegram/session/{id}/accept", h.ImportTelegramAccept)
 	mux.HandleFunc("POST /api/import/telegram/session/{id}/reject", h.ImportTelegramReject)
+	mux.HandleFunc("POST /api/articles/translate/{path...}", h.PostArticleTranslate)
+	mux.HandleFunc("GET /api/articles/translate/{path...}", h.GetArticleTranslate)
 	spa, err := NewSPAHandler()
 	if err != nil {
 		return nil, errors.Errorf("new spa handler: %w", err)

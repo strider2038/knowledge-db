@@ -16,6 +16,8 @@ import (
 	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translation"
+	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
+	"github.com/strider2038/knowledge-db/internal/ingestion/translationworker"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/mcp"
 	"github.com/strider2038/knowledge-db/internal/telegram"
@@ -35,8 +37,10 @@ func Run() error {
 		return err
 	}
 
-	ingester := buildIngester(cfg)
-	handler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester)
+	committer := buildCommitter(cfg)
+	translationQueue := buildTranslationQueue(cfg)
+	ingester, translationWorker := buildIngester(cfg, committer, translationQueue)
+	handler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 	mux, err := api.NewMux(handler)
 	if err != nil {
 		return errors.Errorf("new mux: %w", err)
@@ -62,9 +66,11 @@ func Run() error {
 	}
 
 	if !cfg.GitDisabled && cfg.LLM.IsConfigured() {
-		committer := igit.NewExecGitCommitter(cfg.DataPath)
 		syncRunner := igit.NewGitSyncRunner(committer, cfg.GitSyncInterval)
 		m.Register(syncRunner)
+	}
+	if translationWorker != nil {
+		m.Register(translationWorker)
 	}
 
 	runnable.Run(m)
@@ -72,26 +78,41 @@ func Run() error {
 	return nil
 }
 
-func buildIngester(cfg *config.Config) ingestion.Ingester {
+func buildCommitter(cfg *config.Config) igit.GitCommitter {
+	if cfg.GitDisabled {
+		return &igit.NoopGitCommitter{}
+	}
+	exec := igit.NewExecGitCommitter(cfg.DataPath)
+	return igit.NewSerializedGitCommitter(exec)
+}
+
+func buildTranslationQueue(cfg *config.Config) *translationqueue.Queue {
+	if !cfg.LLM.IsConfigured() {
+		return nil
+	}
+	return translationqueue.New(100)
+}
+
+func buildIngester(cfg *config.Config, committer igit.GitCommitter, translationQueue *translationqueue.Queue) (ingestion.Ingester, *translationworker.Worker) {
 	if !cfg.LLM.IsConfigured() {
 		slog.Warn("LLM configuration not set, ingestion pipeline disabled (using stub)")
 
-		return &ingestion.StubIngester{}
+		return &ingestion.StubIngester{}, nil
 	}
 
 	store := kb.NewStore(afero.NewOsFs())
 	contentFetcher := buildContentFetcher(cfg)
 	orchestrator := llm.NewOpenAIOrchestrator(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model, contentFetcher)
-	var committer igit.GitCommitter
-	if cfg.GitDisabled {
-		committer = &igit.NoopGitCommitter{}
-	} else {
-		committer = igit.NewExecGitCommitter(cfg.DataPath)
-	}
-
 	translator := translation.NewLLMTranslator(orchestrator)
 
-	return ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, translator, orchestrator)
+	pipeline := ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, translator, orchestrator, translationQueue)
+
+	var worker *translationworker.Worker
+	if translationQueue != nil {
+		worker = translationworker.New(translationQueue, store, translator, committer, cfg.DataPath)
+	}
+
+	return pipeline, worker
 }
 
 func buildContentFetcher(cfg *config.Config) fetcher.ContentFetcher {

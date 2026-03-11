@@ -19,7 +19,7 @@ func setupImportTestHandler(t *testing.T, ingester ingestion.Ingester) http.Hand
 	t.Helper()
 	dataPath := t.TempDir()
 	uploadsDir := t.TempDir()
-	h := api.NewHandlerWithUploads(dataPath, uploadsDir, ingester)
+	h := api.NewHandlerWithUploads(dataPath, uploadsDir, ingester, nil)
 	mux, err := api.NewMux(h)
 	require.NoError(t, err)
 

@@ -78,7 +78,7 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 			Title:      "Goroutine Basics",
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about goroutines."})
 
@@ -96,7 +96,7 @@ func TestPipelineIngester_IngestText_WhenOrchestratorFails_ExpectError(t *testin
 	store := kb.NewStore(fs)
 
 	orc := &mockOrchestrator{err: ingestion.ErrNotImplemented}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, testBasePath, false, nil, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, testBasePath, false, nil, nil, nil)
 
 	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "text"})
 
@@ -122,7 +122,7 @@ func TestPipelineIngester_IngestText_WhenTitleHasMarkdown_ExpectStripped(t *test
 			Title:      "**Где может потеряться \"exactly-once\"**", // LLM вернул с markdown
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про exactly-once."})
 
@@ -150,7 +150,7 @@ func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromContent(t *te
 			Title:      "", // LLM не вернул title
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про exactly-once."})
 
@@ -178,7 +178,7 @@ func TestPipelineIngester_IngestText_WhenTitleAndContentEmpty_ExpectTitleFromSlu
 			Title:      "", // LLM не вернул title
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, nil, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about Claude Cycles."})
 
@@ -207,7 +207,7 @@ func TestPipelineIngester_IngestText_WhenTitleEmptyAndContentEmpty_ExpectTitleFr
 		},
 	}
 	gen := &mockTitleGenerator{title: "Профессор Кнут: цикл Клода"}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, gen)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, nil, gen, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про Claude Cycles."})
 
@@ -253,7 +253,7 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 			SourceDate:   &date,
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, nil, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, nil, nil, nil)
 
 	node, err := pipeline.IngestURL(ctx, articleURL)
 
@@ -304,7 +304,7 @@ the translation heuristic. We need at least two hundred characters of text.`
 			return "Переведённый контент: " + content[:50] + "...", nil
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator, nil, nil)
 
 	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "English article content."})
 
@@ -354,7 +354,7 @@ func TestPipelineIngester_IngestText_WhenArticleAndRussian_ExpectNoTranslation(t
 			return "", nil
 		},
 	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator, nil)
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, translator, nil, nil)
 
 	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Russian content."})
 

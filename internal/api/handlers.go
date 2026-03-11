@@ -12,6 +12,8 @@ import (
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/import/session"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
+	"github.com/muonsoft/clog"
+	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 	"github.com/strider2038/knowledge-db/internal/ui"
@@ -19,10 +21,11 @@ import (
 
 // Handler — HTTP handlers для API.
 type Handler struct {
-	dataPath     string
-	uploadsDir   string
-	ingester     ingestion.Ingester
-	sessionStore session.SessionStore
+	dataPath         string
+	uploadsDir       string
+	ingester         ingestion.Ingester
+	sessionStore     session.SessionStore
+	translationQueue *translationqueue.Queue
 }
 
 // NewHandler создаёт Handler.
@@ -31,15 +34,96 @@ func NewHandler(dataPath string, ingester ingestion.Ingester) *Handler {
 }
 
 // NewHandlerWithUploads создаёт Handler с поддержкой импорта (KB_UPLOADS_DIR).
-func NewHandlerWithUploads(dataPath, uploadsDir string, ingester ingestion.Ingester) *Handler {
+// translationQueue — опционально; при nil endpoints перевода возвращают 503.
+func NewHandlerWithUploads(dataPath, uploadsDir string, ingester ingestion.Ingester, translationQueue *translationqueue.Queue) *Handler {
 	store := session.NewFileStore(uploadsDir, ingester)
 
 	return &Handler{
-		dataPath:     dataPath,
-		uploadsDir:   uploadsDir,
-		ingester:     ingester,
-		sessionStore: store,
+		dataPath:         dataPath,
+		uploadsDir:       uploadsDir,
+		ingester:         ingester,
+		sessionStore:     store,
+		translationQueue: translationQueue,
 	}
+}
+
+// PostArticleTranslate обрабатывает POST /api/articles/translate/{path...}.
+func (h *Handler) PostArticleTranslate(w http.ResponseWriter, r *http.Request) {
+	h.handleArticleTranslate(w, r, true)
+}
+
+// GetArticleTranslate обрабатывает GET /api/articles/translate/{path...}.
+func (h *Handler) GetArticleTranslate(w http.ResponseWriter, r *http.Request) {
+	h.handleArticleTranslate(w, r, false)
+}
+
+func (h *Handler) handleArticleTranslate(w http.ResponseWriter, r *http.Request, isPost bool) {
+	if h.translationQueue == nil {
+		writeError(w, http.StatusServiceUnavailable, "translation service unavailable")
+
+		return
+	}
+
+	path := r.PathValue("path")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+
+	node, err := kb.GetNode(r.Context(), h.dataPath, path)
+	if err != nil {
+		if errors.Is(err, kb.ErrNodeNotFound) {
+			writeError(w, http.StatusNotFound, "node not found")
+
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+
+	nodeType, _ := node.Metadata["type"].(string)
+	if nodeType != "article" {
+		writeError(w, http.StatusBadRequest, "node is not an article")
+
+		return
+	}
+
+	themePath, slug := splitArticlePath(path)
+	translationPath := themePath + "/" + slug + ".ru"
+
+	if _, err := kb.GetNode(r.Context(), h.dataPath, translationPath); err == nil {
+		writeJSON(w, map[string]any{"status": translationqueue.StatusDone})
+
+		return
+	}
+
+	status, errMsg := h.translationQueue.GetStatus(themePath, slug)
+	if status == translationqueue.StatusPending || status == translationqueue.StatusInProgress {
+		writeJSON(w, map[string]any{"status": status})
+
+		return
+	}
+
+	if isPost {
+		status, _ = h.translationQueue.Enqueue(themePath, slug)
+		clog.Info(r.Context(), "translation: enqueued", "theme", themePath, "slug", slug, "status", status)
+	}
+
+	resp := map[string]any{"status": status}
+	if status == translationqueue.StatusFailed && errMsg != "" {
+		resp["error"] = errMsg
+	}
+	writeJSON(w, resp)
+}
+
+func splitArticlePath(path string) (themePath, slug string) {
+	idx := strings.LastIndex(path, "/")
+	if idx < 0 {
+		return "", path
+	}
+	return path[:idx], path[idx+1:]
 }
 
 // GetNode обрабатывает GET /api/nodes/{path...}.

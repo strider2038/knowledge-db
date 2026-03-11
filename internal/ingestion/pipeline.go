@@ -14,6 +14,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translation"
+	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 )
@@ -27,17 +28,19 @@ type TitleGenerator interface {
 
 // PipelineIngester — полноценный ingestion pipeline с LLM-оркестратором.
 type PipelineIngester struct {
-	store          *kb.Store
-	orchestrator   llm.LLMOrchestrator
-	contentFetcher fetcher.ContentFetcher
-	committer      git.GitCommitter
-	basePath       string
-	autoTranslate  bool
-	translator     translation.Translator
-	titleGenerator TitleGenerator
+	store            *kb.Store
+	orchestrator     llm.LLMOrchestrator
+	contentFetcher   fetcher.ContentFetcher
+	committer        git.GitCommitter
+	basePath         string
+	autoTranslate    bool
+	translator       translation.Translator
+	titleGenerator   TitleGenerator
+	translationQueue *translationqueue.Queue
 }
 
 // NewPipelineIngester создаёт PipelineIngester.
+// translationQueue — опционально; при nil используется синхронный перевод.
 func NewPipelineIngester(
 	store *kb.Store,
 	orchestrator llm.LLMOrchestrator,
@@ -47,16 +50,18 @@ func NewPipelineIngester(
 	autoTranslate bool,
 	translator translation.Translator,
 	titleGenerator TitleGenerator,
+	translationQueue *translationqueue.Queue,
 ) *PipelineIngester {
 	return &PipelineIngester{
-		store:          store,
-		orchestrator:   orchestrator,
-		contentFetcher: contentFetcher,
-		committer:      committer,
-		basePath:       basePath,
-		autoTranslate:  autoTranslate,
-		translator:     translator,
-		titleGenerator: titleGenerator,
+		store:            store,
+		orchestrator:     orchestrator,
+		contentFetcher:   contentFetcher,
+		committer:        committer,
+		basePath:         basePath,
+		autoTranslate:    autoTranslate,
+		translator:       translator,
+		titleGenerator:   titleGenerator,
+		translationQueue: translationQueue,
 	}
 }
 
@@ -259,6 +264,21 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 		return nil
 	}
 
+	// Асинхронный режим: ставим в очередь вместо синхронного перевода.
+	if p.translationQueue != nil {
+		translationPath := result.ThemePath + "/" + result.Slug + ".ru"
+		if _, err := p.store.GetNode(ctx, p.basePath, translationPath); err == nil {
+			log.Debug("translation: skipped", "reason", "translation_exists", "theme", result.ThemePath, "slug", result.Slug)
+
+			return nil
+		}
+		status, _ := p.translationQueue.Enqueue(result.ThemePath, result.Slug)
+		log.Info("translation: enqueued", "theme", result.ThemePath, "slug", result.Slug, "status", status)
+
+		return nil
+	}
+
+	// Синхронный режим (для тестов и обратной совместимости).
 	log.Info("translation: start", "theme", result.ThemePath, "slug", result.Slug, "content_len", len(result.Content))
 	translateStart := time.Now()
 	translated, err := p.translator.Translate(ctx, result.Content)

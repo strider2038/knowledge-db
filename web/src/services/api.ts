@@ -78,6 +78,33 @@ export async function getNode(path: string): Promise<Node> {
   return res.json();
 }
 
+export interface TranslateStatus {
+  status: 'none' | 'pending' | 'in_progress' | 'done' | 'failed';
+  error?: string;
+}
+
+export async function postTranslate(path: string): Promise<TranslateStatus> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(`${API_URL}/api/articles/translate/${encoded}`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Translation failed');
+  }
+  return res.json();
+}
+
+export async function getTranslateStatus(path: string): Promise<TranslateStatus> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(`${API_URL}/api/articles/translate/${encoded}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get status');
+  }
+  return res.json();
+}
+
 export interface IngestTextOptions {
   typeHint?: 'auto' | 'article' | 'link' | 'note';
   sourceUrl?: string;

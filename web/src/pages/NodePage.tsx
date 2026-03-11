@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { getNode, type Node } from '../services/api'
+import { getNode, getTranslateStatus, postTranslate, type Node } from '../services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { ContentOutline, ContentOutlineFloating } from '@/components/ContentOutline'
 import { extractHeadings } from '@/lib/headings'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, FileQuestion } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
@@ -56,6 +56,9 @@ export function NodePage() {
   const [originalNode, setOriginalNode] = useState<Node | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [translating, setTranslating] = useState(false)
+  const [translateError, setTranslateError] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const basePath = path.includes('.') ? path.replace(/\.[a-z]{2}$/, '') : path
   const isTranslation = path !== basePath
@@ -79,6 +82,58 @@ export function NodePage() {
       .catch(() => setOriginalNode(null))
   }, [isTranslation, basePath])
 
+  // Очистка polling при размонтировании
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current)
+  }, [])
+
+  const handleTranslate = () => {
+    if (!basePath || translating) return
+    setTranslating(true)
+    setTranslateError(null)
+    postTranslate(basePath)
+      .then((status) => {
+        if (status.status === 'done') {
+          setTranslating(false)
+          getNode(path).then(setNode)
+          getNode(basePath).then(setOriginalNode)
+          return
+        }
+        if (status.status === 'failed') {
+          setTranslating(false)
+          setTranslateError(status.error ?? 'Ошибка перевода')
+          return
+        }
+        const poll = () => {
+          getTranslateStatus(basePath).then((s) => {
+            if (s.status === 'done') {
+              if (pollRef.current) clearInterval(pollRef.current)
+              pollRef.current = null
+              setTranslating(false)
+              getNode(path).then(setNode)
+              getNode(basePath).then(setOriginalNode)
+            } else if (s.status === 'failed') {
+              if (pollRef.current) clearInterval(pollRef.current)
+              pollRef.current = null
+              setTranslating(false)
+              setTranslateError(s.error ?? 'Ошибка перевода')
+            }
+          }).catch(() => {
+            if (pollRef.current) clearInterval(pollRef.current)
+            pollRef.current = null
+            setTranslating(false)
+            setTranslateError('Ошибка при проверке статуса')
+          })
+        }
+        poll()
+        pollRef.current = setInterval(poll, 2500)
+      })
+      .catch((err) => {
+        setTranslating(false)
+        setTranslateError(err instanceof Error ? err.message : 'Ошибка перевода')
+      })
+  }
+
   const translations =
     (node?.metadata?.translations as string[] | undefined) ??
     (originalNode?.metadata?.translations as string[] | undefined) ??
@@ -86,7 +141,54 @@ export function NodePage() {
   const hasTranslations = translations.length > 0
 
   if (loading) return <p className="p-4 text-muted-foreground">Загрузка...</p>
-  if (error) return <p className="p-4 text-destructive">{error}</p>
+  if (error)
+    return (
+      <div className="flex gap-8 p-4 lg:px-8">
+        <div className="min-w-0 flex-1">
+          <div className="mx-auto max-w-3xl space-y-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(location.state?.returnTo ?? '/')}
+            >
+              ← Назад
+            </Button>
+            <nav className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Link to="/" className="hover:text-foreground">
+                Обзор
+              </Link>
+            </nav>
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <FileQuestion className="mb-4 size-16 text-muted-foreground/60" />
+                <h2 className="mb-2 text-xl font-semibold">Запись не найдена</h2>
+                <p className={cn('max-w-sm text-muted-foreground', error ? 'mb-2' : 'mb-6')}>
+                  {path ? (
+                    <>Запись по пути «{path}» не существует или недоступна.</>
+                  ) : (
+                    <>Указанный путь пуст или некорректен.</>
+                  )}
+                </p>
+                {error && (
+                  <p className="mb-6 text-sm text-muted-foreground/80">{error}</p>
+                )}
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate(location.state?.returnTo ?? '/')}
+                  >
+                    Назад
+                  </Button>
+                  <Button asChild>
+                    <Link to="/">К обзору</Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    )
   if (!node) return null
 
   const meta = node.metadata ?? {}
@@ -140,6 +242,21 @@ export function NodePage() {
           </span>
         ))}
       </nav>
+      {nodeType === 'article' && !hasTranslations && !isTranslation && path === node.path && (
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleTranslate}
+            disabled={translating}
+          >
+            {translating ? 'Перевод в процессе...' : 'Перевести'}
+          </Button>
+          {translateError && (
+            <p className="text-sm text-destructive">{translateError}</p>
+          )}
+        </div>
+      )}
       {hasTranslations && (
         <div className="flex gap-1 flex-wrap">
           <Button

@@ -39,8 +39,13 @@ func (s *Store) CreateTranslationFile(
 
 	fileName := fmt.Sprintf("%s.%s.md", slug, lang)
 	mdPath := filepath.Join(themeDir, fileName)
-	if err := afero.WriteFile(s.fs, mdPath, fileContent, 0o644); err != nil {
+	tmpPath := mdPath + ".tmp"
+	if err := afero.WriteFile(s.fs, tmpPath, fileContent, 0o644); err != nil {
 		return errors.Errorf("create translation file: write: %w", err)
+	}
+	if err := s.fs.Rename(tmpPath, mdPath); err != nil {
+		_ = s.fs.Remove(tmpPath)
+		return errors.Errorf("create translation file: rename: %w", err)
 	}
 
 	return nil
@@ -101,8 +106,13 @@ func (s *Store) AppendTranslationsToOriginal(
 	}
 
 	mdPath := stemPath + ".md"
-	if err := afero.WriteFile(s.fs, mdPath, fileContent, 0o644); err != nil {
+	tmpPath := mdPath + ".tmp"
+	if err := afero.WriteFile(s.fs, tmpPath, fileContent, 0o644); err != nil {
 		return errors.Errorf("append translations: write: %w", err)
+	}
+	if err := s.fs.Rename(tmpPath, mdPath); err != nil {
+		_ = s.fs.Remove(tmpPath)
+		return errors.Errorf("append translations: rename: %w", err)
 	}
 
 	return nil
