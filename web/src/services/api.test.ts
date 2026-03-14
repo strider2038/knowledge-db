@@ -20,7 +20,8 @@ describe('getNodesWithParams', () => {
     })
     await getNodesWithParams({ path: 'programming', recursive: true })
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/nodes?')
+      expect.stringContaining('/api/nodes?'),
+      expect.anything()
     )
     const url = new URL(fetchMock.mock.calls[0][0])
     expect(url.searchParams.get('path')).toBe('programming')

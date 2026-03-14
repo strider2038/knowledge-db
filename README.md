@@ -80,6 +80,8 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **KB_DATA_PATH** | Путь к корню базы знаний (обязателен для kb-server) |
 | **KB_HTTP_ADDR** | Адрес HTTP-сервера (по умолчанию :8080) |
 | **KB_GIT_DISABLED** | Отключить git (коммиты и sync) |
+| **KB_LOGIN**, **KB_PASSWORD** | Опциональная авторизация: при задании обоих включается защита API и web UI |
+| **KB_SESSION_TTL** | TTL сессии (по умолчанию 8h) |
 | **TELEGRAM_TOKEN** | Токен Telegram-бота (опционально) |
 | **TELEGRAM_OWNER_ID** | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN) |
 | **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL** | LLM для ingestion (OpenAI-совместимый API) |
@@ -87,6 +89,24 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **GIT_SYNC_INTERVAL** | Интервал git sync (по умолчанию 5m) |
 | **VITE_API_URL** | URL API для web (по умолчанию http://localhost:8080) |
 | **ALLOWED_CORS_ORIGIN** | CORS origin для dev (например http://localhost:5173) |
+
+## Режимы запуска
+
+**Открытый режим** (по умолчанию): без `KB_LOGIN`/`KB_PASSWORD` API и web UI доступны без авторизации.
+
+```bash
+KB_DATA_PATH=/path/to/data ./kb-server
+```
+
+**Режим с авторизацией**: при задании `KB_LOGIN` и `KB_PASSWORD` требуется вход через форму на `/login`.
+
+```bash
+KB_DATA_PATH=/path/to/data KB_LOGIN=admin KB_PASSWORD=secret ./kb-server
+```
+
+При публичном доступе (вне localhost) рекомендуется использовать TLS: cookie `Secure` требует HTTPS. Настройте reverse proxy (nginx, Caddy) с TLS и корректные заголовки `X-Forwarded-Proto`, `X-Forwarded-For`.
+
+При включённой авторизации для production задайте `ALLOWED_CORS_ORIGIN` (origin вашего web UI) — это усиливает проверку Origin/Referer для state-changing auth-запросов.
 
 ## Лицензия
 

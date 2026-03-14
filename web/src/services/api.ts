@@ -1,5 +1,17 @@
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
+const fetchOptions: RequestInit = { credentials: 'include' };
+
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, { ...fetchOptions, ...init })
+  if (res.status === 401) {
+    const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+    window.location.href = `/login?redirect=${redirect}`
+    throw new Error('Unauthorized')
+  }
+  return res
+}
+
 /** URL для статики базы (изображения, вложения узлов). */
 export function getAssetUrl(path: string): string {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
@@ -41,14 +53,46 @@ export interface GetNodesParams {
   order?: string;
 }
 
+export interface SessionStatus {
+  authenticated: boolean;
+  auth_enabled: boolean;
+}
+
+export async function getSession(): Promise<SessionStatus> {
+  const res = await fetch(`${API_URL}/api/auth/session`, fetchOptions);
+  if (!res.ok) throw new Error('Failed to get session');
+  return res.json();
+}
+
+export async function login(login: string, password: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/auth/login`, {
+    ...fetchOptions,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Login failed');
+  }
+}
+
+export async function logout(): Promise<void> {
+  const res = await fetch(`${API_URL}/api/auth/logout`, {
+    ...fetchOptions,
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Logout failed');
+}
+
 export async function getTree(): Promise<TreeNode> {
-  const res = await fetch(`${API_URL}/api/tree`);
+  const res = await apiFetch(`${API_URL}/api/tree`);
   if (!res.ok) throw new Error('Failed to load tree');
   return res.json();
 }
 
 export async function getNodes(path: string): Promise<TreeNode[]> {
-  const res = await fetch(`${API_URL}/api/nodes?path=${encodeURIComponent(path)}`);
+  const res = await apiFetch(`${API_URL}/api/nodes?path=${encodeURIComponent(path)}`);
   if (!res.ok) throw new Error('Failed to load nodes');
   const data = await res.json();
   return data.nodes || [];
@@ -66,14 +110,14 @@ export async function getNodesWithParams(
   if (params.offset !== undefined) searchParams.set('offset', String(params.offset));
   if (params.sort) searchParams.set('sort', params.sort);
   if (params.order) searchParams.set('order', params.order);
-  const res = await fetch(`${API_URL}/api/nodes?${searchParams.toString()}`);
+  const res = await apiFetch(`${API_URL}/api/nodes?${searchParams.toString()}`);
   if (!res.ok) throw new Error('Failed to load nodes');
   const data = await res.json();
   return { nodes: data.nodes || [], total: data.total ?? 0 };
 }
 
 export async function getNode(path: string): Promise<Node> {
-  const res = await fetch(`${API_URL}/api/nodes/${encodeURIComponent(path)}`);
+  const res = await apiFetch(`${API_URL}/api/nodes/${encodeURIComponent(path)}`);
   if (!res.ok) throw new Error('Failed to load node');
   return res.json();
 }
@@ -85,7 +129,7 @@ export interface TranslateStatus {
 
 export async function postTranslate(path: string): Promise<TranslateStatus> {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await fetch(`${API_URL}/api/articles/translate/${encoded}`, {
+  const res = await apiFetch(`${API_URL}/api/articles/translate/${encoded}`, {
     method: 'POST',
   });
   if (!res.ok) {
@@ -97,7 +141,7 @@ export async function postTranslate(path: string): Promise<TranslateStatus> {
 
 export async function getTranslateStatus(path: string): Promise<TranslateStatus> {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await fetch(`${API_URL}/api/articles/translate/${encoded}`);
+  const res = await apiFetch(`${API_URL}/api/articles/translate/${encoded}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to get status');
@@ -126,7 +170,7 @@ export async function ingestText(
   if (options?.sourceAuthor) {
     body.source_author = options.sourceAuthor;
   }
-  const res = await fetch(`${API_URL}/api/ingest`, {
+  const res = await apiFetch(`${API_URL}/api/ingest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -172,7 +216,7 @@ export interface ImportRejectResponse {
 }
 
 export async function createImportSession(json: string): Promise<ImportSessionCreateResponse> {
-  const res = await fetch(`${API_URL}/api/import/telegram`, {
+  const res = await apiFetch(`${API_URL}/api/import/telegram`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: json,
@@ -185,7 +229,7 @@ export async function createImportSession(json: string): Promise<ImportSessionCr
 }
 
 export async function getImportSession(id: string): Promise<ImportSessionState> {
-  const res = await fetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}`);
+  const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to get session');
@@ -198,7 +242,7 @@ export async function acceptImportItem(
   typeHint?: 'auto' | 'article' | 'link' | 'note'
 ): Promise<ImportAcceptResponse> {
   const body = typeHint && typeHint !== 'auto' ? { type_hint: typeHint } : {};
-  const res = await fetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/accept`, {
+  const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/accept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -211,7 +255,7 @@ export async function acceptImportItem(
 }
 
 export async function rejectImportItem(id: string): Promise<ImportRejectResponse> {
-  const res = await fetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/reject`, {
+  const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/reject`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),

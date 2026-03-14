@@ -20,7 +20,7 @@ func setupImportTestHandler(t *testing.T, ingester ingestion.Ingester) http.Hand
 	dataPath := t.TempDir()
 	uploadsDir := t.TempDir()
 	h := api.NewHandlerWithUploads(dataPath, uploadsDir, ingester, nil)
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	return mux
@@ -194,7 +194,7 @@ func TestImportTelegram_WhenNotConfigured_Expect503(t *testing.T) {
 	t.Parallel()
 	dataPath := t.TempDir()
 	h := api.NewHandler(dataPath, &ingestion.StubIngester{})
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	resp := apitest.HandlePOST(t, mux, "/api/import/telegram", strings.NewReader(validTelegramJSON),

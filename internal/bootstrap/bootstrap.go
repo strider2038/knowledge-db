@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/strider2038/knowledge-db/internal/api"
+	"github.com/strider2038/knowledge-db/internal/auth"
+	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
@@ -41,7 +43,11 @@ func Run() error {
 	translationQueue := buildTranslationQueue(cfg)
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue)
 	handler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
-	mux, err := api.NewMux(handler)
+
+	sessionStore := session.NewStore()
+	authHandler := api.NewAuthHandler(sessionStore, cfg)
+
+	mux, err := api.NewMux(handler, authHandler)
 	if err != nil {
 		return errors.Errorf("new mux: %w", err)
 	}
@@ -50,6 +56,9 @@ func Run() error {
 	mux.Handle("POST /api/mcp", mcp.NewHandler(cfg.DataPath))
 
 	httpHandler := api.Gzip(api.CORS(mux, cfg.HTTP.AllowedCORSOrigin))
+	if cfg.Auth.AuthEnabled() {
+		httpHandler = auth.Middleware(httpHandler, sessionStore)
+	}
 
 	srv := &http.Server{
 		Addr:    cfg.HTTP.Addr,

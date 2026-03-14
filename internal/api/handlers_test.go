@@ -36,7 +36,7 @@ func setupTestHandlerWithIngester(t *testing.T, ingester ingestion.Ingester) htt
 	t.Helper()
 	tmp := t.TempDir()
 	h := api.NewHandler(tmp, ingester)
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	return mux
@@ -58,7 +58,7 @@ annotation: "Annotation"
 Content`
 	_ = os.WriteFile(filepath.Join(themeDir, "node1.md"), []byte(node1Content), 0o644)
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	return mux
@@ -163,7 +163,7 @@ Content`,
 		require.NoError(t, os.WriteFile(fullPath, []byte(content), 0o644))
 	}
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	return mux
@@ -408,7 +408,7 @@ func TestGetAsset_WhenValidPath_ExpectOK(t *testing.T) {
 	pngBytes := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	_ = os.WriteFile(filepath.Join(assetDir, "test.png"), pngBytes, 0o644)
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	resp := apitest.HandleGET(t, mux, "/api/assets/topic/node1/images/test.png")

@@ -7,8 +7,16 @@ import (
 )
 
 // NewMux создаёт ServeMux с зарегистрированными маршрутами (Go 1.22+).
-func NewMux(h *Handler) (*http.ServeMux, error) {
+// auth — опционально; при nil auth endpoints не регистрируются.
+func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	if auth != nil {
+		mux.HandleFunc("POST /api/auth/login", auth.Login)
+		mux.HandleFunc("GET /api/auth/session", auth.Session)
+		mux.HandleFunc("POST /api/auth/logout", auth.Logout)
+	}
 	mux.HandleFunc("GET /api/nodes/{path...}", h.GetNode)
 	mux.HandleFunc("GET /api/nodes", h.ListNodes)
 	mux.HandleFunc("GET /api/assets/{path...}", h.GetAsset)

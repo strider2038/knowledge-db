@@ -38,7 +38,7 @@ Content in English.`
 		queue = translationqueue.New(10)
 	}
 	h := api.NewHandlerWithUploads(tmp, "", &ingestion.StubIngester{}, queue)
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	return mux
@@ -94,7 +94,7 @@ Content`
 	_ = os.WriteFile(filepath.Join(themeDir, "node1.md"), []byte(noteContent), 0o644)
 	queue := translationqueue.New(10)
 	h := api.NewHandlerWithUploads(tmp, "", &ingestion.StubIngester{}, queue)
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	resp := apitest.HandlePOST(t, mux, "/api/articles/translate/topic/node1", nil)
@@ -171,7 +171,7 @@ lang: ru
 	_ = os.WriteFile(filepath.Join(themeDir, "test-article.ru.md"), []byte(translationContent), 0o644)
 	queue := translationqueue.New(10)
 	h := api.NewHandlerWithUploads(tmp, "", &ingestion.StubIngester{}, queue)
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	resp := apitest.HandleGET(t, mux, "/api/articles/translate/go/test-article")
@@ -207,7 +207,7 @@ lang: ru
 	_ = os.WriteFile(filepath.Join(themeDir, "test-article.ru.md"), []byte(translationContent), 0o644)
 	queue := translationqueue.New(10)
 	h := api.NewHandlerWithUploads(tmp, "", &ingestion.StubIngester{}, queue)
-	mux, err := api.NewMux(h)
+	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	resp := apitest.HandlePOST(t, mux, "/api/articles/translate/go/test-article", nil)

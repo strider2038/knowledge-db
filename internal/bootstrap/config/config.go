@@ -31,6 +31,18 @@ type Telegram struct {
 	OwnerID int64  `env:"TELEGRAM_OWNER_ID" envDefault:"0"`
 }
 
+// Auth — опциональная сессионная авторизация (включается при KB_LOGIN и KB_PASSWORD).
+type Auth struct {
+	Login      string        `env:"KB_LOGIN" envDefault:""`
+	Password   string        `env:"KB_PASSWORD" envDefault:""`
+	SessionTTL time.Duration `env:"KB_SESSION_TTL" envDefault:"8h"`
+}
+
+// AuthEnabled возвращает true, если авторизация включена (оба KB_LOGIN и KB_PASSWORD заданы).
+func (a Auth) AuthEnabled() bool {
+	return a.Login != "" && a.Password != ""
+}
+
 // Config — конфигурация приложения.
 type Config struct {
 	DataPath        string        `env:"KB_DATA_PATH" envDefault:""`
@@ -43,6 +55,7 @@ type Config struct {
 	HTTP     HTTP
 	LLM      LLM
 	Telegram Telegram
+	Auth     Auth
 }
 
 // Load загружает конфигурацию из .env и переменных окружения.
