@@ -108,6 +108,81 @@ KB_DATA_PATH=/path/to/data KB_LOGIN=admin KB_PASSWORD=secret ./kb-server
 
 При включённой авторизации для production задайте `ALLOWED_CORS_ORIGIN` (origin вашего web UI) — это усиливает проверку Origin/Referer для state-changing auth-запросов.
 
+## Docker
+
+Образ собирается в GitHub Actions при push в `main` и публикуется в [GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+```bash
+# Сборка локально
+docker build -t kb-server .
+
+# Запуск (база — volume)
+docker run -d -p 8080:8080 \
+  -v /path/to/knowledge-base:/data \
+  -e KB_DATA_PATH=/data \
+  ghcr.io/OWNER/knowledge-db:latest
+```
+
+### Настройка Git в Docker
+
+Сервер выполняет `git push` и `git fetch` для синхронизации базы с remote. Для доступа к репозиторию по SSH нужны учётные данные внутри контейнера.
+
+**Вариант 1: Deploy key (рекомендуется)**
+
+Создайте отдельный SSH-ключ для репозитория и смонтируйте его в контейнер:
+
+```bash
+# На хосте
+ssh-keygen -t ed25519 -f /opt/kb-deploy/key -N "" -C "kb-deploy"
+# Добавьте /opt/kb-deploy/key.pub как deploy key в GitLab/GitHub
+```
+
+```bash
+docker run -d -p 8080:8080 \
+  -v /path/to/knowledge-base:/data \
+  -v /opt/kb-deploy:/opt/kb-deploy:ro \
+  -e KB_DATA_PATH=/data \
+  -e GIT_SSH_COMMAND="ssh -i /opt/kb-deploy/key -o StrictHostKeyChecking=accept-new" \
+  ghcr.io/OWNER/knowledge-db:latest
+```
+
+**Вариант 2: Монтирование ~/.ssh**
+
+Контейнер работает от пользователя `kb`. Монтируйте SSH в `/home/kb/.ssh`:
+
+```bash
+docker run -d -p 8080:8080 \
+  -v /path/to/knowledge-base:/data \
+  -v ~/.ssh:/home/kb/.ssh:ro \
+  -e KB_DATA_PATH=/data \
+  ghcr.io/OWNER/knowledge-db:latest
+```
+
+Права на хосте: `~/.ssh` — 700, ключи — 600.
+
+**Вариант 3: Без git**
+
+Если push/fetch не нужны (например, только локальная база):
+
+```bash
+docker run -d -p 8080:8080 \
+  -v /path/to/knowledge-base:/data \
+  -e KB_DATA_PATH=/data \
+  -e KB_GIT_DISABLED=true \
+  ghcr.io/OWNER/knowledge-db:latest
+```
+
+**Подготовка репозитория на хосте**
+
+Перед первым запуском клонируйте базу на хост:
+
+```bash
+mkdir -p /path/to/knowledge-base
+git clone git@gitlab.com:user/my-knowledge-base.git /path/to/knowledge-base
+```
+
+Убедитесь, что `git config user.name` и `user.email` заданы в репозитории — они нужны для коммитов.
+
 ## Лицензия
 
 MIT © 2026 Igor Lazarev
