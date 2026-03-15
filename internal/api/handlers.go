@@ -77,10 +77,12 @@ func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 	node, err := kb.GetNode(r.Context(), h.dataPath, path)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
+			clog.Debug(r.Context(), "get node: not found", "path", path)
 			writeError(w, http.StatusNotFound, "node not found")
 
 			return
 		}
+		clog.Errorf(r.Context(), "get node: %w", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
@@ -92,6 +94,7 @@ func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetTree(w http.ResponseWriter, r *http.Request) {
 	tree, err := kb.ReadTree(r.Context(), h.dataPath)
 	if err != nil {
+		clog.Errorf(r.Context(), "get tree: %w", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
@@ -111,10 +114,12 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 		nodes, err := kb.ListNodes(r.Context(), h.dataPath, path)
 		if err != nil {
 			if errors.Is(err, kb.ErrNodeNotFound) {
+				clog.Debug(r.Context(), "list nodes: path not found", "path", path)
 				writeError(w, http.StatusNotFound, "path not found")
 
 				return
 			}
+			clog.Errorf(r.Context(), "list nodes: %w", err)
 			writeError(w, http.StatusInternalServerError, err.Error())
 
 			return
@@ -159,10 +164,12 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 	nodes, total, err := kb.ListNodesWithOptions(r.Context(), h.dataPath, opts)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
+			clog.Debug(r.Context(), "list nodes: path not found", "path", opts.Path)
 			writeError(w, http.StatusNotFound, "path not found")
 
 			return
 		}
+		clog.Errorf(r.Context(), "list nodes: %w", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
@@ -235,14 +242,17 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, ingestion.ErrNotImplemented) {
+			clog.Warn(r.Context(), "ingest: not implemented")
 			writeError(w, http.StatusNotImplemented, "ingestion not implemented")
 
 			return
 		}
+		clog.Errorf(r.Context(), "ingest: %w", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
 	}
+	clog.Info(r.Context(), "ingest: complete", "path", node.Path)
 	writeJSON(w, node)
 }
 
@@ -263,10 +273,12 @@ func (h *Handler) handleArticleTranslate(w http.ResponseWriter, r *http.Request,
 	node, err := kb.GetNode(r.Context(), h.dataPath, path)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
+			clog.Debug(r.Context(), "article translate: node not found", "path", path)
 			writeError(w, http.StatusNotFound, "node not found")
 
 			return
 		}
+		clog.Errorf(r.Context(), "article translate: get node: %w", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
@@ -274,6 +286,7 @@ func (h *Handler) handleArticleTranslate(w http.ResponseWriter, r *http.Request,
 
 	nodeType, _ := node.Metadata["type"].(string)
 	if nodeType != "article" {
+		clog.Debug(r.Context(), "article translate: not an article", "path", path)
 		writeError(w, http.StatusBadRequest, "node is not an article")
 
 		return

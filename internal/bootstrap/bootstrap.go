@@ -22,6 +22,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationworker"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/mcp"
+	"github.com/strider2038/knowledge-db/internal/pkg/tracing"
 	"github.com/strider2038/knowledge-db/internal/telegram"
 )
 
@@ -39,6 +40,8 @@ func Run() error {
 		return err
 	}
 
+	slog.Info("kb-server: starting", "addr", cfg.HTTP.Addr, "data_path", cfg.DataPath)
+
 	committer := buildCommitter(cfg)
 	translationQueue := buildTranslationQueue(cfg)
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue)
@@ -55,10 +58,15 @@ func Run() error {
 	mux.Handle("GET /api/mcp", mcp.NewHandler(cfg.DataPath))
 	mux.Handle("POST /api/mcp", mcp.NewHandler(cfg.DataPath))
 
-	httpHandler := api.Gzip(api.CORS(mux, cfg.HTTP.AllowedCORSOrigin))
+	baseHandler := api.Gzip(api.CORS(mux, cfg.HTTP.AllowedCORSOrigin))
 	if cfg.Auth.AuthEnabled() {
-		httpHandler = auth.Middleware(httpHandler, sessionStore)
+		baseHandler = auth.Middleware(baseHandler, sessionStore)
 	}
+	httpHandler := tracing.Middleware(
+		api.LoggingMiddleware(
+			api.RequestLoggingMiddleware(baseHandler),
+		),
+	)
 
 	srv := &http.Server{
 		Addr:    cfg.HTTP.Addr,

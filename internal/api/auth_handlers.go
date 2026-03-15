@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/muonsoft/clog"
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 )
@@ -61,6 +62,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	ip := clientIP(r)
 	if h.isRateLimited(ip) {
+		clog.Warn(r.Context(), "auth login: rate limited", "ip", ip)
 		w.WriteHeader(http.StatusTooManyRequests)
 
 		return
@@ -81,6 +83,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if !loginOK || !passOK {
 		h.recordFailedAttempt(ip)
+		clog.Warn(r.Context(), "auth login: invalid credentials")
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 
 		return
@@ -88,11 +91,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	sessionID, err := h.store.Create(h.cfg.Auth.SessionTTL)
 	if err != nil {
+		clog.Errorf(r.Context(), "auth login: session creation failed: %w", err)
 		writeError(w, http.StatusInternalServerError, "session creation failed")
 
 		return
 	}
 
+	clog.Info(r.Context(), "auth login: success")
 	setSessionCookie(w, r, sessionID, int(h.cfg.Auth.SessionTTL.Seconds()))
 	writeJSON(w, map[string]bool{"authenticated": true})
 }
@@ -137,6 +142,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	clog.Info(r.Context(), "auth logout: success")
 	clearSessionCookie(w, r)
 	writeJSON(w, map[string]bool{"authenticated": false})
 }
