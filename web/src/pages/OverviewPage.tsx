@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, FolderTree } from 'lucide-react'
 import {
   getTree,
   getNodesWithParams,
@@ -28,6 +28,13 @@ import {
   getTypeBadgeColor,
   getTypeButtonClass,
 } from '@/lib/type-styles'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 
 const NODE_TYPES = ['article', 'link', 'note'] as const
 const DEFAULT_LIMIT = 50
@@ -193,8 +200,9 @@ export function OverviewPage() {
   }
 
   const totalPages = Math.ceil(total / DEFAULT_LIMIT)
+  const [topicsSheetOpen, setTopicsSheetOpen] = useState(false)
 
-  const renderTree = (node: TreeNode, depth = 0) => {
+  const renderTree = (node: TreeNode, depth = 0, onSelect?: () => void) => {
     const children = [...(node.children ?? [])].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
     )
@@ -211,7 +219,10 @@ export function OverviewPage() {
           <li>
             <button
               type="button"
-              onClick={() => updateParams({ path: '', page: '1' })}
+              onClick={() => {
+                updateParams({ path: '', page: '1' })
+                onSelect?.()
+              }}
               className={cn(
                 'block w-full rounded px-2 py-1.5 text-left text-sm font-medium transition-colors hover:bg-accent',
                 path === ''
@@ -229,7 +240,10 @@ export function OverviewPage() {
             <li key={child.path}>
               <button
                 type="button"
-                onClick={() => updateParams({ path: child.path, page: '1' })}
+                onClick={() => {
+                  updateParams({ path: child.path, page: '1' })
+                  onSelect?.()
+                }}
                 className={cn(
                   'block w-full rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent',
                   isSelected
@@ -239,7 +253,7 @@ export function OverviewPage() {
               >
                 {child.name}
               </button>
-              {renderTree(child, depth + 1)}
+              {renderTree(child, depth + 1, onSelect)}
             </li>
           )
         })}
@@ -252,11 +266,34 @@ export function OverviewPage() {
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
-      <aside className="w-64 shrink-0 border-r bg-muted/30 p-4 overflow-auto">
+      <aside className="hidden w-64 shrink-0 border-r bg-muted/30 p-4 overflow-auto lg:block">
         <h3 className="mb-3 font-semibold">Темы</h3>
         {filteredTree && renderTree(filteredTree)}
       </aside>
-      <main className="flex-1 overflow-auto p-4">
+      <div className="fixed bottom-6 left-6 z-50 lg:hidden">
+        <Sheet open={topicsSheetOpen} onOpenChange={setTopicsSheetOpen}>
+          <SheetTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-10 rounded-full shadow-lg"
+              aria-label="Темы"
+            >
+              <FolderTree className="size-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-72 p-0 sm:max-w-[280px]">
+            <SheetHeader className="border-b p-4">
+              <SheetTitle>Темы</SheetTitle>
+            </SheetHeader>
+            <div className="overflow-auto p-4">
+              {filteredTree &&
+                renderTree(filteredTree, 0, () => setTopicsSheetOpen(false))}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+      <main className="min-w-0 flex-1 overflow-auto p-4">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
             type="search"
@@ -292,8 +329,8 @@ export function OverviewPage() {
             ) : (
               <>
                 <Table>
-                  <TableHeader>
-                    <TableRow>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableRow className="bg-muted/50">
                       <TableHead>
                         <button
                           type="button"
@@ -312,7 +349,7 @@ export function OverviewPage() {
                           Тип {sort === 'type' && (order === 'asc' ? '↑' : '↓')}
                         </button>
                       </TableHead>
-                      <TableHead>
+                      <TableHead className="hidden md:table-cell">
                         <button
                           type="button"
                           onClick={() => toggleSort('created')}
@@ -321,7 +358,7 @@ export function OverviewPage() {
                           Дата {sort === 'created' && (order === 'asc' ? '↑' : '↓')}
                         </button>
                       </TableHead>
-                      <TableHead>
+                      <TableHead className="hidden md:table-cell">
                         <button
                           type="button"
                           onClick={() => toggleSort('source_url')}
@@ -334,14 +371,17 @@ export function OverviewPage() {
                   </TableHeader>
                   <TableBody>
                     {nodes.map((n) => (
-                      <TableRow key={n.path}>
-                        <TableCell>
+                      <TableRow
+                        key={n.path}
+                        className="even:bg-muted/20 hover:even:bg-muted/40"
+                      >
+                        <TableCell className="min-w-0 max-w-[min(100%,20rem)] whitespace-normal md:max-w-none">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Link
                                 to={`/node/${n.path}`}
                                 state={{ returnTo: location.pathname + location.search }}
-                                className="text-primary hover:underline"
+                                className="line-clamp-2 text-primary hover:underline md:line-clamp-none"
                               >
                                 {n.title || n.path}
                               </Link>
@@ -379,10 +419,10 @@ export function OverviewPage() {
                             {n.type}
                           </span>
                         </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
+                        <TableCell className="hidden text-muted-foreground text-sm md:table-cell">
                           {n.created ? new Date(n.created).toLocaleDateString() : '—'}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">
                           {(n.type === 'article' || n.type === 'link') && n.source_url ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
