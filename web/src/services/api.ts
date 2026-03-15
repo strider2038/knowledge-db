@@ -1,4 +1,5 @@
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const envUrl = import.meta.env.VITE_API_URL;
+export const API_URL = envUrl === '' ? '' : (envUrl || 'http://localhost:8080');
 
 const fetchOptions: RequestInit = { credentials: 'include' };
 

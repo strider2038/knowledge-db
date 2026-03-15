@@ -1,5 +1,7 @@
 # Stage 1: build web
 FROM node:22-alpine AS web
+ARG VITE_API_URL=
+ENV VITE_API_URL=$VITE_API_URL
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci
