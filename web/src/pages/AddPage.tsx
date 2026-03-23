@@ -122,6 +122,14 @@ function ManualAddForm() {
   )
 }
 
+type ImportCompletionSummary = {
+  total: number
+  processedCount: number
+  rejectedCount: number
+  /** путь узла, если последнее действие было «Принять» */
+  lastSavedPath: string | null
+}
+
 function ImportTab() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [sessionId, setSessionId] = useState<string | null>(() =>
@@ -138,6 +146,9 @@ function ImportTab() {
   const [error, setError] = useState<string | null>(null)
   const [successPath, setSuccessPath] = useState<string | null>(null)
   const [typeHint, setTypeHint] = useState<TypeHint>('auto')
+  const [completion, setCompletion] = useState<ImportCompletionSummary | null>(
+    null
+  )
 
   useEffect(() => {
     if (sessionId) {
@@ -168,6 +179,7 @@ function ImportTab() {
     const file = e.target.files?.[0]
     if (!file) return
     setError(null)
+    setCompletion(null)
     setLoading(true)
     try {
       const json = await file.text()
@@ -197,14 +209,21 @@ function ImportTab() {
     try {
       const res = await acceptImportItem(sessionId, typeHint)
       setSuccessPath(res.node.path)
+      const nextProcessed = session.processedCount + 1
       setSession({
         total: session.total,
         currentIndex: session.currentIndex + 1,
-        processedCount: session.processedCount + 1,
+        processedCount: nextProcessed,
         rejectedCount: session.rejectedCount,
         currentItem: res.next_item,
       })
       if (!res.next_item) {
+        setCompletion({
+          total: session.total,
+          processedCount: nextProcessed,
+          rejectedCount: session.rejectedCount,
+          lastSavedPath: res.node.path,
+        })
         setSessionId(null)
         localStorage.removeItem(IMPORT_SESSION_KEY)
       }
@@ -222,14 +241,21 @@ function ImportTab() {
     setLoading(true)
     try {
       const res = await rejectImportItem(sessionId)
+      const nextRejected = session.rejectedCount + 1
       setSession({
         total: session.total,
         currentIndex: session.currentIndex + 1,
         processedCount: session.processedCount,
-        rejectedCount: session.rejectedCount + 1,
+        rejectedCount: nextRejected,
         currentItem: res.next_item,
       })
       if (!res.next_item) {
+        setCompletion({
+          total: session.total,
+          processedCount: session.processedCount,
+          rejectedCount: nextRejected,
+          lastSavedPath: null,
+        })
         setSessionId(null)
         localStorage.removeItem(IMPORT_SESSION_KEY)
       }
@@ -246,7 +272,64 @@ function ImportTab() {
     setSession(null)
     setError(null)
     setSuccessPath(null)
+    setCompletion(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const dismissCompletion = () => {
+    setCompletion(null)
+    setSuccessPath(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  if (completion) {
+    return (
+      <div className="space-y-4">
+        <div
+          className="rounded-lg border border-green-500/40 bg-green-500/10 px-4 py-5 dark:bg-green-950/40"
+          role="status"
+        >
+          <div className="flex gap-3">
+            <CheckCircle className="mt-0.5 h-8 w-8 shrink-0 text-green-600 dark:text-green-400" />
+            <div>
+              <p className="text-base font-semibold text-foreground">
+                Импорт завершён
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Все сообщения из файла обработаны. Данные сохранены в базе (для
+                принятых записей).
+              </p>
+              <p className="mt-3 text-sm">
+                Всего в выгрузке:{' '}
+                <span className="font-medium tabular-nums">{completion.total}</span>
+                . Принято:{' '}
+                <span className="font-medium tabular-nums text-green-700 dark:text-green-300">
+                  {completion.processedCount}
+                </span>
+                , отклонено:{' '}
+                <span className="font-medium tabular-nums">
+                  {completion.rejectedCount}
+                </span>
+                .
+              </p>
+              {completion.lastSavedPath && (
+                <p className="mt-2 text-sm">
+                  <Link
+                    to={`/node/${completion.lastSavedPath}`}
+                    className="font-medium text-green-800 underline hover:no-underline dark:text-green-200"
+                  >
+                    Открыть последний добавленный узел
+                  </Link>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+        <Button type="button" onClick={dismissCompletion}>
+          Импортировать другой файл
+        </Button>
+      </div>
+    )
   }
 
   if (!sessionId) {
