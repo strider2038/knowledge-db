@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { ExternalLink, FolderTree } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, FolderTree } from 'lucide-react'
 import {
   getTree,
   getNodesWithParams,
@@ -8,6 +8,8 @@ import {
   type NodeListItem,
 } from '../services/api'
 import { useDebounce } from '../hooks/useDebounce'
+import { useTopicNavExpansion } from '../hooks/useTopicNavExpansion'
+import { isForcedOpenPath } from '@/lib/topic-nav-expansion'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -202,61 +204,114 @@ export function OverviewPage() {
   const totalPages = Math.ceil(total / DEFAULT_LIMIT)
   const [topicsSheetOpen, setTopicsSheetOpen] = useState(false)
 
-  const renderTree = (node: TreeNode, depth = 0, onSelect?: () => void) => {
-    const children = [...(node.children ?? [])].sort((a, b) =>
+  const {
+    defaultExpandDepth,
+    setDefaultExpandDepth,
+    isExpanded,
+    toggleBranch,
+  } = useTopicNavExpansion(path)
+
+  const renderTopicBranch = (parent: TreeNode, onSelect?: () => void) => {
+    const children = [...(parent.children ?? [])].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
     )
-    const isRoot = depth === 0
     return (
-      <ul
-        key={node.path || 'root'}
-        className={cn(
-          'list-none',
-          isRoot ? 'space-y-0.5' : 'ml-4 border-l border-border pl-2 space-y-0.5'
-        )}
-      >
-        {isRoot && (
-          <li>
-            <button
-              type="button"
-              onClick={() => {
-                updateParams({ path: '', page: '1' })
-                onSelect?.()
-              }}
-              className={cn(
-                'block w-full rounded px-2 py-1.5 text-left text-sm font-medium transition-colors hover:bg-accent',
-                path === ''
-                  ? 'bg-primary/15 text-primary dark:bg-primary/25'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              Вся база
-            </button>
-          </li>
-        )}
+      <>
         {children.map((child) => {
+          const sortedSub = [...(child.children ?? [])].sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+          )
+          const hasSubtopics = sortedSub.length > 0
+          const open = isExpanded(child.path, hasSubtopics)
+          const forced = isForcedOpenPath(child.path, path)
           const isSelected = path === child.path
           return (
             <li key={child.path}>
-              <button
-                type="button"
-                onClick={() => {
-                  updateParams({ path: child.path, page: '1' })
-                  onSelect?.()
-                }}
-                className={cn(
-                  'block w-full rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent',
-                  isSelected
-                    ? 'bg-primary/15 text-primary font-medium dark:bg-primary/25'
-                    : ''
+              <div className="flex items-start gap-0.5">
+                {hasSubtopics ? (
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-label={open ? 'Свернуть ветку' : 'Развернуть ветку'}
+                    disabled={forced}
+                    title={
+                      forced
+                        ? 'На пути к выбранной теме'
+                        : undefined
+                    }
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleBranch(child.path, true)
+                    }}
+                    className={cn(
+                      'mt-0.5 size-7 shrink-0 inline-flex items-center justify-center rounded transition-colors',
+                      forced
+                        ? 'cursor-default text-muted-foreground opacity-60'
+                        : 'hover:bg-accent'
+                    )}
+                  >
+                    {open ? (
+                      <ChevronDown className="size-4" />
+                    ) : (
+                      <ChevronRight className="size-4" />
+                    )}
+                  </button>
+                ) : (
+                  <span
+                    className="mt-0.5 size-7 shrink-0 inline-block"
+                    aria-hidden
+                  />
                 )}
-              >
-                {child.name}
-              </button>
-              {renderTree(child, depth + 1, onSelect)}
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateParams({ path: child.path, page: '1' })
+                    onSelect?.()
+                  }}
+                  className={cn(
+                    'min-w-0 flex-1 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent',
+                    isSelected
+                      ? 'bg-primary/15 font-medium text-primary dark:bg-primary/25'
+                      : ''
+                  )}
+                >
+                  {child.name}
+                </button>
+              </div>
+              {hasSubtopics && open && (
+                <ul className="ml-4 mt-0.5 list-none space-y-0.5 border-l border-border pl-2">
+                  {renderTopicBranch(child, onSelect)}
+                </ul>
+              )}
             </li>
           )
         })}
+      </>
+    )
+  }
+
+  const renderTopicTree = (onSelect?: () => void) => {
+    if (!filteredTree) return null
+    return (
+      <ul className="list-none space-y-0.5">
+        <li>
+          <button
+            type="button"
+            onClick={() => {
+              updateParams({ path: '', page: '1' })
+              onSelect?.()
+            }}
+            className={cn(
+              'block w-full rounded px-2 py-1.5 text-left text-sm font-medium transition-colors hover:bg-accent',
+              path === ''
+                ? 'bg-primary/15 text-primary dark:bg-primary/25'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            Вся база
+          </button>
+        </li>
+        {renderTopicBranch(filteredTree, onSelect)}
       </ul>
     )
   }
@@ -267,8 +322,27 @@ export function OverviewPage() {
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
       <aside className="hidden w-64 shrink-0 border-r bg-muted/30 p-4 overflow-auto lg:block">
-        <h3 className="mb-3 font-semibold">Темы</h3>
-        {filteredTree && renderTree(filteredTree)}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">Темы</h3>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="whitespace-nowrap">Уровней</span>
+            <select
+              value={defaultExpandDepth}
+              onChange={(e) =>
+                setDefaultExpandDepth(Number(e.target.value))
+              }
+              className="max-w-[3.5rem] rounded border border-input bg-background px-1.5 py-1 text-xs shadow-sm"
+              aria-label="Сколько уровней дерева разворачивать по умолчанию"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {renderTopicTree()}
       </aside>
       <div className="fixed bottom-6 left-6 z-50 lg:hidden">
         <Sheet open={topicsSheetOpen} onOpenChange={setTopicsSheetOpen}>
@@ -283,12 +357,28 @@ export function OverviewPage() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-72 p-0 sm:max-w-[280px]">
-            <SheetHeader className="border-b p-4">
+            <SheetHeader className="space-y-3 border-b p-4 pr-14 text-left">
               <SheetTitle>Темы</SheetTitle>
+              <label className="flex w-full max-w-full items-center gap-2 text-xs text-muted-foreground">
+                <span className="shrink-0 whitespace-nowrap">Уровней по умолчанию</span>
+                <select
+                  value={defaultExpandDepth}
+                  onChange={(e) =>
+                    setDefaultExpandDepth(Number(e.target.value))
+                  }
+                  className="min-w-0 shrink rounded border border-input bg-background px-2 py-1.5 text-xs shadow-sm"
+                  aria-label="Сколько уровней дерева разворачивать по умолчанию"
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </SheetHeader>
             <div className="overflow-auto p-4">
-              {filteredTree &&
-                renderTree(filteredTree, 0, () => setTopicsSheetOpen(false))}
+              {renderTopicTree(() => setTopicsSheetOpen(false))}
             </div>
           </SheetContent>
         </Sheet>
