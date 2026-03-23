@@ -12,12 +12,35 @@ import (
 
 // FetchURLMeta выполняет лёгкий HTTP GET и извлекает title + description из <meta> тегов.
 func FetchURLMeta(ctx context.Context, rawURL string) (*URLMeta, error) {
+	return fetchURLMeta(ctx, rawURL, http.DefaultClient)
+}
+
+// HTMLMetaFetcher извлекает title/description из HTML-метаданных страницы.
+type HTMLMetaFetcher struct {
+	httpClient *http.Client
+}
+
+// NewHTMLMetaFetcher создаёт fetcher метаданных из HTML.
+func NewHTMLMetaFetcher(httpClient *http.Client) *HTMLMetaFetcher {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
+	return &HTMLMetaFetcher{httpClient: httpClient}
+}
+
+// FetchMeta извлекает URLMeta из HTML-страницы.
+func (f *HTMLMetaFetcher) FetchMeta(ctx context.Context, rawURL string) (*URLMeta, error) {
+	return fetchURLMeta(ctx, rawURL, f.httpClient)
+}
+
+func fetchURLMeta(ctx context.Context, rawURL string, httpClient *http.Client) (*URLMeta, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, errors.Errorf("fetch url meta: create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, errors.Errorf("fetch url meta: %w", err)
 	}
@@ -31,6 +54,8 @@ func FetchURLMeta(ctx context.Context, rawURL string) (*URLMeta, error) {
 
 	meta := &URLMeta{}
 	extractMeta(doc, meta)
+	meta.Title = normalizeMetaValue(meta.Title)
+	meta.Description = normalizeMetaValue(meta.Description)
 
 	return meta, nil
 }
@@ -47,13 +72,20 @@ func extractMeta(n *html.Node, meta *URLMeta) {
 		case "meta":
 			name := attrVal(n, "name")
 			property := attrVal(n, "property")
+			itemprop := attrVal(n, "itemprop")
 			content := attrVal(n, "content")
 			switch {
-			case strings.EqualFold(name, "description") || strings.EqualFold(property, "og:description"):
+			case strings.EqualFold(name, "description") ||
+				strings.EqualFold(property, "og:description") ||
+				strings.EqualFold(name, "twitter:description") ||
+				strings.EqualFold(itemprop, "description"):
 				if meta.Description == "" {
 					meta.Description = content
 				}
-			case strings.EqualFold(property, "og:title"):
+			case strings.EqualFold(property, "og:title") ||
+				strings.EqualFold(name, "twitter:title") ||
+				strings.EqualFold(itemprop, "name") ||
+				strings.EqualFold(name, "application-name"):
 				if meta.Title == "" {
 					meta.Title = content
 				}
@@ -75,4 +107,8 @@ func attrVal(n *html.Node, key string) string {
 	}
 
 	return ""
+}
+
+func normalizeMetaValue(v string) string {
+	return strings.Join(strings.Fields(v), " ")
 }

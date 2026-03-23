@@ -56,10 +56,20 @@ type OpenAIOrchestrator struct {
 	client         responsesClient
 	model          string
 	contentFetcher fetcher.ContentFetcher
+	metaFetcher    fetcher.URLMetaFetcher
 }
 
 // NewOpenAIOrchestrator создаёт OpenAIOrchestrator.
 func NewOpenAIOrchestrator(apiKey, apiURL, model string, contentFetcher fetcher.ContentFetcher) *OpenAIOrchestrator {
+	return NewOpenAIOrchestratorWithMetaFetcher(apiKey, apiURL, model, contentFetcher, defaultURLMetaFetcher())
+}
+
+// NewOpenAIOrchestratorWithMetaFetcher создаёт OpenAIOrchestrator с кастомным URLMetaFetcher.
+func NewOpenAIOrchestratorWithMetaFetcher(
+	apiKey, apiURL, model string,
+	contentFetcher fetcher.ContentFetcher,
+	metaFetcher fetcher.URLMetaFetcher,
+) *OpenAIOrchestrator {
 	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
 	if apiURL != "" {
 		opts = append(opts, option.WithBaseURL(apiURL))
@@ -70,15 +80,26 @@ func NewOpenAIOrchestrator(apiKey, apiURL, model string, contentFetcher fetcher.
 		client:         &client.Responses,
 		model:          model,
 		contentFetcher: contentFetcher,
+		metaFetcher:    metaFetcher,
 	}
 }
 
 // newOpenAIOrchestratorWithClient создаёт OpenAIOrchestrator с кастомным клиентом (для тестов).
 func newOpenAIOrchestratorWithClient(client responsesClient, model string, contentFetcher fetcher.ContentFetcher) *OpenAIOrchestrator {
+	return newOpenAIOrchestratorWithClientAndMetaFetcher(client, model, contentFetcher, defaultURLMetaFetcher())
+}
+
+func newOpenAIOrchestratorWithClientAndMetaFetcher(
+	client responsesClient,
+	model string,
+	contentFetcher fetcher.ContentFetcher,
+	metaFetcher fetcher.URLMetaFetcher,
+) *OpenAIOrchestrator {
 	return &OpenAIOrchestrator{
 		client:         client,
 		model:          model,
 		contentFetcher: contentFetcher,
+		metaFetcher:    metaFetcher,
 	}
 }
 
@@ -222,7 +243,7 @@ func (o *OpenAIOrchestrator) processResponse(
 			clog.Info(ctx, "ingest: llm call fetch_url_meta", "url", url)
 			functionCalls = append(functionCalls, responses.ResponseInputItemParamOfFunctionCall(item.Arguments, item.CallID, item.Name))
 			metaStart := time.Now()
-			output := executeFetchURLMeta(ctx, item.Arguments)
+			output := o.executeFetchURLMeta(ctx, item.Arguments)
 			toolOutputs = append(toolOutputs, responses.ResponseInputItemParamOfFunctionCallOutput(item.CallID, output))
 			clog.Info(ctx, "ingest: llm fetch_url_meta done", "url", url, "duration_ms", time.Since(metaStart).Milliseconds())
 		}
@@ -278,7 +299,7 @@ func (o *OpenAIOrchestrator) executeFetchURLContent(ctx context.Context, argsJSO
 	return string(out), result
 }
 
-func executeFetchURLMeta(ctx context.Context, argsJSON string) string {
+func (o *OpenAIOrchestrator) executeFetchURLMeta(ctx context.Context, argsJSON string) string {
 	var args struct {
 		URL string `json:"url"`
 	}
@@ -286,21 +307,63 @@ func executeFetchURLMeta(ctx context.Context, argsJSON string) string {
 		return jsonError("invalid arguments: " + err.Error())
 	}
 
-	meta, err := fetcher.FetchURLMeta(ctx, args.URL)
+	meta, source, err := o.fetchURLMeta(ctx, args.URL)
 	if err != nil {
 		return jsonError("fetch meta failed: " + err.Error())
 	}
 
+	//nolint:tagliatelle // JSON schema for tool output uses snake_case keys.
 	type metaOutput struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
+		Title          string `json:"title"`
+		Description    string `json:"description"`
+		Source         string `json:"source"`
+		ContentPreview string `json:"content_preview,omitempty"`
 	}
-	out, err := json.Marshal(metaOutput{Title: meta.Title, Description: meta.Description})
+
+	output := metaOutput{
+		Title:       meta.Title,
+		Description: meta.Description,
+		Source:      source,
+	}
+
+	if isLowQualityMeta(meta) && o.contentFetcher != nil {
+		result, fetchErr := o.contentFetcher.Fetch(ctx, args.URL)
+		if fetchErr == nil {
+			const previewLen = 2000
+			output.ContentPreview = buildContentPreview(result.Content, previewLen)
+			output.Source = "content_fallback"
+			if output.Title == "" {
+				output.Title = result.Title
+			}
+		}
+	}
+
+	out, err := json.Marshal(output)
 	if err != nil {
 		return jsonError("marshal failed: " + err.Error())
 	}
 
 	return string(out)
+}
+
+func (o *OpenAIOrchestrator) fetchURLMeta(ctx context.Context, rawURL string) (*fetcher.URLMeta, string, error) {
+	if o.metaFetcher == nil {
+		o.metaFetcher = defaultURLMetaFetcher()
+	}
+
+	meta, err := o.metaFetcher.FetchMeta(ctx, rawURL)
+	if err != nil {
+		return nil, "", err
+	}
+
+	source := "html_meta"
+	if strings.Contains(strings.ToLower(meta.Title), "github -") &&
+		(strings.Contains(strings.ToLower(meta.Description), "основной язык:") ||
+			strings.Contains(strings.ToLower(meta.Description), "темы:")) {
+		source = "github_api"
+	}
+
+	return meta, source, nil
 }
 
 func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
@@ -374,4 +437,53 @@ func jsonError(msg string) string {
 	}
 
 	return string(out)
+}
+
+func defaultURLMetaFetcher() fetcher.URLMetaFetcher {
+	return fetcher.NewChainURLMetaFetcher(
+		fetcher.NewGitHubMetaFetcher(nil),
+		fetcher.NewHTMLMetaFetcher(nil),
+	)
+}
+
+func buildContentPreview(content string, maxLen int) string {
+	preview := strings.TrimSpace(content)
+	if maxLen <= 0 || len(preview) <= maxLen {
+		return preview
+	}
+
+	return preview[:maxLen] + "\n\n[...контент усечён для анализа аннотации...]"
+}
+
+func isLowQualityMeta(meta *fetcher.URLMeta) bool {
+	if meta == nil {
+		return true
+	}
+
+	title := strings.ToLower(strings.TrimSpace(meta.Title))
+	description := strings.ToLower(strings.TrimSpace(meta.Description))
+	if description == "" {
+		return true
+	}
+	if len([]rune(description)) < 60 {
+		return true
+	}
+
+	templatePhrases := []string{
+		"github is where people build software",
+		"project hosted on github",
+		"allows contributions from developers",
+		"repository aims to facilitate collaborative development",
+	}
+	for _, phrase := range templatePhrases {
+		if strings.Contains(description, phrase) {
+			return true
+		}
+	}
+
+	if strings.HasPrefix(title, "github -") && !strings.Contains(description, "темы:") && !strings.Contains(description, "основной язык:") {
+		return true
+	}
+
+	return false
 }

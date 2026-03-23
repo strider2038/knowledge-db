@@ -121,7 +121,8 @@ func buildIngester(cfg *config.Config, committer igit.GitCommitter, translationQ
 
 	store := kb.NewStore(afero.NewOsFs())
 	contentFetcher := buildContentFetcher(cfg)
-	orchestrator := llm.NewOpenAIOrchestrator(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model, contentFetcher)
+	metaFetcher := buildMetaFetcher()
+	orchestrator := llm.NewOpenAIOrchestratorWithMetaFetcher(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model, contentFetcher, metaFetcher)
 	translator := translation.NewLLMTranslator(orchestrator)
 
 	pipeline := ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, translator, orchestrator, translationQueue)
@@ -139,6 +140,13 @@ func buildContentFetcher(cfg *config.Config) fetcher.ContentFetcher {
 	readabilityFetcher := fetcher.NewReadabilityFetcher(30 * time.Second)
 
 	return fetcher.NewChainFetcher(jinaFetcher, readabilityFetcher)
+}
+
+func buildMetaFetcher() fetcher.URLMetaFetcher {
+	return fetcher.NewChainURLMetaFetcher(
+		fetcher.NewGitHubMetaFetcher(nil),
+		fetcher.NewHTMLMetaFetcher(nil),
+	)
 }
 
 func validateConfig(cfg *config.Config) error {
