@@ -1,7 +1,8 @@
-package urlutil //nolint:testpackage // need access to stripUTMParams
+package urlutil //nolint:testpackage // need access to stripTrackingParams
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -59,6 +60,29 @@ func TestNormalizeURL_StripUTM_OnlyUTM(t *testing.T) {
 	assert.True(t, out == srv.URL || out == srv.URL+"/", "got %q", out)
 }
 
+func TestNormalizeURL_HTMLRedirectWindowLocation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer final.Close()
+
+	short := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = fmt.Fprintf(w, `<!DOCTYPE html><script>window.location.href = "%s"</script>`, final.URL)
+	}))
+	defer short.Close()
+
+	out, err := NormalizeURL(ctx, short.URL)
+	require.NoError(t, err)
+	assert.Contains(t, out, final.URL)
+}
+
 func TestNormalizeURL_Redirect(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -95,7 +119,7 @@ func TestNormalizeURL_TelegramOrg_NoRedirect(t *testing.T) {
 	assert.Equal(t, "https://telegram.org/something", out)
 }
 
-func TestStripUTMParams(t *testing.T) {
+func TestStripTrackingParams(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		in   string
@@ -105,9 +129,11 @@ func TestStripUTMParams(t *testing.T) {
 		{"https://example.com?bar=baz", "https://example.com?bar=baz"},
 		{"https://example.com", "https://example.com"},
 		{"https://example.com?utm_source=a&utm_medium=b", "https://example.com"},
+		{"https://example.com/page?fbclid=xx&keep=1", "https://example.com/page?keep=1"},
+		{"https://example.com?gclid=abc&x=y", "https://example.com?x=y"},
 	}
 	for _, tt := range tests {
-		got := stripUTMParams(tt.in)
+		got := stripTrackingParams(tt.in)
 		assert.Equal(t, tt.want, got)
 	}
 }

@@ -34,6 +34,7 @@ type PipelineIngester struct {
 	committer        git.GitCommitter
 	basePath         string
 	autoTranslate    bool
+	expandURLs       bool
 	translator       translation.Translator
 	titleGenerator   TitleGenerator
 	translationQueue *translationqueue.Queue
@@ -48,6 +49,7 @@ func NewPipelineIngester(
 	committer git.GitCommitter,
 	basePath string,
 	autoTranslate bool,
+	expandURLs bool,
 	translator translation.Translator,
 	titleGenerator TitleGenerator,
 	translationQueue *translationqueue.Queue,
@@ -59,6 +61,7 @@ func NewPipelineIngester(
 		committer:        committer,
 		basePath:         basePath,
 		autoTranslate:    autoTranslate,
+		expandURLs:       expandURLs,
 		translator:       translator,
 		titleGenerator:   titleGenerator,
 		translationQueue: translationQueue,
@@ -180,6 +183,21 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 	}, nil
 }
 
+// expandMarkdownURLs раскрывает короткие ссылки и снимает UTM в теле markdown (как kb-cli expand-urls).
+func (p *PipelineIngester) expandMarkdownURLs(ctx context.Context, s string) string {
+	out, res := kb.ExpandURLsInString(ctx, s)
+	if len(res.FailedURLs) > 0 {
+		for _, u := range res.FailedURLs {
+			clog.Warn(ctx, "ingest: expand URL failed", "url", u)
+		}
+	}
+	if res.Changed {
+		clog.Info(ctx, "ingest: URL postprocess", "replacements", res.Replacements)
+	}
+
+	return out
+}
+
 func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResult) (*kb.Node, error) {
 	saveStart := time.Now()
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -224,6 +242,13 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	}
 	if result.SourceAuthor != "" {
 		frontmatter["source_author"] = result.SourceAuthor
+	}
+
+	if p.expandURLs {
+		result.Content = p.expandMarkdownURLs(ctx, result.Content)
+		if ann, ok := frontmatter["annotation"].(string); ok && ann != "" {
+			frontmatter["annotation"] = p.expandMarkdownURLs(ctx, ann)
+		}
 	}
 
 	node, err := p.store.CreateNode(ctx, p.basePath, kb.CreateNodeParams{
@@ -324,6 +349,10 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 	contentWithLink := translated
 	if !strings.HasSuffix(contentWithLink, fmt.Sprintf("[[%s|Original]]", result.Slug)) {
 		contentWithLink = strings.TrimSuffix(contentWithLink, "\n") + "\n\n" + fmt.Sprintf("[[%s|Original]]", result.Slug) + "\n"
+	}
+
+	if p.expandURLs {
+		contentWithLink = p.expandMarkdownURLs(ctx, contentWithLink)
 	}
 
 	if err := p.store.CreateTranslationFile(ctx, p.basePath, result.ThemePath, result.Slug, "ru", translationFrontmatter, contentWithLink); err != nil {

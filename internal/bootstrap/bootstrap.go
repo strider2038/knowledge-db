@@ -125,7 +125,7 @@ func buildIngester(cfg *config.Config, committer igit.GitCommitter, translationQ
 	orchestrator := llm.NewOpenAIOrchestratorWithMetaFetcher(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model, contentFetcher, metaFetcher)
 	translator := translation.NewLLMTranslator(orchestrator)
 
-	pipeline := ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, translator, orchestrator, translationQueue)
+	pipeline := ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, cfg.IngestExpandURLs, translator, orchestrator, translationQueue)
 
 	var worker *translationworker.Worker
 	if translationQueue != nil {

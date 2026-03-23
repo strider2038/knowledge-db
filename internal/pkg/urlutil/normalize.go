@@ -15,26 +15,40 @@ var skipRedirectHosts = map[string]bool{
 	"telegram.org": true,
 }
 
-// NormalizeURL разрешает короткие ссылки (редиректы) и удаляет UTM-параметры.
-// При ошибке сети/таймауте возвращает исходный URL без ошибки (не ломает ingestion).
-func NormalizeURL(ctx context.Context, rawURL string) (string, error) {
+// trackingQueryKeys — распространённые трекинг-параметры (не utm_*), которые снимаем вместе с UTM.
+var trackingQueryKeys = map[string]bool{
+	"fbclid":   true,
+	"gclid":    true,
+	"mc_cid":   true,
+	"igshid":   true,
+	"mkt_tok":  true,
+	"msclkid":  true,
+	"dclid":    true,
+	"yclid":    true,
+	"wickedid": true,
+}
+
+// TryNormalizeURL разрешает редиректы (короткие ссылки) и удаляет UTM/трекинг query.
+// ok=false, если требовался HTTP HEAD и запрос завершился ошибкой (сеть, таймаут);
+// в этом случае возвращается stripTrackingParams(rawURL).
+func TryNormalizeURL(ctx context.Context, rawURL string) (string, bool) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return "", nil
+		return "", true
 	}
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return rawURL, nil
+		return rawURL, true
 	}
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return rawURL, nil
+		return rawURL, true
 	}
 
 	host := strings.ToLower(strings.TrimPrefix(parsed.Host, "www."))
 	if skipRedirectHosts[host] {
-		return stripUTMParams(rawURL), nil
+		return stripTrackingParams(rawURL), true
 	}
 
 	client := &http.Client{
@@ -42,23 +56,45 @@ func NormalizeURL(ctx context.Context, rawURL string) (string, error) {
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
-		return rawURL, nil
+		return stripTrackingParams(rawURL), false
 	}
 	req.Header.Set("User-Agent", "knowledge-db/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return rawURL, nil
+		return stripTrackingParams(rawURL), false
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	finalURL := resp.Request.URL.String()
+	strippedFinal := stripTrackingParams(finalURL)
+	strippedRaw := stripTrackingParams(rawURL)
 
-	return stripUTMParams(finalURL), nil
+	if strippedFinal != strippedRaw {
+		return strippedFinal, true
+	}
+
+	// Нет HTTP-редиректа (URL тот же). Частый случай: HTML-страница с window.location / meta / <a>.
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml") {
+		if target, ok := tryExtractRedirectFromHTMLGET(ctx, client, rawURL); ok {
+			return stripTrackingParams(target), true
+		}
+	}
+
+	return strippedFinal, true
 }
 
-// stripUTMParams удаляет query-параметры, начинающиеся с utm_.
-func stripUTMParams(rawURL string) string {
+// NormalizeURL разрешает короткие ссылки (редиректы) и удаляет UTM-параметры.
+// При ошибке сети/таймауте возвращает исходный URL без ошибки (не ломает ingestion).
+func NormalizeURL(ctx context.Context, rawURL string) (string, error) {
+	out, _ := TryNormalizeURL(ctx, rawURL)
+
+	return out, nil
+}
+
+// stripTrackingParams удаляет query-параметры utm_* и распространённые трекинг-ключи.
+func stripTrackingParams(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return rawURL
@@ -70,7 +106,8 @@ func stripUTMParams(rawURL string) string {
 	q := parsed.Query()
 	changed := false
 	for key := range q {
-		if strings.HasPrefix(strings.ToLower(key), "utm_") {
+		lk := strings.ToLower(key)
+		if strings.HasPrefix(lk, "utm_") || trackingQueryKeys[lk] {
 			q.Del(key)
 			changed = true
 		}

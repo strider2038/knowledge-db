@@ -51,6 +51,8 @@ type Config struct {
 	GitDisabled     bool          `env:"KB_GIT_DISABLED" envDefault:"false"`
 	GitSyncInterval time.Duration `env:"GIT_SYNC_INTERVAL" envDefault:"5m"`
 	AutoTranslate   bool          `env:"KB_AUTO_TRANSLATE" envDefault:"true"`
+	// IngestExpandURLs — после LLM раскрывать http(s) в теле и annotation (короткие ссылки, UTM).
+	IngestExpandURLs bool `env:"KB_INGEST_EXPAND_URLS" envDefault:"true"`
 
 	HTTP     HTTP
 	LLM      LLM

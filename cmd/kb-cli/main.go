@@ -14,6 +14,7 @@ func main() {
 	root.AddCommand(validateCmd())
 	root.AddCommand(initCmd())
 	root.AddCommand(dumpImagesCmd())
+	root.AddCommand(expandUrlsCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
