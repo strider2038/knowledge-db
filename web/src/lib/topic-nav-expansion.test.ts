@@ -36,15 +36,21 @@ describe('topic-nav-expansion', () => {
     ).toBe(false)
   })
 
-  it('isTopicBranchExpanded: default depth', () => {
+  it('isTopicBranchExpanded: default depth (N = visible levels)', () => {
+    expect(
+      isTopicBranchExpanded('a', true, '', 1, new Set(), new Set())
+    ).toBe(false)
     expect(
       isTopicBranchExpanded('a', true, '', 2, new Set(), new Set())
     ).toBe(true)
     expect(
       isTopicBranchExpanded('a/b', true, '', 2, new Set(), new Set())
+    ).toBe(false)
+    expect(
+      isTopicBranchExpanded('a/b', true, '', 3, new Set(), new Set())
     ).toBe(true)
     expect(
-      isTopicBranchExpanded('a/b/c', true, '', 2, new Set(), new Set())
+      isTopicBranchExpanded('a/b/c', true, '', 3, new Set(), new Set())
     ).toBe(false)
   })
 

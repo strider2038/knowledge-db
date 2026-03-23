@@ -33,7 +33,10 @@ export function isTopicBranchExpanded(
   if (!hasChildren) return false
   if (isForcedOpenPath(path, currentPath)) return true
   if (userCollapsed.has(path)) return false
+  // defaultExpandDepth = сколько уровней дерева показывать (1 = только корень, всё свернуто;
+  // 2 = корень + дочерние темы и т.д.). Раскрываем ветку p, только если её глубина строго
+  // меньше порога — иначе при «1» раскрывались бы узлы сегментной глубины 1 и были видны 2 уровня.
   return (
-    pathSegmentDepth(path) <= defaultExpandDepth || userExpanded.has(path)
+    pathSegmentDepth(path) < defaultExpandDepth || userExpanded.has(path)
   )
 }
