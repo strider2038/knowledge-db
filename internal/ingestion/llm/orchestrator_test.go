@@ -146,6 +146,53 @@ func TestOpenAIOrchestrator_WhenArticleInput_ExpectFetchThenCreateNode(t *testin
 	assert.Equal(t, 2, callCount)
 }
 
+func TestOpenAIOrchestrator_WhenArticleAndWrongLLMSourceURL_ExpectCanonicalFromInput(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	canonical := "https://example.com/article/123"
+	fetchArgs := `{"url":"` + canonical + `"}`
+	firstResp := buildFunctionCallResponse(t, "resp1", "call1", "fetch_url_content", fetchArgs)
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"goroutines", "memory"},
+		"annotation": "Article about goroutine leaks",
+		"theme_path": "go/concurrency",
+		"slug":       "goroutine-leak",
+		"type":       "article",
+		"content":    "# Goroutine Leaks\n\nContent here.",
+		"title":      "Goroutine Leaks",
+		"source_url": "http://claude.md/",
+	}
+	secondResp := buildCreateNodeResponse(t, "resp2", "call2", createNodeArgs)
+
+	callCount := 0
+	mockFetcher := &mockContentFetcher{
+		result: &fetcher.FetchResult{
+			Title:   "Goroutine Leaks",
+			Content: "# Goroutine Leaks\n\nContent here.",
+			Author:  "Иван Петров",
+		},
+	}
+
+	var seqClient sequenceMockClient
+	seqClient.responses = []*responses.Response{firstResp, secondResp}
+	seqClient.idx = &callCount
+
+	orch := llm.NewTestOrchestrator(&seqClient, "gpt-4o", mockFetcher)
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text:      "URL: " + canonical + "\nTitle: Goroutine Leaks\n\n# ...",
+		SourceURL: canonical,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "article", result.Type)
+	assert.NotEqual(t, "http://claude.md/", result.SourceURL, "не ссылка из тела статьи")
+	assert.Equal(t, canonical, result.SourceURL, "должен подставиться URL импорта после нормализации")
+	assert.Equal(t, 2, callCount)
+}
+
 type sequenceMockClient struct {
 	responses []*responses.Response
 	idx       *int

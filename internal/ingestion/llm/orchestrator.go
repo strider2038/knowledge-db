@@ -15,6 +15,7 @@ import (
 	"github.com/muonsoft/errors"
 
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
+	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 )
 
 // LLMOrchestrator — интерфейс для обработки входного текста через LLM с function calling.
@@ -155,7 +156,7 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 			"output_tokens", usage.OutputTokens,
 			"total_tokens", usage.TotalTokens)
 
-		result, nextInputItems, err := o.processResponse(ctx, resp, inputItems, fetchCache)
+		result, nextInputItems, err := o.processResponse(ctx, resp, inputItems, fetchCache, input)
 		if err != nil {
 			clog.Info(ctx, "ingest: llm process failed", "total_tokens", totalTokens)
 
@@ -189,6 +190,7 @@ func (o *OpenAIOrchestrator) processResponse(
 	resp *responses.Response,
 	inputItems responses.ResponseInputParam,
 	fetchCache map[string]*fetcher.FetchResult,
+	input ProcessInput,
 ) (*ProcessResult, responses.ResponseInputParam, error) {
 	var functionCalls responses.ResponseInputParam
 	var toolOutputs responses.ResponseInputParam
@@ -223,6 +225,8 @@ func (o *OpenAIOrchestrator) processResponse(
 					}
 				}
 			}
+
+			applyCanonicalSourceURL(ctx, input, result)
 
 			return result, nil, nil
 
@@ -407,6 +411,38 @@ func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
 	}
 
 	return result, nil
+}
+
+// applyCanonicalSourceURL подставляет source_url из входного контекста (импорт по URL или явный
+// источник в запросе), чтобы модель не путала его со ссылками из тела материала (типичный случай:
+// статья с Habr со ссылкой на claude.md в тексте).
+func applyCanonicalSourceURL(ctx context.Context, input ProcessInput, result *ProcessResult) {
+	if result == nil {
+		return
+	}
+	src := strings.TrimSpace(input.SourceURL)
+	if src == "" {
+		return
+	}
+	if isTelegramDeliveryURL(src) {
+		return
+	}
+	if result.Type != "article" && result.Type != "link" {
+		return
+	}
+	normalized := src
+	if n, err := urlutil.NormalizeURL(ctx, src); err == nil {
+		normalized = n
+	}
+	result.SourceURL = normalized
+}
+
+func isTelegramDeliveryURL(u string) bool {
+	lu := strings.ToLower(u)
+
+	return strings.HasPrefix(lu, "https://t.me/") ||
+		strings.HasPrefix(lu, "http://t.me/") ||
+		strings.Contains(lu, "telegram.org/")
 }
 
 func extractURLFromArgs(argsJSON string) string {
