@@ -67,6 +67,19 @@ describe('MarkdownContent', () => {
     expect(code?.className).toMatch(/hljs|language-javascript/)
   })
 
+  it('highlights Dockerfile blocks (language not in lowlight common)', () => {
+    render(
+      <TooltipProvider>
+        <MarkdownContent
+          content={'```dockerfile\nFROM alpine\nWORKDIR /app\n```'}
+        />
+      </TooltipProvider>
+    )
+    const code = document.querySelector('pre code')
+    expect(code?.className).toMatch(/hljs|language-dockerfile/)
+    expect(code?.querySelector('[class*="hljs-"]')).toBeInTheDocument()
+  })
+
   it('renders links with target="_blank" and rel="noopener noreferrer"', () => {
     render(
       <MarkdownContent content={'[Example](https://example.com)'} />

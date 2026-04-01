@@ -6,7 +6,10 @@ import rehypeSlug from 'rehype-slug'
 import { MermaidDiagram } from '@/components/MermaidDiagram'
 import { CodeBlock } from '@/components/CodeBlock'
 import { getAssetUrl } from '@/services/api'
-import '@/lib/highlight'
+import {
+  rehypeHighlightAliases,
+  rehypeHighlightLanguages,
+} from '@/lib/highlight'
 
 interface MarkdownContentProps {
   content: string
@@ -44,7 +47,16 @@ export function MarkdownContent({ content, nodePath }: MarkdownContentProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeSlug, rehypeHighlight]}
+      rehypePlugins={[
+        rehypeSlug,
+        [
+          rehypeHighlight,
+          {
+            languages: rehypeHighlightLanguages,
+            aliases: rehypeHighlightAliases,
+          },
+        ],
+      ]}
       components={{
         img: ({ src, alt, ...props }) => (
           <img {...props} src={resolveImageSrc(src, nodePath)} alt={alt ?? ''} />
