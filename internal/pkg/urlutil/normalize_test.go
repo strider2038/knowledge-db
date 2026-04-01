@@ -119,6 +119,15 @@ func TestNormalizeURL_TelegramOrg_NoRedirect(t *testing.T) {
 	assert.Equal(t, "https://telegram.org/something", out)
 }
 
+func TestNormalizeURL_GitHubRepo_NoRedirect(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	in := "https://github.com/Yeachan-Heo/oh-my-claudecode?utm_source=foo"
+	out, err := NormalizeURL(ctx, in)
+	require.NoError(t, err)
+	assert.Equal(t, "https://github.com/Yeachan-Heo/oh-my-claudecode", out)
+}
+
 func TestStripTrackingParamsFromURL_GitHubRepo(t *testing.T) {
 	t.Parallel()
 	in := "https://github.com/SunWeb3Sec/llm-sast-scanner?utm_source=foo"

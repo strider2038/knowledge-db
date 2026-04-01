@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"path"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -28,6 +30,22 @@ var trackingQueryKeys = map[string]bool{
 	"wickedid": true,
 }
 
+var (
+	likelyShortHost = regexp.MustCompile(`^([a-z0-9-]{1,20}\.)?[a-z0-9-]{1,20}\.[a-z]{2,}$`)
+	shortenerHosts  = map[string]bool{
+		"bit.ly":     true,
+		"t.co":       true,
+		"tinyurl.com": true,
+		"goo.gl":     true,
+		"is.gd":      true,
+		"ow.ly":      true,
+		"buff.ly":    true,
+		"lnkd.in":    true,
+		"vk.cc":      true,
+		"clck.ru":    true,
+	}
+)
+
 // TryNormalizeURL разрешает редиректы (короткие ссылки) и удаляет UTM/трекинг query.
 // ok=false, если требовался HTTP HEAD и запрос завершился ошибкой (сеть, таймаут);
 // в этом случае возвращается stripTrackingParams(rawURL).
@@ -48,6 +66,9 @@ func TryNormalizeURL(ctx context.Context, rawURL string) (string, bool) {
 
 	host := strings.ToLower(strings.TrimPrefix(parsed.Host, "www."))
 	if skipRedirectHosts[host] {
+		return stripTrackingParams(rawURL), true
+	}
+	if !shouldResolveRedirect(host, parsed.Path) {
 		return stripTrackingParams(rawURL), true
 	}
 
@@ -83,6 +104,29 @@ func TryNormalizeURL(ctx context.Context, rawURL string) (string, bool) {
 	}
 
 	return strippedFinal, true
+}
+
+func shouldResolveRedirect(host, p string) bool {
+	if shortenerHosts[host] {
+		return true
+	}
+
+	// Эвристика: редиректы чаще полезны для коротких ссылок с коротким path.
+	// Для обычных URL ресурса (например, github.com/org/repo) достаточно снять tracking-параметры.
+	cleanPath := strings.Trim(path.Clean(p), "/")
+	if cleanPath == "" || cleanPath == "." {
+		return true
+	}
+	parts := strings.Split(cleanPath, "/")
+	if len(parts) > 1 {
+		return false
+	}
+	seg := parts[0]
+	if len(seg) <= 12 && likelyShortHost.MatchString(host) {
+		return true
+	}
+
+	return false
 }
 
 // NormalizeURL разрешает короткие ссылки (редиректы) и удаляет UTM-параметры.

@@ -430,6 +430,24 @@ func applyCanonicalSourceURL(ctx context.Context, input ProcessInput, result *Pr
 	src := strings.TrimSpace(input.SourceURL)
 	original := strings.TrimSpace(result.SourceURL)
 
+	// Для note source_url — это канал/метаданные доставки (например, t.me), а не ссылка ресурса из текста.
+	if result.Type == "note" {
+		if src != "" {
+			result.SourceURL = urlutil.StripTrackingParamsFromURL(src)
+			clog.Info(ctx, "ingest: source_url canonicalized for note from source metadata",
+				"type", result.Type,
+				"input_source_url", src,
+				"llm_source_url", original,
+				"final_source_url", result.SourceURL)
+		} else {
+			clog.Info(ctx, "ingest: source_url canonicalization skipped for note without source metadata",
+				"type", result.Type,
+				"llm_source_url", original)
+		}
+
+		return
+	}
+
 	// Явный внешний источник (не t.me): доверяем ему целиком.
 	if src != "" && !isTelegramDeliveryURL(src) {
 		result.SourceURL = urlutil.StripTrackingParamsFromURL(src)

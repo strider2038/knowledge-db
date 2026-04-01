@@ -272,7 +272,7 @@ func TestOpenAIOrchestrator_WhenEmptySourceURLAndWrongLLMSourceURL_ExpectURLFrom
 	assert.Equal(t, "https://github.com/SunWeb3Sec/llm-sast-scanner", result.SourceURL)
 }
 
-func TestOpenAIOrchestrator_WhenNoteWithForwardedLink_ExpectURLFromMessageText(t *testing.T) {
+func TestOpenAIOrchestrator_WhenNoteWithForwardedLink_ExpectTelegramSourceURL(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -302,7 +302,7 @@ func TestOpenAIOrchestrator_WhenNoteWithForwardedLink_ExpectURLFromMessageText(t
 
 	require.NoError(t, err)
 	assert.Equal(t, "note", result.Type)
-	assert.Equal(t, "https://github.com/SunWeb3Sec/llm-sast-scanner", result.SourceURL)
+	assert.Equal(t, "https://t.me/vibe_coding/157278", result.SourceURL)
 }
 
 func TestOpenAIOrchestrator_WhenTelegramDeliveryAndWrongLLMSourceURL_ExpectURLFromMessageText(t *testing.T) {
