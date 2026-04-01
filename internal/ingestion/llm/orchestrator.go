@@ -206,7 +206,11 @@ func (o *OpenAIOrchestrator) processResponse(
 			if err != nil {
 				return nil, nil, errors.Errorf("parse create_node args: %w", err)
 			}
-			clog.Info(ctx, "ingest: llm create_node", "theme", result.ThemePath, "slug", result.Slug)
+			clog.Info(ctx, "ingest: llm create_node",
+				"theme", result.ThemePath,
+				"slug", result.Slug,
+				"type", result.Type,
+				"llm_source_url", result.SourceURL)
 
 			// Если есть кешированный контент для source_url — используем его напрямую,
 			// не полагаясь на то что LLM воспроизвёл контент без усечения.
@@ -415,26 +419,48 @@ func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
 
 // applyCanonicalSourceURL подставляет source_url из входного контекста (импорт по URL или явный
 // источник в запросе), чтобы модель не путала его со ссылками из тела материала (типичный случай:
-// статья с Habr со ссылкой на claude.md в тексте).
+// статья с Habr со ссылкой на claude.md в тексте). Для доставки через Telegram (t.me) и для
+// обычного текста бота (пустой SourceURL) канонический URL берётся из текста сообщения — иначе
+// ссылка на репозиторий в скобках или в markdown теряется, а модель может подставить docs.github.com.
 func applyCanonicalSourceURL(ctx context.Context, input ProcessInput, result *ProcessResult) {
 	if result == nil {
 		return
 	}
+
 	src := strings.TrimSpace(input.SourceURL)
-	if src == "" {
+	original := strings.TrimSpace(result.SourceURL)
+
+	// Явный внешний источник (не t.me): доверяем ему целиком.
+	if src != "" && !isTelegramDeliveryURL(src) {
+		result.SourceURL = urlutil.StripTrackingParamsFromURL(src)
+		clog.Info(ctx, "ingest: source_url canonicalized from explicit source",
+			"type", result.Type,
+			"input_source_url", src,
+			"llm_source_url", original,
+			"final_source_url", result.SourceURL)
+
 		return
 	}
-	if isTelegramDeliveryURL(src) {
+
+	// Пустой SourceURL (например, сообщение в бот без пересылки из канала) или только t.me:
+	// подставляем URL из текста (в т.ч. из markdown [текст](url) после entitiesToMarkdown).
+	if u := pickResourceURLFromMessageText(ctx, input.Text); u != "" {
+		result.SourceURL = u
+		clog.Info(ctx, "ingest: source_url canonicalized from message text",
+			"type", result.Type,
+			"input_source_url", src,
+			"llm_source_url", original,
+			"final_source_url", result.SourceURL,
+			"text_len", len(input.Text))
+
 		return
 	}
-	if result.Type != "article" && result.Type != "link" {
-		return
-	}
-	normalized := src
-	if n, err := urlutil.NormalizeURL(ctx, src); err == nil {
-		normalized = n
-	}
-	result.SourceURL = normalized
+
+	clog.Info(ctx, "ingest: source_url canonicalization skipped",
+		"type", result.Type,
+		"input_source_url", src,
+		"llm_source_url", original,
+		"text_len", len(input.Text))
 }
 
 func isTelegramDeliveryURL(u string) bool {

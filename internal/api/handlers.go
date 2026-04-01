@@ -226,9 +226,7 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	sourceURL := req.SourceURL
 	if sourceURL != "" {
-		if normalized, err := urlutil.NormalizeURL(r.Context(), sourceURL); err == nil {
-			sourceURL = normalized
-		}
+		sourceURL = urlutil.StripTrackingParamsFromURL(sourceURL)
 	}
 	typeHint := req.TypeHint
 	if typeHint != "" && typeHint != "auto" && typeHint != "article" && typeHint != "link" && typeHint != "note" {

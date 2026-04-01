@@ -232,9 +232,7 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	}
 	if result.SourceURL != "" {
 		sourceURL := result.SourceURL
-		if normalized, err := urlutil.NormalizeURL(ctx, sourceURL); err == nil {
-			sourceURL = normalized
-		}
+		sourceURL = urlutil.StripTrackingParamsFromURL(sourceURL)
 		frontmatter["source_url"] = sourceURL
 	}
 	if result.SourceDate != nil {
@@ -333,9 +331,7 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 			translationFrontmatter["source_url"] = u
 		} else {
 			sourceURL := result.SourceURL
-			if normalized, err := urlutil.NormalizeURL(ctx, sourceURL); err == nil {
-				sourceURL = normalized
-			}
+			sourceURL = urlutil.StripTrackingParamsFromURL(sourceURL)
 			translationFrontmatter["source_url"] = sourceURL
 		}
 	}

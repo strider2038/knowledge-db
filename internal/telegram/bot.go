@@ -502,10 +502,15 @@ func (fb *forwardBuffer) removeLocked(key bufferKey) {
 }
 
 func (b *Bot) processIngest(ctx context.Context, text string, chatID int64, sourceURL, sourceAuthor string) {
+	clog.Info(ctx, "telegram bot: process ingest",
+		"chat_id", chatID,
+		"text_len", len(text),
+		"has_http", strings.Contains(text, "http://") || strings.Contains(text, "https://"),
+		"source_url", sourceURL,
+		"source_author", sourceAuthor)
+
 	if sourceURL != "" {
-		if normalized, err := urlutil.NormalizeURL(ctx, sourceURL); err == nil {
-			sourceURL = normalized
-		}
+		sourceURL = urlutil.StripTrackingParamsFromURL(sourceURL)
 	}
 	if chatID != 0 {
 		_ = b.sendMessage(ctx, chatID, "Принял, обрабатываю...")

@@ -119,6 +119,13 @@ func TestNormalizeURL_TelegramOrg_NoRedirect(t *testing.T) {
 	assert.Equal(t, "https://telegram.org/something", out)
 }
 
+func TestStripTrackingParamsFromURL_GitHubRepo(t *testing.T) {
+	t.Parallel()
+	in := "https://github.com/SunWeb3Sec/llm-sast-scanner?utm_source=foo"
+	out := StripTrackingParamsFromURL(in)
+	assert.Equal(t, "https://github.com/SunWeb3Sec/llm-sast-scanner", out)
+}
+
 func TestStripTrackingParams(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -93,6 +93,13 @@ func NormalizeURL(ctx context.Context, rawURL string) (string, error) {
 	return out, nil
 }
 
+// StripTrackingParamsFromURL удаляет utm_* и распространённые трекинг-параметры из query
+// без HTTP-запросов. Используй для URL, извлечённых из текста (например, Telegram): иначе
+// HEAD по github.com может вернуть редирект на docs.github.com и подменить явную ссылку на репозиторий.
+func StripTrackingParamsFromURL(rawURL string) string {
+	return stripTrackingParams(rawURL)
+}
+
 // stripTrackingParams удаляет query-параметры utm_* и распространённые трекинг-ключи.
 func stripTrackingParams(rawURL string) string {
 	parsed, err := url.Parse(rawURL)

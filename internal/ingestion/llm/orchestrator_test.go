@@ -239,6 +239,107 @@ func TestOpenAIOrchestrator_WhenTypeHint_ExpectInInstructions(t *testing.T) {
 	assert.Contains(t, instructions, "Пользователь указал тип: article")
 }
 
+func TestOpenAIOrchestrator_WhenEmptySourceURLAndWrongLLMSourceURL_ExpectURLFromMessageText(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"SAST", "LLM"},
+		"annotation": "Скилл для анализа.",
+		"theme_path": "ai/security",
+		"slug":       "llm-sast-scanner",
+		"type":       "link",
+		"content":    "",
+		"title":      "llm-sast-scanner",
+		"source_url": "https://docs.github.com",
+	}
+	mockClient := &mockResponsesClient{
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
+	}
+	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", nil)
+
+	// Как при обычном сообщении в Telegram-бот: SourceURL не передаётся (см. processIngest(..., "", "")).
+	text := `llm-sast-scanner: универсальный SAST-скилл.
+
+исходники (https://github.com/SunWeb3Sec/llm-sast-scanner)`
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text: text,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "link", result.Type)
+	assert.Equal(t, "https://github.com/SunWeb3Sec/llm-sast-scanner", result.SourceURL)
+}
+
+func TestOpenAIOrchestrator_WhenNoteWithForwardedLink_ExpectURLFromMessageText(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"SAST", "LLM"},
+		"annotation": "Скилл для анализа.",
+		"theme_path": "ai/security",
+		"slug":       "llm-sast-scanner-note",
+		"type":       "note",
+		"content":    "Текст заметки с ссылкой в entities",
+		"title":      "llm-sast-scanner",
+		"source_url": "https://docs.github.com",
+	}
+	mockClient := &mockResponsesClient{
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
+	}
+	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", nil)
+
+	text := `**llm-sast-scanner**: описание.
+
+[исходники](https://github.com/SunWeb3Sec/llm-sast-scanner)`
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text:      text,
+		SourceURL: "https://t.me/vibe_coding/157278",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "note", result.Type)
+	assert.Equal(t, "https://github.com/SunWeb3Sec/llm-sast-scanner", result.SourceURL)
+}
+
+func TestOpenAIOrchestrator_WhenTelegramDeliveryAndWrongLLMSourceURL_ExpectURLFromMessageText(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"SAST", "LLM"},
+		"annotation": "Скилл для анализа.",
+		"theme_path": "ai/security",
+		"slug":       "llm-sast-scanner",
+		"type":       "link",
+		"content":    "",
+		"title":      "llm-sast-scanner",
+		"source_url": "https://docs.github.com",
+	}
+	mockClient := &mockResponsesClient{
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
+	}
+	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", nil)
+
+	body := `llm-sast-scanner: универсальный SAST-скилл.
+
+исходники (https://github.com/SunWeb3Sec/llm-sast-scanner)`
+	text := "Telegram-канал (откуда получен контент, НЕ является source_url ресурса): https://t.me/vibe_coding, автор: Вайб-кодинг\n\n" + body
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text:         text,
+		SourceURL:    "https://t.me/vibe_coding",
+		SourceAuthor: "Вайб-кодинг",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "link", result.Type)
+	assert.Equal(t, "https://github.com/SunWeb3Sec/llm-sast-scanner", result.SourceURL)
+}
+
 func TestOpenAIOrchestrator_WhenLinkInput_ExpectFetchMetaThenCreateNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
