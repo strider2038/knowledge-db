@@ -44,7 +44,7 @@ func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
 		},
 	}
 
-	bot := NewBot("en", 12345, mock)
+	bot := NewBot("en", 12345, mock, "")
 	bot.buffer.ttl = time.Millisecond
 
 	origIngester := bot.ingester
@@ -76,7 +76,7 @@ func TestHandleUpdate_WhenUnauthorizedUser_ExpectIngestNotCalled(t *testing.T) {
 		called: &ingestCalled,
 	}
 
-	bot := NewBot("token", 99999, mock)
+	bot := NewBot("token", 99999, mock, "")
 
 	u := update{
 		UpdateID: 1,
@@ -102,7 +102,7 @@ func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 	bot := NewBot("token", 0, &callTrackingIngester{
 		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		called: &ingestCalled,
-	})
+	}, "")
 	bot.buffer.ttl = time.Millisecond
 
 	u := update{
@@ -138,7 +138,7 @@ func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
 		inner:        mock,
 		called:       &ingestCalled,
 		capturedText: &capturedText,
-	})
+	}, "")
 	bot.buffer.ttl = time.Millisecond
 
 	u := update{
@@ -174,7 +174,7 @@ func TestHandleUpdate_WhenCommentThenForward_ExpectMergedIngest(t *testing.T) {
 		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
 		called:       &ingestCalled,
-	})
+	}, "")
 
 	// Шаг 1: пользователь пишет комментарий как обычный текст
 	commentUpdate := update{
@@ -230,7 +230,7 @@ func TestHandleUpdate_WhenReplyToForwardedMessage_ExpectMergedIngest(t *testing.
 		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
 		called:       &ingestCalled,
-	})
+	}, "")
 
 	forwarded := &message{
 		MessageID: 10,
@@ -271,7 +271,7 @@ func TestHandleUpdate_WhenForwardedWithoutReply_ExpectBufferedThenFlushed(t *tes
 	bot := NewBot("token", 12345, &callTrackingIngester{
 		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		called: &ingestCalled,
-	})
+	}, "")
 
 	forwardOrigin := json.RawMessage(`{"type":"user"}`)
 	u := update{
@@ -305,7 +305,7 @@ func TestHandleUpdate_WhenForwardedWithoutReply_ExpectFlushedAfterTTL(t *testing
 		inner:        &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
 		called:       &ingestCalled,
-	})
+	}, "")
 	bot.buffer.ttl = time.Millisecond
 
 	forwardOrigin := json.RawMessage(`{"type":"user"}`)
@@ -349,7 +349,7 @@ func TestHandleUpdate_WhenReplyArrivesDuringBuffer_ExpectSingleIngest(t *testing
 			defer mu.Unlock()
 			capturedTexts = append(capturedTexts, text)
 		},
-	})
+	}, "")
 
 	forwardOrigin := json.RawMessage(`{"type":"user"}`)
 	fwd := update{
@@ -504,6 +504,26 @@ func TestBuildConfirmation_WhenNodeWithKeywords_ExpectFormattedMessage(t *testin
 	require.Contains(t, msg, "go/concurrency/goroutine-leak")
 	assert.Contains(t, msg, "article")
 	assert.Contains(t, msg, "goroutines")
+	assert.NotContains(t, msg, "Открыть на сайте")
+}
+
+func TestWebNodePageURL_WhenBaseAndPath_ExpectEscapedSegments(t *testing.T) {
+	t.Parallel()
+	// Сегменты пути — как в браузере: `/` между темами, спецсимволы внутри сегмента экранируются.
+	assert.Equal(t, "https://kb.example/node/go/concurrency/note", webNodePageURL("https://kb.example", "go/concurrency/note"))
+}
+
+func TestBuildConfirmation_WhenWebBaseURLSet_ExpectOpenLink(t *testing.T) {
+	t.Parallel()
+	bot := &Bot{webPublicBaseURL: "https://kb.example"}
+	node := &kb.Node{
+		Path:     "topic/a & b",
+		Metadata: map[string]any{"type": "note"},
+	}
+	msg := bot.buildConfirmation(node)
+	assert.Contains(t, msg, `href="https://kb.example/node/topic/a%20%26%20b"`)
+	assert.Contains(t, msg, "Открыть на сайте")
+	assert.Contains(t, msg, "topic/a &amp; b")
 }
 
 type callTrackingIngester struct {
@@ -611,7 +631,7 @@ func TestHandleUpdate_WhenForwardedMessage_ExpectIngestWithSourceMetadata(t *tes
 			captureMu.Unlock()
 		},
 	}
-	bot := NewBot("token", 12345, mock)
+	bot := NewBot("token", 12345, mock, "")
 	bot.buffer.ttl = time.Millisecond
 
 	u := update{

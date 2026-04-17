@@ -47,6 +47,8 @@ func (a Auth) AuthEnabled() bool {
 type Config struct {
 	DataPath        string        `env:"KB_DATA_PATH" envDefault:""`
 	UploadsDir      string        `env:"KB_UPLOADS_DIR" envDefault:""`
+	// WebPublicBaseURL — публичный базовый URL веб-интерфейса (без завершающего /), для ссылок в ответах Telegram.
+	WebPublicBaseURL string `env:"KB_PUBLIC_WEB_BASE_URL" envDefault:""`
 	JinaAPIKey      string        `env:"JINA_API_KEY" envDefault:""`
 	GitDisabled     bool          `env:"KB_GIT_DISABLED" envDefault:"false"`
 	GitSyncInterval time.Duration `env:"GIT_SYNC_INTERVAL" envDefault:"5m"`

@@ -84,6 +84,7 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **KB_SESSION_TTL** | TTL сессии (по умолчанию 8h) |
 | **TELEGRAM_TOKEN** | Токен Telegram-бота (опционально) |
 | **TELEGRAM_OWNER_ID** | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN) |
+| **KB_PUBLIC_WEB_BASE_URL** | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); в ответе бота после сохранения добавляется ссылка «Открыть на сайте» на страницу узла |
 | **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL** | LLM для ingestion (OpenAI-совместимый API) |
 | **JINA_API_KEY** | Ключ Jina для эмбеддингов (опционально) |
 | **GIT_SYNC_INTERVAL** | Интервал git sync (по умолчанию 5m) |

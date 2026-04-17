@@ -78,7 +78,7 @@ func Run() error {
 	m.Register(runnable.HTTPServer(srv).ShutdownTimeout(30 * time.Second))
 
 	if cfg.Telegram.Token != "" {
-		bot := telegram.NewBot(cfg.Telegram.Token, cfg.Telegram.OwnerID, ingester)
+		bot := telegram.NewBot(cfg.Telegram.Token, cfg.Telegram.OwnerID, ingester, cfg.WebPublicBaseURL)
 		m.Register(bot)
 	}
 
