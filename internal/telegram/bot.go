@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -52,18 +54,20 @@ type message struct {
 
 // Bot — Telegram-бот для приёма сообщений и вызова ingestion.
 type Bot struct {
-	token    string
-	ownerID  int64
-	ingester ingestion.Ingester
-	buffer   *forwardBuffer
+	token            string
+	ownerID          int64
+	ingester         ingestion.Ingester
+	webPublicBaseURL string
+	buffer           *forwardBuffer
 }
 
-// NewBot создаёт бота.
-func NewBot(token string, ownerID int64, ingester ingestion.Ingester) *Bot {
+// NewBot создаёт бота. webPublicBaseURL — публичный базовый URL веб-интерфейса (KB_PUBLIC_WEB_BASE_URL), без завершающего /; пусто — без ссылок в подтверждении.
+func NewBot(token string, ownerID int64, ingester ingestion.Ingester, webPublicBaseURL string) *Bot {
 	b := &Bot{
-		token:    token,
-		ownerID:  ownerID,
-		ingester: ingester,
+		token:            token,
+		ownerID:          ownerID,
+		ingester:         ingester,
+		webPublicBaseURL: strings.TrimRight(strings.TrimSpace(webPublicBaseURL), "/"),
 	}
 	b.buffer = newForwardBuffer(b)
 
@@ -621,11 +625,35 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 	b.buffer.addComment(ctx, chatID, text)
 }
 
+func webNodePageURL(base, nodePath string) string {
+	if base == "" || nodePath == "" {
+		return ""
+	}
+	parts := strings.Split(nodePath, "/")
+	escaped := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+			escaped = append(escaped, url.PathEscape(p))
+	}
+
+	pathPart := strings.Join(escaped, "/")
+	// PathEscape не кодирует '&'; для корректного href в HTML (parse_mode HTML) убираем сырой '&'.
+	pathPart = strings.ReplaceAll(pathPart, "&", "%26")
+
+	return base + "/node/" + pathPart
+}
+
 func (b *Bot) buildConfirmation(node *kb.Node) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "✓ Сохранено: %s\n", node.Path)
+	pathEsc := html.EscapeString(node.Path)
+	fmt.Fprintf(&sb, "✓ Сохранено: %s\n", pathEsc)
+	if pageURL := webNodePageURL(b.webPublicBaseURL, node.Path); pageURL != "" {
+		fmt.Fprintf(&sb, `<a href="%s">Открыть на сайте</a>`+"\n", html.EscapeString(pageURL))
+	}
 	if t, ok := node.Metadata["type"].(string); ok && t != "" {
-		fmt.Fprintf(&sb, "Тип: %s\n", t)
+		fmt.Fprintf(&sb, "Тип: %s\n", html.EscapeString(t))
 	}
 	if kws, ok := node.Metadata["keywords"]; ok {
 		switch v := kws.(type) {
@@ -633,7 +661,7 @@ func (b *Bot) buildConfirmation(node *kb.Node) string {
 			strs := make([]string, 0, len(v))
 			for _, k := range v {
 				if s, ok := k.(string); ok {
-					strs = append(strs, s)
+					strs = append(strs, html.EscapeString(s))
 				}
 			}
 			if len(strs) > 0 {
@@ -641,7 +669,11 @@ func (b *Bot) buildConfirmation(node *kb.Node) string {
 			}
 		case []string:
 			if len(v) > 0 {
-				fmt.Fprintf(&sb, "Keywords: %s\n", strings.Join(v, ", "))
+				esc := make([]string, len(v))
+				for i, s := range v {
+					esc[i] = html.EscapeString(s)
+				}
+				fmt.Fprintf(&sb, "Keywords: %s\n", strings.Join(esc, ", "))
 			}
 		}
 	}
@@ -653,10 +685,16 @@ func (b *Bot) sendMessage(ctx context.Context, chatID int64, text string) error 
 	baseURL := "https://api.telegram.org/bot" + b.token
 	reqURL := baseURL + "/sendMessage"
 
-	payload, err := json.Marshal(map[string]any{
+	msg := map[string]any{
 		"chat_id": chatID,
 		"text":    text,
-	})
+	}
+	if strings.Contains(text, "<a href") {
+		msg["parse_mode"] = "HTML"
+		msg["disable_web_page_preview"] = true
+	}
+
+	payload, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}

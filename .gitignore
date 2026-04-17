@@ -7,7 +7,8 @@
 .env.*.local
 
 # Build output (task build copies web/dist here)
-internal/ui/static/
+internal/ui/static/*
+!internal/ui/static/index.html
 
 # Go test artifacts
 coverage.out
