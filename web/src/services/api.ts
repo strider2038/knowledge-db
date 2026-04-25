@@ -41,6 +41,7 @@ export interface NodeListItem {
   translations?: string[];
   annotation?: string;
   keywords?: string[];
+  manual_processed: boolean;
 }
 
 export interface GetNodesParams {
@@ -48,6 +49,8 @@ export interface GetNodesParams {
   recursive?: boolean;
   q?: string;
   type?: string;
+  /** When true/false, filters GET /api/nodes by manual_processed. */
+  manual_processed?: boolean;
   limit?: number;
   offset?: number;
   sort?: string;
@@ -146,6 +149,11 @@ export async function getNodesWithParams(
   searchParams.set('recursive', 'true');
   if (params.q) searchParams.set('q', params.q);
   if (params.type) searchParams.set('type', params.type);
+  if (params.manual_processed === true) {
+    searchParams.set('manual_processed', 'true');
+  } else if (params.manual_processed === false) {
+    searchParams.set('manual_processed', 'false');
+  }
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
   if (params.offset !== undefined) searchParams.set('offset', String(params.offset));
   if (params.sort) searchParams.set('sort', params.sort);
@@ -159,6 +167,23 @@ export async function getNodesWithParams(
 export async function getNode(path: string): Promise<Node> {
   const res = await apiFetch(`${API_URL}/api/nodes/${encodeURIComponent(path)}`);
   if (!res.ok) throw new Error('Failed to load node');
+  return res.json();
+}
+
+export async function patchNodeManualProcessed(
+  path: string,
+  manual_processed: boolean
+): Promise<Node> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ manual_processed }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to update node');
+  }
   return res.json();
 }
 

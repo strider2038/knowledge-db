@@ -20,6 +20,7 @@ func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 		mux.HandleFunc("GET /api/auth/google/callback", auth.GoogleOAuthCallback)
 	}
 	mux.HandleFunc("GET /api/nodes/{path...}", h.GetNode)
+	mux.HandleFunc("PATCH /api/nodes/{path...}", h.PatchNode)
 	mux.HandleFunc("GET /api/nodes", h.ListNodes)
 	mux.HandleFunc("GET /api/assets/{path...}", h.GetAsset)
 	mux.HandleFunc("GET /api/tree", h.GetTree)

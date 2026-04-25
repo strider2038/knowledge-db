@@ -275,6 +275,11 @@ func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts 
 			return nil
 		}
 
+		manualOK := ManualProcessedEffective(meta)
+		if opts.ManualProcessed != nil && manualOK != *opts.ManualProcessed {
+			return nil
+		}
+
 		title := ""
 		if t, ok := meta["title"].(string); ok && t != "" {
 			title = t
@@ -341,14 +346,15 @@ func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts 
 		}
 
 		items = append(items, &NodeListItem{
-			Path:         stemRel,
-			Title:        title,
-			Type:         nodeType,
-			Created:      created,
-			SourceURL:    sourceURL,
-			Translations: translations,
-			Annotation:   annotation,
-			Keywords:     keywords,
+			Path:            stemRel,
+			Title:           title,
+			Type:            nodeType,
+			Created:         created,
+			SourceURL:       sourceURL,
+			Translations:    translations,
+			Annotation:      annotation,
+			Keywords:        keywords,
+			ManualProcessed: manualOK,
 		})
 
 		return nil
@@ -403,8 +409,54 @@ func (s *Store) GetNode(ctx context.Context, basePath, nodePath string) (*Node, 
 		Path:       filepath.ToSlash(nodePath),
 		Annotation: annotation,
 		Content:    content,
-		Metadata:   meta,
+		Metadata:   NormalizeNodeMetadataForAPI(meta),
 	}, nil
+}
+
+// PatchNodeManualProcessed устанавливает или снимает флаг manual_processed в frontmatter узла.
+// При value=false ключ удаляется из YAML (семантика «не отмечено» как при отсутствии ключа).
+func (s *Store) PatchNodeManualProcessed(ctx context.Context, basePath, nodePath string, value bool) error {
+	_ = ctx
+	basePath = filepath.Clean(basePath)
+	stemPath := filepath.Join(basePath, filepath.FromSlash(nodePath))
+	if !s.isNode(stemPath) {
+		return errors.Errorf("patch node manual_processed: %w", ErrNodeNotFound)
+	}
+	matter, _, content, err := parseNodeFile(s.fs, stemPath)
+	if err != nil {
+		return errors.Errorf("patch node manual_processed: %w", err)
+	}
+	if value {
+		matter["manual_processed"] = true
+	} else {
+		delete(matter, "manual_processed")
+	}
+	if msg := ValidateFrontmatter(matter); msg != "" {
+		return errors.Errorf("patch node manual_processed: invalid frontmatter: %s", msg)
+	}
+	fmBytes, err := FormatFrontmatter(matter)
+	if err != nil {
+		return errors.Errorf("patch node manual_processed: %w", err)
+	}
+	var fileContent []byte
+	fileContent = append(fileContent, fmBytes...)
+	if content != "" {
+		fileContent = append(fileContent, '\n')
+		fileContent = append(fileContent, []byte(content)...)
+		fileContent = append(fileContent, '\n')
+	}
+	mdPath := stemPath + ".md"
+	tmpPath := mdPath + ".tmp"
+	if err := afero.WriteFile(s.fs, tmpPath, fileContent, 0o644); err != nil {
+		return errors.Errorf("patch node manual_processed: write: %w", err)
+	}
+	if err := s.fs.Rename(tmpPath, mdPath); err != nil {
+		_ = s.fs.Remove(tmpPath)
+
+		return errors.Errorf("patch node manual_processed: rename: %w", err)
+	}
+
+	return nil
 }
 
 // isNode проверяет, существует ли {stemPath}.md.

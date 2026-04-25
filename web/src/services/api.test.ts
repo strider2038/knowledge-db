@@ -51,6 +51,19 @@ describe('getNodesWithParams', () => {
     expect(url.searchParams.get('order')).toBe('asc')
   })
 
+  it('builds URL with manual_processed when set', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ nodes: [], total: 0 }),
+    })
+    await getNodesWithParams({ path: 'x', recursive: true, manual_processed: true })
+    const url = new URL(fetchMock.mock.calls[0][0])
+    expect(url.searchParams.get('manual_processed')).toBe('true')
+    await getNodesWithParams({ path: 'x', recursive: true, manual_processed: false })
+    const url2 = new URL(fetchMock.mock.calls[1][0])
+    expect(url2.searchParams.get('manual_processed')).toBe('false')
+  })
+
   it('returns nodes and total from response', async () => {
     const mockNodes = [
       {

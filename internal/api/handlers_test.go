@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"os"
@@ -123,6 +124,7 @@ created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
 annotation: "Article about Go"
 source_url: "https://example.com/go"
+manual_processed: true
 ---
 
 Content`,
@@ -247,6 +249,123 @@ func TestListNodes_WhenRecursiveFalse_ExpectBackwardCompatible(t *testing.T) {
 		json.Node("total").DoesNotExist()
 		json.Node("nodes", 0, "name").IsString().EqualTo("node1")
 	})
+}
+
+func TestListNodes_WhenManualProcessedTrue_ExpectFiltered(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&manual_processed=true")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("nodes").IsArray().WithLength(1)
+		json.Node("total").IsInteger().EqualTo(1)
+		json.Node("nodes", 0, "title").IsString().EqualTo("Go Basics")
+		json.Node("nodes", 0, "manual_processed").IsTrue()
+	})
+}
+
+func TestListNodes_WhenManualProcessedFalse_ExpectFiltered(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&manual_processed=false")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("total").IsInteger().EqualTo(3)
+		json.Node("nodes").IsArray().WithLength(3)
+	})
+}
+
+func TestListNodes_WhenManualProcessedInvalid_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&manual_processed=yes")
+
+	resp.IsBadRequest()
+}
+
+func TestGetNode_WhenNoManualProcessed_ExpectFalseInMetadata(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes/programming/scaling/node2")
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata", "manual_processed").IsFalse()
+	})
+}
+
+func TestPatchNode_WhenSetsManualProcessed_ExpectOKAndPersisted(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	patch := apitest.HandlePATCH(t, handler, "/api/nodes/programming/scaling/node2",
+		strings.NewReader(`{"manual_processed":true}`),
+		apitest.WithJSONContentType())
+
+	patch.IsOK()
+	patch.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("path").IsString().EqualTo("programming/scaling/node2")
+		json.Node("metadata", "manual_processed").IsTrue()
+	})
+
+	list := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&manual_processed=true")
+	list.IsOK()
+	list.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("total").IsInteger().EqualTo(2)
+	})
+}
+
+func TestPatchNode_WhenClearsManualProcessed_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"manual_processed":false}`),
+		apitest.WithJSONContentType())
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata", "manual_processed").IsFalse()
+	})
+}
+
+func TestPatchNode_WhenExtraField_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"manual_processed":true,"title":"x"}`),
+		apitest.WithJSONContentType())
+
+	resp.IsBadRequest()
+}
+
+func TestPatchNode_WhenManualProcessedNotBool_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"manual_processed":"yes"}`),
+		apitest.WithJSONContentType())
+
+	resp.IsBadRequest()
+}
+
+func TestPatchNode_WhenMissing_Expect404(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/missing/node",
+		bytes.NewReader([]byte(`{"manual_processed":true}`)),
+		apitest.WithJSONContentType())
+
+	resp.IsNotFound()
 }
 
 func TestSearch_WhenQuery_ExpectOK(t *testing.T) {

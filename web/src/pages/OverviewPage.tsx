@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { ChevronDown, ChevronRight, ExternalLink, FolderTree } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, ExternalLink, FolderTree } from 'lucide-react'
 import {
   getTree,
   getNodesWithParams,
@@ -73,6 +73,11 @@ export function OverviewPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const path = searchParams.get('path') ?? ''
   const typeFilter = searchParams.get('type')?.split(',').filter(Boolean) ?? []
+  const rawManualProcessed = searchParams.get('manual_processed')
+  const manualProcessedFilter =
+    rawManualProcessed === 'true' || rawManualProcessed === 'false'
+      ? rawManualProcessed
+      : ''
   const q = searchParams.get('q') ?? ''
   const sort = (searchParams.get('sort') ?? 'title') as
     | 'title'
@@ -129,6 +134,12 @@ export function OverviewPage() {
         recursive: true,
         q: debouncedQ || undefined,
         type: typeFilter.length > 0 ? typeFilterStr : undefined,
+        manual_processed:
+          manualProcessedFilter === 'true'
+            ? true
+            : manualProcessedFilter === 'false'
+              ? false
+              : undefined,
         limit: DEFAULT_LIMIT,
         offset: (page - 1) * DEFAULT_LIMIT,
         sort,
@@ -152,12 +163,21 @@ export function OverviewPage() {
     return () => {
       cancelled = true
     }
-  }, [path, debouncedQ, typeFilterStr, page, sort, order]) // eslint-disable-line react-hooks/exhaustive-deps -- typeFilterStr captures typeFilter
+  }, [
+    path,
+    debouncedQ,
+    typeFilterStr,
+    typeFilter.length,
+    manualProcessedFilter,
+    page,
+    sort,
+    order,
+  ])
 
-  // При включённом фильтре по типу — загружаем пути по всей базе (path="") для фильтрации дерева.
+  // При включённом фильтре по типу или ручной проверке — загружаем пути по всей базе (path="") для фильтрации дерева.
   // Так дерево не скрывает соседние ветки при выборе конкретного узла.
   useEffect(() => {
-    if (typeFilter.length === 0) {
+    if (typeFilter.length === 0 && manualProcessedFilter === '') {
       queueMicrotask(() => setTreeFilterPaths(new Set()))
       return
     }
@@ -165,7 +185,13 @@ export function OverviewPage() {
     getNodesWithParams({
       path: undefined,
       recursive: true,
-      type: typeFilterStr,
+      type: typeFilter.length > 0 ? typeFilterStr : undefined,
+      manual_processed:
+        manualProcessedFilter === 'true'
+          ? true
+          : manualProcessedFilter === 'false'
+            ? false
+            : undefined,
       limit: 10000,
       offset: 0,
     })
@@ -180,7 +206,7 @@ export function OverviewPage() {
     return () => {
       cancelled = true
     }
-  }, [typeFilterStr, typeFilter.length])
+  }, [typeFilterStr, typeFilter.length, manualProcessedFilter])
 
   const filteredTree = useMemo(() => {
     if (!tree || treeFilterPaths.size === 0) return tree
@@ -408,6 +434,25 @@ export function OverviewPage() {
               )
             })}
           </div>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="whitespace-nowrap">Проверка</span>
+            <select
+              value={manualProcessedFilter}
+              onChange={(e) => {
+                const v = e.target.value
+                updateParams({
+                  manual_processed: v === '' ? undefined : v,
+                  page: '1',
+                })
+              }}
+              className="rounded border border-input bg-background px-2 py-1.5 text-sm shadow-sm"
+              aria-label="Фильтр по ручной проверке"
+            >
+              <option value="">Все</option>
+              <option value="true">Проверено вручную</option>
+              <option value="false">Не проверено</option>
+            </select>
+          </label>
         </div>
         <Card>
           <CardHeader>
@@ -421,6 +466,9 @@ export function OverviewPage() {
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow className="bg-muted/50">
+                      <TableHead className="w-10 max-w-10 px-2 text-center">
+                        <span className="sr-only">Ручная проверка</span>
+                      </TableHead>
                       <TableHead>
                         <button
                           type="button"
@@ -465,6 +513,21 @@ export function OverviewPage() {
                         key={n.path}
                         className="even:bg-muted/20 hover:even:bg-muted/40"
                       >
+                        <TableCell className="w-10 max-w-10 px-2 text-center align-middle">
+                          {n.manual_processed ? (
+                            <span
+                              className="inline-flex justify-center"
+                              role="img"
+                              aria-label="Проверено вручную"
+                            >
+                              <Check
+                                className="size-4 text-green-800/[0.38] dark:text-green-400/[0.32]"
+                                strokeWidth={2.25}
+                                aria-hidden
+                              />
+                            </span>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="min-w-0 max-w-[min(100%,20rem)] whitespace-normal md:max-w-none">
                           <Tooltip>
                             <TooltipTrigger asChild>

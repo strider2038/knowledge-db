@@ -79,6 +79,24 @@ func ValidateFrontmatter(matter map[string]any) string {
 	if v, ok := matter["updated"]; !ok || v == nil || v == "" {
 		return "frontmatter: updated required"
 	}
+	if msg := validateManualProcessedType(matter); msg != "" {
+		return msg
+	}
+
+	return ""
+}
+
+func validateManualProcessedType(matter map[string]any) string {
+	if matter == nil {
+		return ""
+	}
+	v, ok := matter["manual_processed"]
+	if !ok || v == nil {
+		return ""
+	}
+	if _, ok := v.(bool); !ok {
+		return "frontmatter: manual_processed must be a boolean"
+	}
 
 	return ""
 }

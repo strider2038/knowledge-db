@@ -26,6 +26,52 @@ updated: "2024-01-01T00:00:00Z"
 	assert.Empty(t, violations)
 }
 
+func TestValidate_WhenManualProcessedTrueOrAbsent_ExpectNoViolations(t *testing.T) {
+	t.Parallel()
+
+	store, base := seedMemFS(map[string]string{
+		"topic/with-flag.md": `---
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+manual_processed: true
+---
+
+Body`,
+		"topic/no-flag.md": `---
+keywords: [b]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+---
+
+Body`,
+	})
+
+	violations, err := store.Validate(context.Background(), base)
+	require.NoError(t, err)
+	assert.Empty(t, violations)
+}
+
+func TestValidate_WhenManualProcessedInvalidType_ExpectViolation(t *testing.T) {
+	t.Parallel()
+
+	store, base := seedMemFS(map[string]string{
+		"topic/bad.md": `---
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+manual_processed: "yes"
+---
+
+Body`,
+	})
+
+	violations, err := store.Validate(context.Background(), base)
+	require.NoError(t, err)
+	require.Len(t, violations, 1)
+	assert.Contains(t, violations[0].Message, "manual_processed must be a boolean")
+}
+
 func TestValidate_WhenInvalidFrontmatter_ExpectViolation(t *testing.T) {
 	t.Parallel()
 

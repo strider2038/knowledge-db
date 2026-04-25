@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { getNode, getTranslateStatus, postTranslate, type Node } from '../services/api'
+import {
+  getNode,
+  getTranslateStatus,
+  patchNodeManualProcessed,
+  postTranslate,
+  type Node,
+} from '../services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { ContentOutline, ContentOutlineFloating } from '@/components/ContentOutline'
 import { extractHeadings } from '@/lib/headings'
-import { ExternalLink, FileQuestion } from 'lucide-react'
+import { Check, ExternalLink, FileQuestion } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
@@ -58,6 +64,8 @@ export function NodePage() {
   const [error, setError] = useState<string | null>(null)
   const [translating, setTranslating] = useState(false)
   const [translateError, setTranslateError] = useState<string | null>(null)
+  const [manualSaving, setManualSaving] = useState(false)
+  const [manualError, setManualError] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const basePath = path.includes('.') ? path.replace(/\.[a-z]{2}$/, '') : path
@@ -132,6 +140,26 @@ export function NodePage() {
         setTranslating(false)
         setTranslateError(err instanceof Error ? err.message : 'Ошибка перевода')
       })
+  }
+
+  const handleManualProcessedToggle = async (next: boolean) => {
+    if (!node) return
+    setManualError(null)
+    const prev = node
+    setManualSaving(true)
+    setNode({
+      ...node,
+      metadata: { ...node.metadata, manual_processed: next },
+    })
+    try {
+      const updated = await patchNodeManualProcessed(node.path, next)
+      setNode(updated)
+    } catch (err) {
+      setNode(prev)
+      setManualError(err instanceof Error ? err.message : 'Не удалось сохранить')
+    } finally {
+      setManualSaving(false)
+    }
   }
 
   const translations =
@@ -283,7 +311,54 @@ export function NodePage() {
           })}
         </div>
       )}
-      <h1 className="text-2xl font-semibold">{title}</h1>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        <h1 className="text-2xl font-semibold leading-snug">{title}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          {meta.manual_processed === true ? (
+            <>
+              <span
+                className="inline-flex items-center justify-center"
+                role="img"
+                aria-label="Проверено вручную"
+              >
+                <Check
+                  className="size-[1.125rem] text-green-800/[0.38] dark:text-green-400/[0.32]"
+                  strokeWidth={2.25}
+                  aria-hidden
+                />
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                disabled={manualSaving}
+                onClick={() => {
+                  void handleManualProcessedToggle(false)
+                }}
+              >
+                Снять отметку
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              disabled={manualSaving}
+              onClick={() => {
+                void handleManualProcessedToggle(true)
+              }}
+            >
+              {manualSaving ? 'Сохранение…' : 'Проверено'}
+            </Button>
+          )}
+        </div>
+      </div>
+      {manualError ? (
+        <p className="text-sm text-destructive">{manualError}</p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         <span
           className={cn(

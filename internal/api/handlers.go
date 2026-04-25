@@ -90,6 +90,64 @@ func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, node)
 }
 
+// PatchNode обрабатывает PATCH /api/nodes/{path...} — обновление поля manual_processed в frontmatter.
+func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+
+		return
+	}
+	path := r.PathValue("path")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	if len(raw) != 1 {
+		writeError(w, http.StatusBadRequest, "body must contain only manual_processed")
+
+		return
+	}
+	rawVal, ok := raw["manual_processed"]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "body must contain only manual_processed")
+
+		return
+	}
+	var value bool
+	if err := json.Unmarshal(rawVal, &value); err != nil {
+		writeError(w, http.StatusBadRequest, "manual_processed must be a boolean")
+
+		return
+	}
+	if err := kb.PatchNodeManualProcessed(r.Context(), h.dataPath, path, value); err != nil {
+		if errors.Is(err, kb.ErrNodeNotFound) {
+			clog.Debug(r.Context(), "patch node: not found", "path", path)
+			writeError(w, http.StatusNotFound, "node not found")
+
+			return
+		}
+		clog.Errorf(r.Context(), "patch node: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	node, err := kb.GetNode(r.Context(), h.dataPath, path)
+	if err != nil {
+		clog.Errorf(r.Context(), "patch node reload: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	writeJSON(w, node)
+}
+
 // GetTree обрабатывает GET /api/tree.
 func (h *Handler) GetTree(w http.ResponseWriter, r *http.Request) {
 	tree, err := kb.ReadTree(r.Context(), h.dataPath)
@@ -159,6 +217,20 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 				opts.Types = append(opts.Types, s)
 			}
 		}
+	}
+	switch strings.TrimSpace(q.Get("manual_processed")) {
+	case "":
+		// no filter
+	case "true":
+		v := true
+		opts.ManualProcessed = &v
+	case "false":
+		v := false
+		opts.ManualProcessed = &v
+	default:
+		writeError(w, http.StatusBadRequest, "invalid manual_processed, expected true or false")
+
+		return
 	}
 
 	nodes, total, err := kb.ListNodesWithOptions(r.Context(), h.dataPath, opts)

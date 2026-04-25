@@ -67,3 +67,18 @@ func TestValidateFrontmatter_WhenMissingUpdated_ExpectError(t *testing.T) {
 
 	assert.Equal(t, "frontmatter: updated required", result)
 }
+
+func TestValidateFrontmatter_WhenManualProcessedNotBool_ExpectError(t *testing.T) {
+	t.Parallel()
+
+	matter := map[string]any{
+		"keywords":          []any{"a"},
+		"created":           "2024-01-01T00:00:00Z",
+		"updated":           "2024-01-01T00:00:00Z",
+		"manual_processed":  "yes",
+	}
+
+	result := kb.ValidateFrontmatter(matter)
+
+	assert.Equal(t, "frontmatter: manual_processed must be a boolean", result)
+}
