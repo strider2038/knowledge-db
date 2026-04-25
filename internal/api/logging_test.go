@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +21,10 @@ func TestRequestLoggingMiddleware_WhenHandlerReturnsStatus_CapturesStatus(t *tes
 		),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -41,7 +45,10 @@ func TestRequestLoggingMiddleware_WhenHandlerSucceeds_ReturnsOK(t *testing.T) {
 		),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

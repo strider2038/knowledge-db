@@ -54,9 +54,13 @@ export interface GetNodesParams {
   order?: string;
 }
 
+export type WebAuthMode = 'password' | 'google';
+
 export interface SessionStatus {
   authenticated: boolean;
   auth_enabled: boolean;
+  /** Present when `auth_enabled` (password vs Google). */
+  auth_mode?: WebAuthMode;
 }
 
 export async function getSession(): Promise<SessionStatus> {
@@ -84,6 +88,41 @@ export async function logout(): Promise<void> {
     method: 'POST',
   });
   if (!res.ok) throw new Error('Logout failed');
+}
+
+const KB_OAUTH_REDIRECT_KEY = 'kb_oauth_redirect';
+
+/** Start Google OAuth in the same browser (full navigation). */
+export function startGoogleOAuth(redirectPath: string): void {
+  if (typeof window === 'undefined') return;
+  const path = redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`;
+  try {
+    window.sessionStorage.setItem(KB_OAUTH_REDIRECT_KEY, path);
+  } catch {
+    // ignore
+  }
+  const q = new URLSearchParams();
+  if (path !== '/') {
+    q.set('redirect', path);
+  }
+  const suffix = q.toString() ? `?${q.toString()}` : '';
+  window.location.assign(`${API_URL}/api/auth/google${suffix}`);
+}
+
+export function takeStoredOAuthRedirect(fallback: string): string {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const s = window.sessionStorage.getItem(KB_OAUTH_REDIRECT_KEY);
+    if (s) {
+      window.sessionStorage.removeItem(KB_OAUTH_REDIRECT_KEY);
+      if (s.startsWith('/') && !s.startsWith('//')) {
+        return s;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return fallback;
 }
 
 export async function getTree(): Promise<TreeNode> {

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -116,7 +117,8 @@ func TestAuthSession_WhenValidCookie_ExpectAuthenticatedTrue(t *testing.T) {
 	cookie := loginResp.Header().Get("Set-Cookie")
 	require.NotEmpty(t, cookie)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/auth/session", nil)
+	require.NoError(t, err)
 	req.Header.Set("Cookie", cookie)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -149,10 +151,11 @@ func TestAuthLogout_WhenValidSession_ExpectCookieCleared(t *testing.T) {
 	cookie := loginResp.Header().Get("Set-Cookie")
 	require.NotEmpty(t, cookie)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-	req.Header.Set("Cookie", cookie)
+	lreq, err2 := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/auth/logout", nil)
+	require.NoError(t, err2)
+	lreq.Header.Set("Cookie", cookie)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, lreq)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	setCookie := rec.Header().Get("Set-Cookie")
@@ -177,10 +180,11 @@ func TestProtectedAPI_WhenAuthEnabledAndValidSession_ExpectOK(t *testing.T) {
 	cookie := loginResp.Header().Get("Set-Cookie")
 	require.NotEmpty(t, cookie)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tree", nil)
-	req.Header.Set("Cookie", cookie)
+	treq, err3 := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/tree", nil)
+	require.NoError(t, err3)
+	treq.Header.Set("Cookie", cookie)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, treq)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 }
@@ -218,10 +222,11 @@ func TestMCP_WhenAuthEnabledAndValidSession_ExpectReachesHandler(t *testing.T) {
 	cookie := loginResp.Header().Get("Set-Cookie")
 	require.NotEmpty(t, cookie)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp", nil)
-	req.Header.Set("Cookie", cookie)
+	mreq, err3 := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp", nil)
+	require.NoError(t, err3)
+	mreq.Header.Set("Cookie", cookie)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, mreq)
 
 	// MCP handler returns 501, but we get past auth (not 401)
 	require.NotEqual(t, http.StatusUnauthorized, rec.Code)
@@ -244,10 +249,11 @@ func TestAssets_WhenAuthEnabledAndValidSession_ExpectOKOr404(t *testing.T) {
 	cookie := loginResp.Header().Get("Set-Cookie")
 	require.NotEmpty(t, cookie)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/assets/topic/node1/nonexistent.png", nil)
-	req.Header.Set("Cookie", cookie)
+	areq, err4 := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/assets/topic/node1/nonexistent.png", nil)
+	require.NoError(t, err4)
+	areq.Header.Set("Cookie", cookie)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, areq)
 
 	// Should get past auth (not 401); may get 404 for missing asset
 	require.NotEqual(t, http.StatusUnauthorized, rec.Code)

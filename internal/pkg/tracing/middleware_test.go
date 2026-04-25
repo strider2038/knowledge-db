@@ -1,6 +1,7 @@
 package tracing_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,7 +23,8 @@ func TestMiddleware_WhenHeaderPresent_UsesRequestID(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	require.NoError(t, err)
 	req.Header.Set(tracing.Header, requestID.String())
 	rec := httptest.NewRecorder()
 
@@ -41,7 +43,8 @@ func TestMiddleware_WhenHeaderMissing_GeneratesRequestID(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req, err2 := http.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	require.NoError(t, err2)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -59,7 +62,8 @@ func TestMiddleware_WhenHeaderInvalid_GeneratesRequestID(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req, err2 := http.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	require.NoError(t, err2)
 	req.Header.Set(tracing.Header, "not-a-valid-uuid")
 	rec := httptest.NewRecorder()
 

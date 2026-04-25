@@ -7,11 +7,13 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { getSession, type SessionStatus } from '@/services/api'
+import { getSession, type SessionStatus, type WebAuthMode } from '@/services/api'
 
 type AuthContextValue = {
   authenticated: boolean | null
   authEnabled: boolean | null
+  /** When auth is enabled, how the user signs in. */
+  authMode: WebAuthMode | null
   loading: boolean
   refresh: () => Promise<void>
 }
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     authenticated: session?.authenticated ?? null,
     authEnabled: session?.auth_enabled ?? null,
+    authMode: session?.auth_mode ?? null,
     loading,
     refresh,
   }
