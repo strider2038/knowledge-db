@@ -27,4 +27,4 @@
 
 ## 5. Завершение (после согласования кода)
 
-- [ ] 5.1 `openspec archive google-oauth-web-auth` (после merge-ревью и кода) и ручной merge delta в `openspec/specs/`.
+- [x] 5.1 `openspec archive google-oauth-web-auth` (после merge-ревью и кода) и ручной merge delta в `openspec/specs/`.
