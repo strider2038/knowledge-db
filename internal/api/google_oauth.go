@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -21,11 +22,6 @@ const (
 
 // GoogleOAuthStart handles GET /api/auth/google: redirect to Google with signed state.
 func (h *AuthHandler) GoogleOAuthStart(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-
-		return
-	}
 	if h.cfg.Auth.AuthMode() != config.AuthModeGoogle {
 		w.WriteHeader(http.StatusNotFound)
 
@@ -45,11 +41,6 @@ func (h *AuthHandler) GoogleOAuthStart(w http.ResponseWriter, r *http.Request) {
 
 // GoogleOAuthCallback handles GET /api/auth/google/callback.
 func (h *AuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-
-		return
-	}
 	if h.cfg.Auth.AuthMode() != config.AuthModeGoogle {
 		w.WriteHeader(http.StatusNotFound)
 
@@ -89,7 +80,7 @@ func (h *AuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Request
 	}
 	allow := parseEmailAllowlist(h.cfg.Auth.AuthAllowedEmails)
 	if !isEmailAllowed(allow, email) {
-		clog.Info(r.Context(), "auth google: email not in allowlist")
+		clog.Info(r.Context(), "auth google: email not in allowlist", "email", email)
 		h.redirectOAuthError(w, r, h.cfg.WebPublicBaseURL, "forbidden")
 
 		return
@@ -225,12 +216,22 @@ func sanitizeReturnPath(p string) string {
 	if p == "" {
 		return "/"
 	}
-	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
+	if !strings.HasPrefix(p, "/") {
+		return "/"
+	}
+	if strings.HasPrefix(p, "//") {
 		return "/"
 	}
 	if strings.Contains(p, "://") {
 		return "/"
 	}
+	cleaned := path.Clean(p)
+	if cleaned == "." || cleaned == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(cleaned, "/") {
+		return "/"
+	}
 
-	return p
+	return cleaned
 }

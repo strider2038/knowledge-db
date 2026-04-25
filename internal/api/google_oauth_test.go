@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -148,4 +149,26 @@ func TestPostLogin_GoogleMode_Expect400(t *testing.T) {
 	r := httptest.NewRecorder()
 	h.ServeHTTP(r, req)
 	require.Equal(t, http.StatusBadRequest, r.Code)
+}
+
+func TestSanitizeReturnPath(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", "/"},
+		{"/../evil", "/evil"},
+		{"//evil.com", "/"},
+		{"https://evil.com", "/"},
+		{"/valid/path", "/valid/path"},
+		{"../escape", "/"},
+		{"/a/../b", "/b"},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%q", tc.in), func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, sanitizeReturnPath(tc.in))
+		})
+	}
 }

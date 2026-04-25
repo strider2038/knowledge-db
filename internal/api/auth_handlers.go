@@ -16,6 +16,8 @@ import (
 const (
 	rateLimit  = 3
 	rateWindow = 60 * time.Minute
+	// googleOAuthHTTPTimeout caps outbound token/userinfo requests to Google.
+	googleOAuthHTTPTimeout = 15 * time.Second
 )
 
 // AuthHandler — handlers для auth endpoints.
@@ -37,8 +39,10 @@ func NewAuthHandler(store *session.Store, cfg *config.Config) *AuthHandler {
 		store:             store,
 		cfg:               cfg,
 		allowedCORSOrigin: cfg.HTTP.AllowedCORSOrigin,
-		rateMap:           make(map[string][]time.Time),
-		httpClient:        http.DefaultClient,
+		rateMap:  make(map[string][]time.Time),
+		httpClient: &http.Client{
+			Timeout: googleOAuthHTTPTimeout,
+		},
 	}
 	go h.cleanupRateMap()
 
