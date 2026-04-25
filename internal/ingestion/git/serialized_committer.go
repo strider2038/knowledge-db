@@ -62,6 +62,21 @@ func (s *SerializedGitCommitter) Sync(ctx context.Context) error {
 	return s.inner.Sync(ctx)
 }
 
+// Status делегирует вызов underlying committer.
+func (s *SerializedGitCommitter) Status(ctx context.Context) (*GitStatus, error) {
+	return s.inner.Status(ctx)
+}
+
+// CommitAll делегирует вызов underlying committer.
+func (s *SerializedGitCommitter) CommitAll(ctx context.Context, message string) error {
+	return s.inner.CommitAll(ctx, message)
+}
+
+// DiffStat делегирует вызов underlying committer.
+func (s *SerializedGitCommitter) DiffStat(ctx context.Context) (string, error) {
+	return s.inner.DiffStat(ctx)
+}
+
 func (s *SerializedGitCommitter) worker() {
 	defer s.wg.Done()
 	for job := range s.jobs {

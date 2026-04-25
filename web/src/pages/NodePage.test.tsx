@@ -5,6 +5,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
 const { mockNode, mockNavigate, getNode, patchNodeManualProcessed } = vi.hoisted(() => {
@@ -46,20 +47,23 @@ vi.mock('react-router-dom', async (importOriginal) => {
 vi.mock('../services/api', () => ({
   getNode,
   patchNodeManualProcessed,
+  getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
 }))
 
 function renderNodePage(initialPath = '/node/programming/scaling/load-balancing', state?: { returnTo: string }) {
   const result = render(
-    <TooltipProvider>
-      <MemoryRouter
-        initialEntries={[{ pathname: initialPath, state }]}
-        initialIndex={0}
-      >
-        <Routes>
-          <Route path="/node/*" element={<NodePage />} />
-        </Routes>
-      </MemoryRouter>
-    </TooltipProvider>
+    <GitStatusProvider>
+      <TooltipProvider>
+        <MemoryRouter
+          initialEntries={[{ pathname: initialPath, state }]}
+          initialIndex={0}
+        >
+          <Routes>
+            <Route path="/node/*" element={<NodePage />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>
+    </GitStatusProvider>
   )
   return result
 }
@@ -78,14 +82,14 @@ describe('NodePage', () => {
     renderNodePage()
     expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
     const btn = screen.getByRole('button', { name: 'Проверено' })
+    expect(btn).toHaveAttribute('data-variant', 'outline')
     fireEvent.click(btn)
     await waitFor(() => {
       expect(patchNodeManualProcessed).toHaveBeenCalledWith('programming/scaling/load-balancing', true)
     })
     await waitFor(() => {
-      expect(screen.getByRole('img', { name: 'Проверено вручную' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Проверено' })).toHaveAttribute('data-variant', 'ghost')
     })
-    expect(screen.queryByRole('button', { name: 'Проверено' })).not.toBeInTheDocument()
   })
 
   it('shows check when already manual processed', async () => {
@@ -94,9 +98,8 @@ describe('NodePage', () => {
       metadata: { ...mockNode.metadata, manual_processed: true },
     })
     renderNodePage()
-    expect(await screen.findByRole('img', { name: 'Проверено вручную' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Проверено' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Снять отметку' })).toBeInTheDocument()
+    const btn = await screen.findByRole('button', { name: 'Проверено' })
+    expect(btn).toHaveAttribute('data-variant', 'ghost')
   })
 
   it('renders title, type badge, breadcrumbs, annotation, content, keywords; no Metadata block', async () => {

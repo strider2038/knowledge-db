@@ -331,3 +331,71 @@ export async function rejectImportItem(id: string): Promise<ImportRejectResponse
   }
   return res.json();
 }
+
+export interface DeleteNodeResponse {
+  path: string;
+  deleted: boolean;
+}
+
+export async function deleteNode(path: string): Promise<DeleteNodeResponse> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to delete node');
+  }
+  return res.json();
+}
+
+export async function moveNode(path: string, targetPath: string): Promise<Node> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target_path: targetPath }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to move node');
+  }
+  return res.json();
+}
+
+export interface GitStatusResponse {
+  has_changes: boolean;
+  changed_files: number;
+  /** Сообщает клиенту, что на сервере git выключен (503), а не «просто нет изменений». */
+  git_disabled?: boolean;
+}
+
+export async function getGitStatus(): Promise<GitStatusResponse> {
+  const res = await apiFetch(`${API_URL}/api/git/status`);
+  if (!res.ok) {
+    if (res.status === 503) {
+      return { has_changes: false, changed_files: 0, git_disabled: true };
+    }
+    throw new Error('Failed to get git status');
+  }
+  return res.json();
+}
+
+export interface GitCommitResponse {
+  message: string;
+  committed: boolean;
+}
+
+export async function postGitCommit(message?: string): Promise<GitCommitResponse> {
+  const body = message ? { message } : {};
+  const res = await apiFetch(`${API_URL}/api/git/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to commit');
+  }
+  return res.json();
+}
