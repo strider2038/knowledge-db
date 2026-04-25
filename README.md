@@ -80,11 +80,15 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **KB_DATA_PATH** | Путь к корню базы знаний (обязателен для kb-server) |
 | **KB_HTTP_ADDR** | Адрес HTTP-сервера (по умолчанию :8080) |
 | **KB_GIT_DISABLED** | Отключить git (коммиты и sync) |
-| **KB_LOGIN**, **KB_PASSWORD** | Опциональная авторизация: при задании обоих включается защита API и web UI |
+| **KB_LOGIN**, **KB_PASSWORD** | Парольный режим: при задании **обоих** включается защита API и web UI (нельзя совмещать с Google OAuth) |
+| **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: идентификатор и секрет OAuth 2.0-клиента (тип **Web application**) в Google Cloud Console |
+| **KB_GOOGLE_OAUTH_REDIRECT_URL** | Google OAuth: **точный** URL обратного вызова, как в Console — обычно `https://<хост API>/api/auth/google/callback` |
+| **KB_OAUTH_STATE_SECRET** | Google OAuth: секрет для подписи параметра `state` (CSRF); сгенерируйте длинную случайную строку |
+| **KB_AUTH_ALLOWED_EMAILS** | Google OAuth: список разрешённых email через запятую; чужой Google-аккаунт не получит сессию |
 | **KB_SESSION_TTL** | TTL сессии (по умолчанию 8h) |
 | **TELEGRAM_TOKEN** | Токен Telegram-бота (опционально) |
 | **TELEGRAM_OWNER_ID** | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN) |
-| **KB_PUBLIC_WEB_BASE_URL** | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); в ответе бота после сохранения добавляется ссылка «Открыть на сайте» на страницу узла |
+| **KB_PUBLIC_WEB_BASE_URL** | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); **обязателен в режиме Google OAuth** (редирект после входа в SPA), в ответе бота — ссылка «Открыть на сайте» |
 | **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL** | LLM для ingestion (OpenAI-совместимый API) |
 | **JINA_API_KEY** | Ключ Jina для эмбеддингов (опционально) |
 | **GIT_SYNC_INTERVAL** | Интервал git sync (по умолчанию 5m) |
@@ -99,11 +103,32 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 KB_DATA_PATH=/path/to/data ./kb-server
 ```
 
-**Режим с авторизацией**: при задании `KB_LOGIN` и `KB_PASSWORD` требуется вход через форму на `/login`.
+**Парольный режим** (`KB_LOGIN` + `KB_PASSWORD`): вход через форму на `/login`. **Не задавайте** одновременно полный набор переменных Google OAuth — сервер не запустится.
 
 ```bash
 KB_DATA_PATH=/path/to/data KB_LOGIN=admin KB_PASSWORD=secret ./kb-server
 ```
+
+**Режим Google OAuth** — взаимоисключающий с паролем. Нужны **все** перечисленные в таблице переменные: клиент, redirect, секрет `state`, непустой allowlist, публичный URL SPA; `KB_LOGIN` и `KB_PASSWORD` должны быть **пустыми**.
+
+1. В [Google Cloud Console](https://console.cloud.google.com/) создайте проект (или выберите существующий), настройте **OAuth consent screen** (для теста — External и тестовые пользователи), затем **APIs & Services → Credentials → Create Credentials → OAuth client ID** и тип **Web application**.
+2. В **Authorized redirect URIs** укажите **ровно** тот же URL, что и в `KB_GOOGLE_OAUTH_REDIRECT_URL` — путь фиксирован: `/api/auth/google/callback` на том хосте и схеме, где снаружи доступен `kb-server`. Пример: `https://api.example.com/api/auth/google/callback` или для локальной проверки: `http://localhost:8080/api/auth/google/callback` (в test mode Google допускает localhost).
+3. Скопируйте **Client ID** и **Client secret** в `KB_GOOGLE_OAUTH_CLIENT_ID` и `KB_GOOGLE_OAUTH_CLIENT_SECRET`. Сгенерируйте криптостойкую строку для `KB_OAUTH_STATE_SECRET` (например `openssl rand -hex 32`). В `KB_AUTH_ALLOWED_EMAILS` перечислите email пользователей; вход возможен только для **подтверждённого** в Google email.
+
+```bash
+export KB_DATA_PATH=/path/to/data
+export KB_PUBLIC_WEB_BASE_URL=https://kb.example
+export KB_GOOGLE_OAUTH_CLIENT_ID=....apps.googleusercontent.com
+export KB_GOOGLE_OAUTH_CLIENT_SECRET=...
+export KB_GOOGLE_OAUTH_REDIRECT_URL=https://api.example.com/api/auth/google/callback
+export KB_OAUTH_STATE_SECRET=$(openssl rand -hex 32)
+export KB_AUTH_ALLOWED_EMAILS=you@example.com,colleague@example.com
+./kb-server
+```
+
+Если задана **хотя бы одна** переменная Google OAuth, пустой набор остальных не допускается: либо полная конфигурация, либо очистите все `KB_GOOGLE_*`, `KB_OAUTH_STATE_SECRET` и `KB_AUTH_ALLOWED_EMAILS`.
+
+UI и API должны согласовываться по CORS: для production укажите `ALLOWED_CORS_ORIGIN` (origin веб-интерфейса, без пути). Вход: кнопка «Войти через Google» ведёт на `GET /api/auth/google` на том же origin, что и API, либо настраивайте прокси так, чтобы этот путь попадал на `kb-server`.
 
 При публичном доступе (вне localhost) рекомендуется использовать TLS: cookie `Secure` требует HTTPS. Настройте reverse proxy (nginx, Caddy) с TLS и корректные заголовки `X-Forwarded-Proto`, `X-Forwarded-For`.
 
