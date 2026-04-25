@@ -39,6 +39,12 @@ func Run() error {
 	if err := validateConfig(cfg); err != nil {
 		return err
 	}
+	if err := cfg.Auth.ValidateAuth(); err != nil {
+		return errors.Errorf("invalid auth configuration: %w", err)
+	}
+	if err := cfg.Auth.ValidateWebPublicBaseForGoogle(cfg.WebPublicBaseURL); err != nil {
+		return errors.Errorf("invalid auth configuration: %w", err)
+	}
 
 	slog.Info("kb-server: starting", "addr", cfg.HTTP.Addr, "data_path", cfg.DataPath)
 

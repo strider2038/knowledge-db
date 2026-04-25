@@ -16,6 +16,8 @@ vi.mock('@/services/api', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
   login: (...args: unknown[]) => mockLogin(...args),
   logout: (...args: unknown[]) => mockLogout(...args),
+  takeStoredOAuthRedirect: (fallback: string) => fallback,
+  startGoogleOAuth: vi.fn(),
 }))
 
 function renderLogin(initialEntry = '/login') {
@@ -36,7 +38,7 @@ function renderLogin(initialEntry = '/login') {
 describe('LoginPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetSession.mockResolvedValue({ authenticated: false, auth_enabled: true })
+    mockGetSession.mockResolvedValue({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
   })
 
   it('renders login form', async () => {
@@ -68,8 +70,8 @@ describe('LoginPage', () => {
   it('redirects to overview on successful login', async () => {
     mockLogin.mockResolvedValue(undefined)
     mockGetSession
-      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true })
-      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true })
+      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
+      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
     renderLogin()
 
     const loginInput = await screen.findByLabelText('Логин')
@@ -88,8 +90,8 @@ describe('LoginPage', () => {
   it('redirects to redirect param after successful login', async () => {
     mockLogin.mockResolvedValue(undefined)
     mockGetSession
-      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true })
-      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true })
+      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
+      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
     renderLogin('/login?redirect=/add')
 
     const loginInput = await screen.findByLabelText('Логин')
@@ -115,7 +117,7 @@ describe('ProtectedRoute', () => {
   }
 
   it('redirects unauthenticated user to login', async () => {
-    mockGetSession.mockResolvedValue({ authenticated: false, auth_enabled: true })
+    mockGetSession.mockResolvedValue({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
     render(
       <MemoryRouter initialEntries={['/']}>
         <AuthProvider>
@@ -133,7 +135,7 @@ describe('ProtectedRoute', () => {
   })
 
   it('shows protected content when authenticated', async () => {
-    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true })
+    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
     render(
       <MemoryRouter initialEntries={['/']}>
         <AuthProvider>
@@ -158,7 +160,7 @@ describe('Logout', () => {
   })
 
   it('calls logout and redirects to login', async () => {
-    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true })
+    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
     const locationSpy = { href: '' }
     Object.defineProperty(window, 'location', {
       value: { ...window.location, get href() { return locationSpy.href }, set href(v: string) { locationSpy.href = v } },

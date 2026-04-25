@@ -67,7 +67,8 @@ func TestImportTelegramGetSession_WhenValid(t *testing.T) {
 	t.Parallel()
 	handler := setupImportTestHandler(t, &ingestion.StubIngester{})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -106,7 +107,8 @@ func TestImportTelegramAccept_WhenValid(t *testing.T) {
 	}
 	handler := setupImportTestHandler(t, ingester)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -133,7 +135,8 @@ func TestImportTelegramReject_WhenValid(t *testing.T) {
 	t.Parallel()
 	handler := setupImportTestHandler(t, &ingestion.StubIngester{})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -161,7 +164,8 @@ func TestImportTelegramAccept_WhenSessionComplete_Expect409(t *testing.T) {
 	}
 	handler := setupImportTestHandler(t, ingester)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

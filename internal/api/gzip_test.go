@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,7 +18,10 @@ func TestGzip_WhenAcceptEncodingGzip_CompressesResponse(t *testing.T) {
 		_, _ = w.Write([]byte(strings.Repeat("x", 1000)))
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Accept-Encoding", "gzip")
 	rec := httptest.NewRecorder()
 
@@ -43,7 +47,10 @@ func TestGzip_WhenNoAcceptEncoding_PassesThrough(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -64,7 +71,10 @@ func TestGzip_WhenRangeHeader_PassesThrough(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("Range", "bytes=0-10")
 	rec := httptest.NewRecorder()
