@@ -7,6 +7,8 @@ import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { LoginPage } from './LoginPage'
 import { Navbar } from '@/components/Navbar'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { GitStatusProvider } from '@/hooks/useGitStatus'
 
 const mockLogin = vi.fn()
 const mockGetSession = vi.fn()
@@ -18,6 +20,7 @@ vi.mock('@/services/api', () => ({
   logout: (...args: unknown[]) => mockLogout(...args),
   takeStoredOAuthRedirect: (fallback: string) => fallback,
   startGoogleOAuth: vi.fn(),
+  getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
 }))
 
 function renderLogin(initialEntry = '/login') {
@@ -168,11 +171,15 @@ describe('Logout', () => {
     })
 
     render(
-      <MemoryRouter initialEntries={['/']}>
-        <AuthProvider>
-          <Navbar />
-        </AuthProvider>
-      </MemoryRouter>
+      <TooltipProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <GitStatusProvider>
+            <AuthProvider>
+              <Navbar />
+            </AuthProvider>
+          </GitStatusProvider>
+        </MemoryRouter>
+      </TooltipProvider>
     )
 
     const logoutBtn = await screen.findByRole('button', { name: 'Выход' })

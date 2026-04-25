@@ -14,6 +14,15 @@ import (
 type GitCommitter interface {
 	CommitNode(ctx context.Context, nodePath, message string) error
 	Sync(ctx context.Context) error
+	Status(ctx context.Context) (*GitStatus, error)
+	CommitAll(ctx context.Context, message string) error
+	DiffStat(ctx context.Context) (string, error)
+}
+
+// GitStatus — результат проверки git status.
+type GitStatus struct {
+	HasChanges   bool
+	ChangedFiles int
 }
 
 // ExecGitCommitter выполняет git-команды через exec.Command.
@@ -63,6 +72,46 @@ func (g *ExecGitCommitter) Sync(ctx context.Context) error {
 	return nil
 }
 
+// Status возвращает информацию о незакоммиченных изменениях.
+func (g *ExecGitCommitter) Status(ctx context.Context) (*GitStatus, error) {
+	out, err := g.output(ctx, "status", "--porcelain")
+	if err != nil {
+		return nil, errors.Errorf("git status: %w", err)
+	}
+	lines := strings.TrimSpace(out)
+	if lines == "" {
+		return &GitStatus{HasChanges: false, ChangedFiles: 0}, nil
+	}
+	count := len(strings.Split(lines, "\n"))
+
+	return &GitStatus{HasChanges: true, ChangedFiles: count}, nil
+}
+
+// CommitAll выполняет git add -A + git commit + git push с указанным сообщением.
+func (g *ExecGitCommitter) CommitAll(ctx context.Context, message string) error {
+	if err := g.run(ctx, "add", "-A"); err != nil {
+		return errors.Errorf("commit all: git add: %w", err)
+	}
+	if err := g.run(ctx, "commit", "-m", message); err != nil {
+		return errors.Errorf("commit all: git commit: %w", err)
+	}
+	if err := g.run(ctx, "push"); err != nil {
+		clog.Errorf(ctx, "commit all: git push failed: %w", err)
+	}
+
+	return nil
+}
+
+// DiffStat возвращает результат git diff --stat.
+func (g *ExecGitCommitter) DiffStat(ctx context.Context) (string, error) {
+	out, err := g.output(ctx, "diff", "--stat")
+	if err != nil {
+		return "", errors.Errorf("git diff stat: %w", err)
+	}
+
+	return out, nil
+}
+
 func (g *ExecGitCommitter) run(ctx context.Context, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = g.repoPath
@@ -78,4 +127,22 @@ func (g *ExecGitCommitter) run(ctx context.Context, args ...string) error {
 	}
 
 	return nil
+}
+
+func (g *ExecGitCommitter) output(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = g.repoPath
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", errors.Errorf("git %s: %w", strings.Join(args, " "), err,
+			errors.String("stderr", stderr.String()),
+		)
+	}
+
+	return stdout.String(), nil
 }

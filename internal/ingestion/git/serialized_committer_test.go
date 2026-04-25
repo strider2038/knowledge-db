@@ -32,6 +32,14 @@ func (c *concurrentTrackingCommitter) CommitNode(_ context.Context, _, _ string)
 
 func (c *concurrentTrackingCommitter) Sync(_ context.Context) error { return nil }
 
+func (c *concurrentTrackingCommitter) Status(_ context.Context) (*gittool.GitStatus, error) {
+	return &gittool.GitStatus{}, nil
+}
+
+func (c *concurrentTrackingCommitter) CommitAll(_ context.Context, _ string) error { return nil }
+
+func (c *concurrentTrackingCommitter) DiffStat(_ context.Context) (string, error) { return "", nil }
+
 func TestSerializedGitCommitter_WhenConcurrentCalls_ExpectSequential(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

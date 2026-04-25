@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
+import { clearAllToasts } from '@/hooks/use-toast'
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -18,4 +19,5 @@ Object.defineProperty(window, 'matchMedia', {
 
 afterEach(() => {
   cleanup()
+  clearAllToasts()
 })

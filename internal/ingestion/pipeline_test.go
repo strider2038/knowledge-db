@@ -14,6 +14,7 @@ import (
 
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
+	"github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
@@ -56,6 +57,11 @@ type mockCommitter struct {
 
 func (m *mockCommitter) CommitNode(_ context.Context, _, _ string) error { return m.commitErr }
 func (m *mockCommitter) Sync(_ context.Context) error                    { return m.syncErr }
+func (m *mockCommitter) Status(_ context.Context) (*git.GitStatus, error) {
+	return &git.GitStatus{}, nil
+}
+func (m *mockCommitter) CommitAll(_ context.Context, _ string) error { return nil }
+func (m *mockCommitter) DiffStat(_ context.Context) (string, error)  { return "", nil }
 
 const testBasePath = "/data"
 

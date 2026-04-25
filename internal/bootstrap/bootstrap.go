@@ -53,6 +53,12 @@ func Run() error {
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue)
 	handler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 
+	commitMsgGen := igit.NewCommitMessageGenerator(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model)
+	if !cfg.LLM.IsConfigured() {
+		commitMsgGen = nil
+	}
+	handler.SetGitCommitter(committer, commitMsgGen, cfg.GitDisabled)
+
 	sessionStore := session.NewStore()
 	authHandler := api.NewAuthHandler(sessionStore, cfg)
 

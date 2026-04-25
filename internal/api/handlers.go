@@ -13,6 +13,7 @@ import (
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/import/session"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
+	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
@@ -21,11 +22,14 @@ import (
 
 // Handler — HTTP handlers для API.
 type Handler struct {
-	dataPath         string
-	uploadsDir       string
-	ingester         ingestion.Ingester
-	sessionStore     session.SessionStore
-	translationQueue *translationqueue.Queue
+	dataPath             string
+	uploadsDir           string
+	ingester             ingestion.Ingester
+	sessionStore         session.SessionStore
+	translationQueue     *translationqueue.Queue
+	gitCommitter         igit.GitCommitter
+	commitMsgGen         *igit.CommitMessageGenerator
+	gitDisabled          bool
 }
 
 // NewHandler создаёт Handler.
@@ -45,6 +49,14 @@ func NewHandlerWithUploads(dataPath, uploadsDir string, ingester ingestion.Inges
 		sessionStore:     store,
 		translationQueue: translationQueue,
 	}
+}
+
+// SetGitCommitter устанавливает GitCommitter и CommitMessageGenerator.
+// При gitDisabled=true git endpoints возвращают 503.
+func (h *Handler) SetGitCommitter(committer igit.GitCommitter, msgGen *igit.CommitMessageGenerator, gitDisabled bool) {
+	h.gitCommitter = committer
+	h.commitMsgGen = msgGen
+	h.gitDisabled = gitDisabled
 }
 
 // PostArticleTranslate обрабатывает POST /api/articles/translate/{path...}.
@@ -83,6 +95,85 @@ func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		clog.Errorf(r.Context(), "get node: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	writeJSON(w, node)
+}
+
+// DeleteNode обрабатывает DELETE /api/nodes/{path...}.
+func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
+	path := r.PathValue("path")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	if err := kb.DeleteNode(r.Context(), h.dataPath, path); err != nil {
+		if errors.Is(err, kb.ErrNodeNotFound) {
+			clog.Debug(r.Context(), "delete node: not found", "path", path)
+			writeError(w, http.StatusNotFound, "node not found")
+
+			return
+		}
+		clog.Errorf(r.Context(), "delete node: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	writeJSON(w, map[string]any{"path": path, "deleted": true})
+}
+
+// MoveNode обрабатывает POST /api/nodes/{path...}/move (matched via POST /api/nodes/{path...}).
+func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
+	path := r.PathValue("path")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	// Extract actual node path: expected pattern is "{nodePath}/move"
+	nodePath, _ := strings.CutSuffix(path, "/move")
+	if nodePath == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	var req struct {
+		TargetPath string `json:"target_path"` //nolint:tagliatelle // REST API snake_case
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	if req.TargetPath == "" {
+		writeError(w, http.StatusBadRequest, "target_path is required")
+
+		return
+	}
+	node, err := kb.MoveNode(r.Context(), h.dataPath, nodePath, req.TargetPath)
+	if err != nil {
+		if errors.Is(err, kb.ErrNodeNotFound) {
+			clog.Debug(r.Context(), "move node: not found", "path", nodePath)
+			writeError(w, http.StatusNotFound, "node not found")
+
+			return
+		}
+		if errors.Is(err, kb.ErrConflict) {
+			clog.Debug(r.Context(), "move node: conflict", "target_path", req.TargetPath)
+			writeError(w, http.StatusConflict, "target path already exists")
+
+			return
+		}
+		if errors.Is(err, kb.ErrInvalidPath) {
+			clog.Debug(r.Context(), "move node: invalid target_path", "target_path", req.TargetPath)
+			writeError(w, http.StatusBadRequest, "invalid target_path")
+
+			return
+		}
+		clog.Errorf(r.Context(), "move node: %w", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
@@ -271,6 +362,75 @@ func (h *Handler) GetAsset(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	_ = r.URL.Query().Get("q")
 	writeJSON(w, map[string]any{"nodes": []any{}})
+}
+
+// GetGitStatus обрабатывает GET /api/git/status.
+func (h *Handler) GetGitStatus(w http.ResponseWriter, r *http.Request) {
+	if h.gitDisabled || h.gitCommitter == nil {
+		writeError(w, http.StatusServiceUnavailable, "git is disabled")
+
+		return
+	}
+	status, err := h.gitCommitter.Status(r.Context())
+	if err != nil {
+		clog.Errorf(r.Context(), "git status: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	writeJSON(w, map[string]any{
+		"has_changes":   status.HasChanges,
+		"changed_files": status.ChangedFiles,
+	})
+}
+
+// PostGitCommit обрабатывает POST /api/git/commit.
+func (h *Handler) PostGitCommit(w http.ResponseWriter, r *http.Request) {
+	if h.gitDisabled || h.gitCommitter == nil {
+		writeError(w, http.StatusServiceUnavailable, "git is disabled")
+
+		return
+	}
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+
+	status, err := h.gitCommitter.Status(r.Context())
+	if err != nil {
+		clog.Errorf(r.Context(), "git commit: status check: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	if !status.HasChanges {
+		writeJSON(w, map[string]any{"committed": false, "message": "no changes to commit"})
+
+		return
+	}
+
+	message := req.Message
+	if message == "" {
+		diffStat, diffErr := h.gitCommitter.DiffStat(r.Context())
+		if diffErr != nil {
+			clog.Warn(r.Context(), "git commit: diff stat error, using fallback", "error", diffErr)
+			diffStat = ""
+		}
+		message = h.commitMsgGen.Generate(r.Context(), diffStat)
+	}
+
+	if err := h.gitCommitter.CommitAll(r.Context(), message); err != nil {
+		clog.Errorf(r.Context(), "git commit: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	clog.Info(r.Context(), "git commit: success", "message", message)
+	writeJSON(w, map[string]any{"message": message, "committed": true})
 }
 
 // Ingest обрабатывает POST /api/ingest.

@@ -490,6 +490,100 @@ func (s *Store) PatchNodeManualProcessed(ctx context.Context, basePath, nodePath
 	return nil
 }
 
+// DeleteNode удаляет узел: файл .md и директорию вложений (если существует).
+func (s *Store) DeleteNode(ctx context.Context, basePath, nodePath string) error {
+	_ = ctx
+	basePath = filepath.Clean(basePath)
+	stemPath := filepath.Join(basePath, filepath.FromSlash(nodePath))
+	if !s.isNode(stemPath) {
+		return errors.Errorf("delete node: %w", ErrNodeNotFound)
+	}
+
+	mdPath := stemPath + ".md"
+	if err := s.fs.Remove(mdPath); err != nil {
+		return errors.Errorf("delete node: remove file: %w", err)
+	}
+
+	attachDir := stemPath
+	if info, err := s.fs.Stat(attachDir); err == nil && info.IsDir() {
+		if err := s.fs.RemoveAll(attachDir); err != nil {
+			return errors.Errorf("delete node: remove attachments: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// MoveNode перемещает узел по новому пути (файл .md и директорию вложений).
+// Промежуточные директории целевого пути создаются рекурсивно.
+func (s *Store) MoveNode(ctx context.Context, basePath, nodePath, targetPath string) (*Node, error) {
+	_ = ctx
+	basePath = filepath.Clean(basePath)
+
+	if err := validateTargetPath(targetPath); err != nil {
+		return nil, errors.Errorf("move node: %w", err)
+	}
+
+	srcStem := filepath.Join(basePath, filepath.FromSlash(nodePath))
+	if !s.isNode(srcStem) {
+		return nil, errors.Errorf("move node: %w", ErrNodeNotFound)
+	}
+
+	dstStem := filepath.Join(basePath, filepath.FromSlash(targetPath))
+	if s.isNode(dstStem) {
+		return nil, errors.Errorf("move node: %w", ErrConflict)
+	}
+
+	dstDir := filepath.Dir(dstStem)
+	if err := s.fs.MkdirAll(dstDir, 0o755); err != nil {
+		return nil, errors.Errorf("move node: mkdir: %w", err)
+	}
+
+	srcMD := srcStem + ".md"
+	dstMD := dstStem + ".md"
+	if err := s.fs.Rename(srcMD, dstMD); err != nil {
+		return nil, errors.Errorf("move node: rename file: %w", err)
+	}
+
+	if info, err := s.fs.Stat(srcStem); err == nil && info.IsDir() {
+		if err := s.fs.Rename(srcStem, dstStem); err != nil {
+			return nil, errors.Errorf("move node: rename attachments: %w", err)
+		}
+	}
+
+	meta, annotation, content, err := parseNodeFile(s.fs, dstStem)
+	if err != nil {
+		return nil, errors.Errorf("move node: read moved node: %w", err)
+	}
+
+	return &Node{
+		Path:       filepath.ToSlash(targetPath),
+		Annotation: annotation,
+		Content:    content,
+		Metadata:   NormalizeNodeMetadataForAPI(meta),
+	}, nil
+}
+
+func validateTargetPath(targetPath string) error {
+	if targetPath == "" {
+		return errors.Errorf("target path: %w", ErrInvalidPath)
+	}
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(targetPath)))
+	if clean == "." || clean == "" {
+		return errors.Errorf("target path: %w", ErrInvalidPath)
+	}
+	for seg := range strings.SplitSeq(clean, "/") {
+		if seg == ".." {
+			return errors.Errorf("target path: path traversal: %w", ErrInvalidPath)
+		}
+	}
+	if pathHasHiddenSegment(clean) {
+		return errors.Errorf("target path: hidden segment: %w", ErrInvalidPath)
+	}
+
+	return nil
+}
+
 // isNode проверяет, существует ли {stemPath}.md.
 func (s *Store) isNode(stemPath string) bool {
 	_, err := s.fs.Stat(stemPath + ".md")

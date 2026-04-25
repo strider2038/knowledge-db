@@ -1,5 +1,6 @@
 import { Outlet, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { GitStatusProvider } from './hooks/useGitStatus'
 import { Navbar } from './components/Navbar'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ScrollToTop } from './components/ScrollToTop'
@@ -10,13 +11,15 @@ import { NodePage } from './pages/NodePage'
 
 function MainLayout() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-1">
-        <Outlet />
-      </main>
-      <ScrollToTop />
-    </div>
+    <GitStatusProvider>
+      <div className="min-h-screen flex flex-col">
+        <Navbar />
+        <main className="flex-1">
+          <Outlet />
+        </main>
+        <ScrollToTop />
+      </div>
+    </GitStatusProvider>
   )
 }
 

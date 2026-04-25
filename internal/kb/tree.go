@@ -30,3 +30,13 @@ func GetNode(ctx context.Context, basePath, nodePath string) (*Node, error) {
 func PatchNodeManualProcessed(ctx context.Context, basePath, nodePath string, value bool) error {
 	return NewStore(afero.NewOsFs()).PatchNodeManualProcessed(ctx, basePath, nodePath, value)
 }
+
+// DeleteNode удаляет узел из базы знаний (файл .md и вложения).
+func DeleteNode(ctx context.Context, basePath, nodePath string) error {
+	return NewStore(afero.NewOsFs()).DeleteNode(ctx, basePath, nodePath)
+}
+
+// MoveNode перемещает узел по указанному целевому пути.
+func MoveNode(ctx context.Context, basePath, nodePath, targetPath string) (*Node, error) {
+	return NewStore(afero.NewOsFs()).MoveNode(ctx, basePath, nodePath, targetPath)
+}

@@ -1,8 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { Toast } from 'radix-ui'
 import { ThemeProvider } from '@/components/theme-provider'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ToasterViewport } from '@/components/ui/toaster'
 import './index.css'
 import App from './App.tsx'
 
@@ -16,12 +18,15 @@ window.addEventListener('unhandledrejection', (event) => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider defaultTheme="system" enableSystem disableTransitionOnChange attribute="class">
-      <TooltipProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </TooltipProvider>
-    </ThemeProvider>
+    <Toast.Provider swipeDirection="up" duration={5000} label="Уведомления">
+      <ThemeProvider defaultTheme="system" enableSystem disableTransitionOnChange attribute="class">
+        <TooltipProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+          <ToasterViewport />
+        </TooltipProvider>
+      </ThemeProvider>
+    </Toast.Provider>
   </StrictMode>,
 )

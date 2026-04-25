@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   getNode,
-  getTranslateStatus,
   patchNodeManualProcessed,
-  postTranslate,
   type Node,
 } from '../services/api'
 import { Button } from '@/components/ui/button'
@@ -12,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { ContentOutline, ContentOutlineFloating } from '@/components/ContentOutline'
 import { extractHeadings } from '@/lib/headings'
-import { Check, ExternalLink, FileQuestion } from 'lucide-react'
+import { ExternalLink, FileQuestion } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
@@ -20,14 +18,8 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { getTypeBadgeColor } from '@/lib/type-styles'
-
-function translationPath(basePath: string, translationSlug: string): string {
-  const lastSlash = basePath.lastIndexOf('/')
-  if (lastSlash >= 0) {
-    return basePath.slice(0, lastSlash + 1) + translationSlug
-  }
-  return translationSlug
-}
+import { NodeActionBar } from '@/components/NodeActionBar'
+import { useGitStatus } from '@/hooks/useGitStatus'
 
 function formatDate(value: unknown): string {
   if (!value || typeof value !== 'string') return '—'
@@ -57,16 +49,14 @@ const markdownContentClass = cn(
 export function NodePage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { refresh: refreshGitStatus } = useGitStatus()
   const path = location.pathname.replace(/^\/node\/?/, '')
   const [node, setNode] = useState<Node | null>(null)
   const [originalNode, setOriginalNode] = useState<Node | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [translating, setTranslating] = useState(false)
-  const [translateError, setTranslateError] = useState<string | null>(null)
   const [manualSaving, setManualSaving] = useState(false)
   const [manualError, setManualError] = useState<string | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const basePath = path.includes('.') ? path.replace(/\.[a-z]{2}$/, '') : path
   const isTranslation = path !== basePath
@@ -79,7 +69,6 @@ export function NodePage() {
       .finally(() => setLoading(false))
   }, [path])
 
-  // При просмотре перевода загружаем оригинал, чтобы получить список переводов
   useEffect(() => {
     if (!isTranslation || !basePath) {
       queueMicrotask(() => setOriginalNode(null))
@@ -89,58 +78,6 @@ export function NodePage() {
       .then(setOriginalNode)
       .catch(() => setOriginalNode(null))
   }, [isTranslation, basePath])
-
-  // Очистка polling при размонтировании
-  useEffect(() => () => {
-    if (pollRef.current) clearInterval(pollRef.current)
-  }, [])
-
-  const handleTranslate = () => {
-    if (!basePath || translating) return
-    setTranslating(true)
-    setTranslateError(null)
-    postTranslate(basePath)
-      .then((status) => {
-        if (status.status === 'done') {
-          setTranslating(false)
-          getNode(path).then(setNode)
-          getNode(basePath).then(setOriginalNode)
-          return
-        }
-        if (status.status === 'failed') {
-          setTranslating(false)
-          setTranslateError(status.error ?? 'Ошибка перевода')
-          return
-        }
-        const poll = () => {
-          getTranslateStatus(basePath).then((s) => {
-            if (s.status === 'done') {
-              if (pollRef.current) clearInterval(pollRef.current)
-              pollRef.current = null
-              setTranslating(false)
-              getNode(path).then(setNode)
-              getNode(basePath).then(setOriginalNode)
-            } else if (s.status === 'failed') {
-              if (pollRef.current) clearInterval(pollRef.current)
-              pollRef.current = null
-              setTranslating(false)
-              setTranslateError(s.error ?? 'Ошибка перевода')
-            }
-          }).catch(() => {
-            if (pollRef.current) clearInterval(pollRef.current)
-            pollRef.current = null
-            setTranslating(false)
-            setTranslateError('Ошибка при проверке статуса')
-          })
-        }
-        poll()
-        pollRef.current = setInterval(poll, 2500)
-      })
-      .catch((err) => {
-        setTranslating(false)
-        setTranslateError(err instanceof Error ? err.message : 'Ошибка перевода')
-      })
-  }
 
   const handleManualProcessedToggle = async (next: boolean) => {
     if (!node) return
@@ -154,11 +91,20 @@ export function NodePage() {
     try {
       const updated = await patchNodeManualProcessed(node.path, next)
       setNode(updated)
+      await refreshGitStatus().catch(() => {})
     } catch (err) {
       setNode(prev)
       setManualError(err instanceof Error ? err.message : 'Не удалось сохранить')
     } finally {
       setManualSaving(false)
+    }
+  }
+
+  const handleNodeChanged = () => {
+    if (!path) return
+    getNode(path).then(setNode)
+    if (basePath && isTranslation) {
+      getNode(basePath).then(setOriginalNode)
     }
   }
 
@@ -270,91 +216,24 @@ export function NodePage() {
           </span>
         ))}
       </nav>
-      {nodeType === 'article' && !hasTranslations && !isTranslation && path === node.path && (
-        <div className="flex flex-col gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleTranslate}
-            disabled={translating}
-          >
-            {translating ? 'Перевод в процессе...' : 'Перевести'}
-          </Button>
-          {translateError && (
-            <p className="text-sm text-destructive">{translateError}</p>
-          )}
-        </div>
-      )}
-      {hasTranslations && (
-        <div className="flex gap-1 flex-wrap">
-          <Button
-            variant={!path.includes('.') ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => navigate(`/node/${basePath}`)}
-          >
-            Оригинал
-          </Button>
-          {translations.map((slug) => {
-            const transPath = translationPath(basePath, slug)
-            const isActive = path === transPath
-            const langLabel = slug.includes('.') ? slug.split('.').pop() ?? slug : slug
-            return (
-              <Button
-                key={slug}
-                variant={isActive ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => navigate(`/node/${transPath}`)}
-              >
-                {langLabel}
-              </Button>
-            )
-          })}
-        </div>
+      {node && (
+        <NodeActionBar
+          node={node}
+          basePath={basePath}
+          currentNodePath={path}
+          isTranslation={isTranslation}
+          hasTranslations={hasTranslations}
+          translations={translations}
+          manualProcessed={!!(node.metadata?.manual_processed)}
+          manualSaving={manualSaving}
+          onManualProcessedToggle={handleManualProcessedToggle}
+          onNodeChanged={handleNodeChanged}
+          onNavigate={(p) => navigate(p)}
+          onNavigateHome={() => navigate('/')}
+        />
       )}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
         <h1 className="text-2xl font-semibold leading-snug">{title}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          {meta.manual_processed === true ? (
-            <>
-              <span
-                className="inline-flex items-center justify-center"
-                role="img"
-                aria-label="Проверено вручную"
-              >
-                <Check
-                  className="size-[1.125rem] text-green-800/[0.38] dark:text-green-400/[0.32]"
-                  strokeWidth={2.25}
-                  aria-hidden
-                />
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs text-muted-foreground hover:text-foreground"
-                disabled={manualSaving}
-                onClick={() => {
-                  void handleManualProcessedToggle(false)
-                }}
-              >
-                Снять отметку
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8"
-              disabled={manualSaving}
-              onClick={() => {
-                void handleManualProcessedToggle(true)
-              }}
-            >
-              {manualSaving ? 'Сохранение…' : 'Проверено'}
-            </Button>
-          )}
-        </div>
       </div>
       {manualError ? (
         <p className="text-sm text-destructive">{manualError}</p>
