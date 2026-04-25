@@ -44,25 +44,23 @@ knowledge-db/
 ## Принципы для AI-агентов
 
 1. **База — первый класс**: Хранится в `data/` (или аналогичной директории), под git. Не в БД по умолчанию — это markdown/JSON/YAML и т.п. файлы.
-
 2. **Оффлайн-first**: Система должна работать без интернета. Векторные эмбеддинги — опционально; полнотекстовый/ключевой поиск — обязательно.
-
 3. **Git как источник правды**: Версионирование, diff, merge — ключевые инструменты. Избегать форматов, которые сложно мержить.
-
 4. **Локальность**: kb-server и web рассчитаны на localhost. Удалённый доступ — отдельная опция, не основной сценарий.
-
 5. **Язык артефактов**: Proposal, design, tasks, specs — на русском. Код — по конвенции проекта (часто английский для идентификаторов).
 
 ## Расположение кода
 
-| Компонент | Путь | Технологии |
-|-----------|------|------------|
-| Сервер, API | `cmd/kb-server`, `internal/api` | Go, stdlib net/http |
-| Telegram bot | `cmd/kb-server` (в том же процессе) | Go, long polling |
-| MCP server | `internal/mcp` | Go, endpoint /api/mcp |
-| Web UI | `web/` | React, Vite |
-| Agent skills | `.cursor/skills/` | Markdown, SKILL.md |
-| База знаний | `data/` или отдельный репо | Markdown, frontmatter |
+
+| Компонент    | Путь                                | Технологии            |
+| ------------ | ----------------------------------- | --------------------- |
+| Сервер, API  | `cmd/kb-server`, `internal/api`     | Go, stdlib net/http   |
+| Telegram bot | `cmd/kb-server` (в том же процессе) | Go, long polling      |
+| MCP server   | `internal/mcp`                      | Go, endpoint /api/mcp |
+| Web UI       | `web/`                              | React, Vite           |
+| Agent skills | `.cursor/skills/`                   | Markdown, SKILL.md    |
+| База знаний  | `data/` или отдельный репо          | Markdown, frontmatter |
+
 
 ## Когда агент работает с базой
 
@@ -101,3 +99,4 @@ cd web && npm run dev
 # Открыть change
 openspec status --change <name>
 ```
+

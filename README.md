@@ -52,48 +52,52 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 
 ## Команды Taskfile
 
-| Команда | Описание |
-|---------|----------|
-| `task build` | Собрать web + kb-server + kb-cli |
-| `task build-server` | Собрать только kb-server |
-| `task build-cli` | Собрать только kb-cli |
-| `task web:dev` | Vite dev server (HMR, прокси /api) |
-| `task server:dev` | kb-server с hot reload (air) |
-| `task dev` | Подсказка по запуску dev-окружения |
-| `task test` | Запустить тесты |
-| `task lint` | golangci-lint |
-| `task lint:fix` | golangci-lint с автоисправлением |
+
+| Команда             | Описание                           |
+| ------------------- | ---------------------------------- |
+| `task build`        | Собрать web + kb-server + kb-cli   |
+| `task build-server` | Собрать только kb-server           |
+| `task build-cli`    | Собрать только kb-cli              |
+| `task web:dev`      | Vite dev server (HMR, прокси /api) |
+| `task server:dev`   | kb-server с hot reload (air)       |
+| `task dev`          | Подсказка по запуску dev-окружения |
+| `task test`         | Запустить тесты                    |
+| `task lint`         | golangci-lint                      |
+| `task lint:fix`     | golangci-lint с автоисправлением   |
+
 
 ## Разработка
 
 Для разработки запустите в двух терминалах:
 
-1. `task web:dev` — Vite dev server (http://localhost:5173)
+1. `task web:dev` — Vite dev server ([http://localhost:5173](http://localhost:5173))
 2. `task server:dev` — kb-server с hot reload
 
 Для `server:dev` нужен [air](https://github.com/air-verse/air): `task server:dev:install`.
 
 ## Конфигурация
 
-| Переменная | Описание |
-|------------|----------|
-| **KB_DATA_PATH** | Путь к корню базы знаний (обязателен для kb-server) |
-| **KB_HTTP_ADDR** | Адрес HTTP-сервера (по умолчанию :8080) |
-| **KB_GIT_DISABLED** | Отключить git (коммиты и sync) |
-| **KB_LOGIN**, **KB_PASSWORD** | Парольный режим: при задании **обоих** включается защита API и web UI (нельзя совмещать с Google OAuth) |
-| **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: идентификатор и секрет OAuth 2.0-клиента (тип **Web application**) в Google Cloud Console |
-| **KB_GOOGLE_OAUTH_REDIRECT_URL** | Google OAuth: **точный** URL обратного вызова, как в Console — обычно `https://<хост API>/api/auth/google/callback` |
-| **KB_OAUTH_STATE_SECRET** | Google OAuth: секрет для подписи параметра `state` (CSRF); сгенерируйте длинную случайную строку |
-| **KB_AUTH_ALLOWED_EMAILS** | Google OAuth: список разрешённых email через запятую; чужой Google-аккаунт не получит сессию |
-| **KB_SESSION_TTL** | TTL сессии (по умолчанию 8h) |
-| **TELEGRAM_TOKEN** | Токен Telegram-бота (опционально) |
-| **TELEGRAM_OWNER_ID** | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN) |
-| **KB_PUBLIC_WEB_BASE_URL** | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); **обязателен в режиме Google OAuth** (редирект после входа в SPA), в ответе бота — ссылка «Открыть на сайте» |
-| **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL** | LLM для ingestion (OpenAI-совместимый API) |
-| **JINA_API_KEY** | Ключ Jina для эмбеддингов (опционально) |
-| **GIT_SYNC_INTERVAL** | Интервал git sync (по умолчанию 5m) |
-| **VITE_API_URL** | URL API для web (по умолчанию http://localhost:8080) |
-| **ALLOWED_CORS_ORIGIN** | CORS origin для dev (например http://localhost:5173) |
+
+| Переменная                                                       | Описание                                                                                                                                                                                        |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **KB_DATA_PATH**                                                 | Путь к корню базы знаний (обязателен для kb-server)                                                                                                                                             |
+| **KB_HTTP_ADDR**                                                 | Адрес HTTP-сервера (по умолчанию :8080)                                                                                                                                                         |
+| **KB_GIT_DISABLED**                                              | Отключить git (коммиты и sync)                                                                                                                                                                  |
+| **KB_LOGIN**, **KB_PASSWORD**                                    | Парольный режим: при задании **обоих** включается защита API и web UI (нельзя совмещать с Google OAuth)                                                                                         |
+| **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: идентификатор и секрет OAuth 2.0-клиента (тип **Web application**) в Google Cloud Console                                                                                         |
+| **KB_GOOGLE_OAUTH_REDIRECT_URL**                                 | Google OAuth: **точный** URL обратного вызова, как в Console — обычно `https://<хост API>/api/auth/google/callback`                                                                             |
+| **KB_OAUTH_STATE_SECRET**                                        | Google OAuth: секрет для подписи параметра `state` (CSRF); сгенерируйте длинную случайную строку                                                                                                |
+| **KB_AUTH_ALLOWED_EMAILS**                                       | Google OAuth: список разрешённых email через запятую; чужой Google-аккаунт не получит сессию                                                                                                    |
+| **KB_SESSION_TTL**                                               | TTL сессии (по умолчанию 8h)                                                                                                                                                                    |
+| **TELEGRAM_TOKEN**                                               | Токен Telegram-бота (опционально)                                                                                                                                                               |
+| **TELEGRAM_OWNER_ID**                                            | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN)                                                                                                                                      |
+| **KB_PUBLIC_WEB_BASE_URL**                                       | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); **обязателен в режиме Google OAuth** (редирект после входа в SPA), в ответе бота — ссылка «Открыть на сайте» |
+| **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL**                  | LLM для ingestion (OpenAI-совместимый API)                                                                                                                                                      |
+| **JINA_API_KEY**                                                 | Ключ Jina для эмбеддингов (опционально)                                                                                                                                                         |
+| **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                             |
+| **VITE_API_URL**                                                 | URL API для web (по умолчанию [http://localhost:8080](http://localhost:8080))                                                                                                                   |
+| **ALLOWED_CORS_ORIGIN**                                          | CORS origin для dev (например [http://localhost:5173](http://localhost:5173))                                                                                                                   |
+
 
 ## Режимы запуска
 
@@ -126,7 +130,7 @@ export KB_AUTH_ALLOWED_EMAILS=you@example.com,colleague@example.com
 ./kb-server
 ```
 
-Если задана **хотя бы одна** переменная Google OAuth, пустой набор остальных не допускается: либо полная конфигурация, либо очистите все `KB_GOOGLE_*`, `KB_OAUTH_STATE_SECRET` и `KB_AUTH_ALLOWED_EMAILS`.
+Если задана **хотя бы одна** переменная Google OAuth, пустой набор остальных не допускается: либо полная конфигурация, либо очистите все `KB_GOOGLE_`*, `KB_OAUTH_STATE_SECRET` и `KB_AUTH_ALLOWED_EMAILS`.
 
 UI и API должны согласовываться по CORS: для production укажите `ALLOWED_CORS_ORIGIN` (origin веб-интерфейса, без пути). Вход: кнопка «Войти через Google» ведёт на `GET /api/auth/google` на том же origin, что и API, либо настраивайте прокси так, чтобы этот путь попадал на `kb-server`.
 
