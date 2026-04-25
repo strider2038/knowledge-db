@@ -3,7 +3,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +15,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/auth"
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
+	"github.com/strider2038/knowledge-db/internal/googleoauth"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/mcp"
 )
@@ -94,7 +94,7 @@ func TestGoogleCallback_InvalidState_ExpectRedirect(t *testing.T) {
 func TestGoogleCallback_ForbiddenEmail_ExpectRedirect(t *testing.T) {
 	t.Parallel()
 	h := newGoogleE2EHandler(t, `{"email":"b@ex.com","email_verified":true}`, "only@a.com", "http://web:9")
-	signed, err := signOAuthState(testOAuthStateSecret, "/", time.Now())
+	signed, err := googleoauth.SignState(testOAuthStateSecret, "/", time.Now())
 	require.NoError(t, err)
 	u := "/api/auth/google/callback?code=ok&state=" + url.QueryEscape(signed)
 	r := httptest.NewRecorder()
@@ -111,7 +111,7 @@ func TestGoogleCallback_OK_ExpectSessionCookie(t *testing.T) {
 	t.Parallel()
 	web := "http://127.0.0.1:7"
 	h := newGoogleE2EHandler(t, `{"email":"a@ex.com","email_verified":true}`, "a@ex.com", web)
-	signed, err := signOAuthState(testOAuthStateSecret, "/add", time.Now())
+	signed, err := googleoauth.SignState(testOAuthStateSecret, "/add", time.Now())
 	require.NoError(t, err)
 	u := "/api/auth/google/callback?code=ok&state=" + url.QueryEscape(signed)
 	rec := httptest.NewRecorder()
@@ -151,24 +151,3 @@ func TestPostLogin_GoogleMode_Expect400(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, r.Code)
 }
 
-func TestSanitizeReturnPath(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"", "/"},
-		{"/../evil", "/evil"},
-		{"//evil.com", "/"},
-		{"https://evil.com", "/"},
-		{"/valid/path", "/valid/path"},
-		{"../escape", "/"},
-		{"/a/../b", "/b"},
-	}
-	for _, tc := range tests {
-		t.Run(fmt.Sprintf("%q", tc.in), func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tc.want, sanitizeReturnPath(tc.in))
-		})
-	}
-}

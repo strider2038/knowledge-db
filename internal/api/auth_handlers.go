@@ -11,38 +11,38 @@ import (
 	"github.com/muonsoft/clog"
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
+	"github.com/strider2038/knowledge-db/internal/googleoauth"
 )
 
 const (
 	rateLimit  = 3
 	rateWindow = 60 * time.Minute
-	// googleOAuthHTTPTimeout caps outbound token/userinfo requests to Google.
-	googleOAuthHTTPTimeout = 15 * time.Second
 )
 
 // AuthHandler — handlers для auth endpoints.
 type AuthHandler struct {
-	store              *session.Store
-	cfg                *config.Config
-	allowedCORSOrigin  string
-	rateMu             sync.Mutex
-	rateMap             map[string][]time.Time
-	httpClient          *http.Client
-	testAuthURL         string
-	testTokenURL        string
-	testUserInfoURL     string
+	store             *session.Store
+	cfg               *config.Config
+	allowedCORSOrigin string
+	rateMu            sync.Mutex
+	rateMap           map[string][]time.Time
+	googleClient      *googleoauth.Client
 }
 
 // NewAuthHandler создаёт AuthHandler.
 func NewAuthHandler(store *session.Store, cfg *config.Config) *AuthHandler {
+	gc := &googleoauth.Client{
+		Config: googleOAuthConfigFromApp(cfg),
+		HTTPClient: &http.Client{
+			Timeout: googleoauth.DefaultOutboundTimeout,
+		},
+	}
 	h := &AuthHandler{
 		store:             store,
 		cfg:               cfg,
 		allowedCORSOrigin: cfg.HTTP.AllowedCORSOrigin,
-		rateMap:  make(map[string][]time.Time),
-		httpClient: &http.Client{
-			Timeout: googleOAuthHTTPTimeout,
-		},
+		rateMap:           make(map[string][]time.Time),
+		googleClient:      gc,
 	}
 	go h.cleanupRateMap()
 
@@ -171,10 +171,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) setTestGoogleOAuthServers(c *http.Client, authURL, tokenURL, userInfoURL string) {
-	h.httpClient = c
-	h.testAuthURL = authURL
-	h.testTokenURL = tokenURL
-	h.testUserInfoURL = userInfoURL
+	h.googleClient.HTTPClient = c
+	h.googleClient.Endpoints = googleoauth.Endpoints{
+		AuthURL:     authURL,
+		TokenURL:    tokenURL,
+		UserInfoURL: userInfoURL,
+	}
 }
 
 func (h *AuthHandler) isRateLimited(ip string) bool {

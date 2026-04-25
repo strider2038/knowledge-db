@@ -40,6 +40,10 @@ description: Структура backend knowledge-db (cmd/, internal/). Испо
 - Интерфейс `Ingester`: `IngestText(text)`, `IngestURL(url)`
 - LLM-оркестратор в `internal/ingestion/llm` — использует **OpenAI Responses API** (не Chat Completions)
 
+## internal/googleoauth
+
+- Google OAuth2 (authorization code), подпись `state`, allowlist email, `googleoauth.Client` + хелперы. Используется из `internal/api` (эндпоинты auth).
+
 ## internal/mcp
 
 - Endpoint `/api/mcp` на том же сервере
