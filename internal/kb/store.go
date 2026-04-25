@@ -31,6 +31,8 @@ func NewStore(fs afero.Fs) *Store {
 }
 
 // Validate проверяет структуру базы: темы 2–3 уровня, узлы как .md файлы с frontmatter.
+//
+//nolint:gocognit // single walk: depth, hidden dirs, attachment dirs, node checks
 func (s *Store) Validate(ctx context.Context, basePath string) ([]ValidationError, error) {
 	basePath = filepath.Clean(basePath)
 	info, err := s.fs.Stat(basePath)
@@ -59,7 +61,15 @@ func (s *Store) Validate(ctx context.Context, basePath string) ([]ValidationErro
 		if rel == "." {
 			return nil
 		}
-		parts := strings.Split(filepath.ToSlash(rel), "/")
+		relSlash := filepath.ToSlash(rel)
+		if pathHasHiddenSegment(relSlash) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+		parts := strings.Split(relSlash, "/")
 		depth := len(parts)
 
 		if info.IsDir() {
@@ -122,6 +132,10 @@ func (s *Store) ReadTree(ctx context.Context, basePath string) (*TreeNode, error
 // ListNodes возвращает список узлов по пути темы.
 func (s *Store) ListNodes(ctx context.Context, basePath, themePath string) ([]*TreeNode, error) {
 	basePath = filepath.Clean(basePath)
+	themeForCheck := filepath.ToSlash(filepath.Clean(filepath.FromSlash(themePath)))
+	if pathHasHiddenSegment(themeForCheck) {
+		return nil, errors.Errorf("list nodes: %w", ErrNodeNotFound)
+	}
 	fullPath := filepath.Join(basePath, filepath.FromSlash(themePath))
 	info, err := s.fs.Stat(fullPath)
 	if err != nil {
@@ -175,15 +189,24 @@ func (s *Store) ListAllNodes(ctx context.Context, basePath string) ([]*TreeNode,
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(info.Name(), ".md") {
-			return nil
-		}
 		rel, _ := filepath.Rel(basePath, path)
-		slug := strings.TrimSuffix(info.Name(), ".md")
-		stemRel := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
+		relSlash := filepath.ToSlash(rel)
+		if info.IsDir() {
+			if rel != "." && pathHasHiddenSegment(relSlash) {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+		name := info.Name()
+		if !strings.HasSuffix(name, ".md") || strings.HasPrefix(name, ".") {
+			return nil
+		}
+		stemRel := strings.TrimSuffix(relSlash, ".md")
+		if pathHasHiddenSegment(stemRel) {
+			return nil
+		}
+		slug := strings.TrimSuffix(name, ".md")
 		nodes = append(nodes, &TreeNode{
 			Name: slug,
 			Path: stemRel,
@@ -234,7 +257,13 @@ func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts 
 		if err != nil {
 			return err
 		}
+		rel, _ := filepath.Rel(basePath, path)
+		relSlash := filepath.ToSlash(rel)
 		if info.IsDir() {
+			if rel != "." && pathHasHiddenSegment(relSlash) {
+				return filepath.SkipDir
+			}
+
 			return nil
 		}
 		name := info.Name()
@@ -244,9 +273,11 @@ func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts 
 		if translationFilePattern.MatchString(name) {
 			return nil
 		}
-		rel, _ := filepath.Rel(basePath, path)
-		stemRel := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
+		stemRel := strings.TrimSuffix(relSlash, ".md")
 		if stemRel == "" {
+			return nil
+		}
+		if pathHasHiddenSegment(stemRel) {
 			return nil
 		}
 
