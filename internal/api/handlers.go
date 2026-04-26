@@ -11,10 +11,12 @@ import (
 
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
+	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/import/session"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
+	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 	"github.com/strider2038/knowledge-db/internal/ui"
@@ -30,6 +32,11 @@ type Handler struct {
 	gitCommitter         igit.GitCommitter
 	commitMsgGen         *igit.CommitMessageGenerator
 	gitDisabled          bool
+	indexStore           *index.IndexStore
+	syncWorker           *index.SyncWorker
+	embeddingProvider    index.EmbeddingProvider
+	embeddingConfig      config.Embedding
+	chatClient           chatResponsesClient
 }
 
 // NewHandler создаёт Handler.
@@ -57,6 +64,18 @@ func (h *Handler) SetGitCommitter(committer igit.GitCommitter, msgGen *igit.Comm
 	h.gitCommitter = committer
 	h.commitMsgGen = msgGen
 	h.gitDisabled = gitDisabled
+}
+
+// SetIndexComponents устанавливает компоненты индекса для RAG.
+// При nil store все embedding endpoints возвращают 503.
+func (h *Handler) SetIndexComponents(store *index.IndexStore, worker *index.SyncWorker, provider index.EmbeddingProvider, cfg config.Embedding) {
+	h.indexStore = store
+	h.syncWorker = worker
+	h.embeddingProvider = provider
+	h.embeddingConfig = cfg
+	if cfg.IsConfigured() {
+		h.chatClient = newOpenAIChatClient(cfg.APIURL, cfg.APIKey)
+	}
 }
 
 // PostArticleTranslate обрабатывает POST /api/articles/translate/{path...}.
@@ -600,7 +619,7 @@ func NewSPAHandler() (http.Handler, error) {
 func isSPAClientRoute(path string) bool {
 	path = strings.TrimPrefix(path, "/")
 
-	return path == "add" || path == "search"
+	return path == "add" || path == "search" || path == "chat"
 }
 
 // serveIndexHTML отдаёт index.html без FileServer, чтобы избежать редиректов.

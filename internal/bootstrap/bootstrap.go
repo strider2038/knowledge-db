@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/muonsoft/errors"
@@ -20,6 +22,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/translation"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationworker"
+	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/mcp"
 	"github.com/strider2038/knowledge-db/internal/pkg/tracing"
@@ -45,12 +48,23 @@ func Run() error {
 	if err := cfg.Auth.ValidateWebPublicBaseForGoogle(cfg.WebPublicBaseURL); err != nil {
 		return errors.Errorf("invalid auth configuration: %w", err)
 	}
+	if err := cfg.Embedding.Validate(); err != nil {
+		return errors.Errorf("invalid embedding configuration: %w", err)
+	}
 
 	slog.Info("kb-server: starting", "addr", cfg.HTTP.Addr, "data_path", cfg.DataPath)
 
 	committer := buildCommitter(cfg)
 	translationQueue := buildTranslationQueue(cfg)
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue)
+
+	var indexStore *index.IndexStore
+	var syncWorker *index.SyncWorker
+	var embeddingProvider index.EmbeddingProvider
+	if cfg.Embedding.IsConfigured() {
+		indexStore, syncWorker, embeddingProvider = buildIndexComponents(cfg)
+	}
+
 	handler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 
 	commitMsgGen := igit.NewCommitMessageGenerator(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model)
@@ -58,6 +72,7 @@ func Run() error {
 		commitMsgGen = nil
 	}
 	handler.SetGitCommitter(committer, commitMsgGen, cfg.GitDisabled)
+	handler.SetIndexComponents(indexStore, syncWorker, embeddingProvider, cfg.Embedding)
 
 	sessionStore := session.NewStore()
 	authHandler := api.NewAuthHandler(sessionStore, cfg)
@@ -100,6 +115,9 @@ func Run() error {
 	}
 	if translationWorker != nil {
 		m.Register(translationWorker)
+	}
+	if syncWorker != nil {
+		m.Register(syncWorker)
 	}
 
 	runnable.Run(m)
@@ -167,4 +185,26 @@ func validateConfig(cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+func buildIndexComponents(cfg *config.Config) (*index.IndexStore, *index.SyncWorker, index.EmbeddingProvider) {
+	kbDir := filepath.Join(cfg.DataPath, ".kb")
+	if err := os.MkdirAll(kbDir, 0o755); err != nil {
+		slog.Error("failed to create .kb directory", "error", err)
+
+		return nil, nil, nil
+	}
+
+	dbPath := filepath.Join(kbDir, "index.db")
+	store, err := index.NewIndexStore(dbPath)
+	if err != nil {
+		slog.Error("failed to open index database", "error", err)
+
+		return nil, nil, nil
+	}
+
+	provider := index.NewAPIProvider(cfg.Embedding.APIURL, cfg.Embedding.APIKey, cfg.Embedding.Model)
+	worker := index.NewSyncWorker(store, provider, cfg.DataPath, cfg.Embedding.Model)
+
+	return store, worker, provider
 }

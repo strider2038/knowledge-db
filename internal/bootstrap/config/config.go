@@ -117,6 +117,35 @@ func (a Auth) anyGoogleEnvSet() bool {
 	return false
 }
 
+// Embedding — конфигурация эмбеддингов и RAG (опционально).
+type Embedding struct {
+	Enabled  bool   `env:"KB_EMBEDDING_ENABLED" envDefault:"false"`
+	APIKey   string `env:"KB_EMBEDDING_API_KEY" envDefault:""`
+	APIURL   string `env:"KB_EMBEDDING_API_URL" envDefault:""`
+	Model    string `env:"KB_EMBEDDING_MODEL" envDefault:"text-embedding-3-small"`
+	ChatModel string `env:"KB_CHAT_MODEL" envDefault:""`
+}
+
+// IsConfigured возвращает true, если эмбеддинги включены и ключ API задан.
+func (e Embedding) IsConfigured() bool {
+	return e.Enabled && e.APIKey != "" && e.APIURL != ""
+}
+
+// Validate проверяет корректность конфигурации эмбеддингов.
+func (e Embedding) Validate() error {
+	if !e.Enabled {
+		return nil
+	}
+	if e.APIKey == "" {
+		return errors.New("embedding: KB_EMBEDDING_API_KEY is required when KB_EMBEDDING_ENABLED=true")
+	}
+	if e.APIURL == "" {
+		return errors.New("embedding: KB_EMBEDDING_API_URL is required when KB_EMBEDDING_ENABLED=true")
+	}
+
+	return nil
+}
+
 // Config — конфигурация приложения.
 type Config struct {
 	DataPath   string `env:"KB_DATA_PATH" envDefault:""`
@@ -130,10 +159,11 @@ type Config struct {
 	// IngestExpandURLs — после LLM раскрывать http(s) в теле и annotation (короткие ссылки, UTM).
 	IngestExpandURLs bool `env:"KB_INGEST_EXPAND_URLS" envDefault:"true"`
 
-	HTTP     HTTP
-	LLM      LLM
-	Telegram Telegram
-	Auth     Auth
+	HTTP      HTTP
+	LLM       LLM
+	Telegram  Telegram
+	Auth      Auth
+	Embedding Embedding
 }
 
 // Load загружает конфигурацию из .env и переменных окружения.

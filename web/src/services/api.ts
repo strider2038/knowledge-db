@@ -399,3 +399,88 @@ export async function postGitCommit(message?: string): Promise<GitCommitResponse
   }
   return res.json();
 }
+
+export interface IndexStatusResponse {
+  total_nodes: number;
+  total_chunks: number;
+  embedding_model: string;
+  last_indexed_at: string;
+  status: string;
+}
+
+export async function getIndexStatus(): Promise<IndexStatusResponse> {
+  const res = await apiFetch(`${API_URL}/api/index/status`);
+  if (!res.ok) throw new Error('Embedding service unavailable');
+  return res.json();
+}
+
+export async function postIndexRebuild(): Promise<{ status: string }> {
+  const res = await apiFetch(`${API_URL}/api/index/rebuild`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to trigger rebuild');
+  return res.json();
+}
+
+export interface ChatSource {
+  path: string;
+  title?: string;
+}
+
+export function streamChat(
+  message: string,
+  onSources: (sources: ChatSource[]) => void,
+  onToken: (token: string) => void,
+  onDone: () => void,
+  onError: (error: Error) => void,
+): AbortController {
+  const controller = new AbortController();
+  const fetchChat = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/chat`, {
+        ...fetchOptions,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || 'Chat failed');
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') {
+            onDone();
+            return;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.sources !== undefined) {
+              onSources(parsed.sources as ChatSource[]);
+            } else if (parsed.token) {
+              onToken(parsed.token as string);
+            }
+          } catch {
+            // skip malformed
+          }
+        }
+      }
+      onDone();
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        onError(err instanceof Error ? err : new Error('Chat failed'));
+      }
+    }
+  };
+  void fetchChat();
+  return controller;
+}

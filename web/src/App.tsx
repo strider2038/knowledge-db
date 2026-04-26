@@ -5,6 +5,7 @@ import { Navbar } from './components/Navbar'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ScrollToTop } from './components/ScrollToTop'
 import { AddPage } from './pages/AddPage'
+import { ChatPage } from './pages/ChatPage'
 import { LoginPage } from './pages/LoginPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { NodePage } from './pages/NodePage'
@@ -38,6 +39,7 @@ function App() {
         >
           <Route index element={<OverviewPage />} />
           <Route path="add" element={<AddPage />} />
+          <Route path="chat" element={<ChatPage />} />
           <Route path="node/*" element={<NodePage />} />
         </Route>
       </Routes>
