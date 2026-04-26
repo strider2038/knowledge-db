@@ -170,6 +170,7 @@ Frontmatter: 7 полей в 100% файлов (title, type, aliases, annotation
 
 SQLite — единый движок, вводится поэтапно. Фаза 1 — только для RAG, без изменений kb.Store.
 
+Драйвер: `modernc.org/sqlite` (pure-Go, без CGO).
 Расположение файла: `{data_path}/.kb/index.db`.
 
 ### 2. Chunking: по типам нод
