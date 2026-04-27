@@ -119,16 +119,26 @@ func (a Auth) anyGoogleEnvSet() bool {
 
 // Embedding — конфигурация эмбеддингов и RAG (опционально).
 type Embedding struct {
-	Enabled  bool   `env:"KB_EMBEDDING_ENABLED" envDefault:"false"`
-	APIKey   string `env:"KB_EMBEDDING_API_KEY" envDefault:""`
-	APIURL   string `env:"KB_EMBEDDING_API_URL" envDefault:""`
-	Model    string `env:"KB_EMBEDDING_MODEL" envDefault:"text-embedding-3-small"`
-	ChatModel string `env:"KB_CHAT_MODEL" envDefault:""`
+	Enabled    bool   `env:"KB_EMBEDDING_ENABLED" envDefault:"false"`
+	APIKey     string `env:"KB_EMBEDDING_API_KEY" envDefault:""`
+	APIURL     string `env:"KB_EMBEDDING_API_URL" envDefault:""`
+	Model      string `env:"KB_EMBEDDING_MODEL" envDefault:"text-embedding-3-small"`
+	ChatModel  string `env:"KB_CHAT_MODEL" envDefault:""`
+	ChatAPIURL string `env:"KB_CHAT_API_URL" envDefault:""`
+	ChatAPIKey string `env:"KB_CHAT_API_KEY" envDefault:""`
 }
 
 // IsConfigured возвращает true, если эмбеддинги включены и ключ API задан.
 func (e Embedding) IsConfigured() bool {
 	return e.Enabled && e.APIKey != "" && e.APIURL != ""
+}
+
+// ChatAPIConfig возвращает URL и key для чата. Если ChatAPIURL задан — используется он, иначе APIURL.
+func (e Embedding) ChatAPIConfig() (url, key string) {
+	if e.ChatAPIURL != "" {
+		return e.ChatAPIURL, e.ChatAPIKey
+	}
+	return e.APIURL, e.APIKey
 }
 
 // Validate проверяет корректность конфигурации эмбеддингов.
@@ -141,6 +151,9 @@ func (e Embedding) Validate() error {
 	}
 	if e.APIURL == "" {
 		return errors.New("embedding: KB_EMBEDDING_API_URL is required when KB_EMBEDDING_ENABLED=true")
+	}
+	if e.ChatModel != "" && e.ChatAPIURL != "" && e.ChatAPIURL == "" {
+		return errors.New("embedding: KB_CHAT_API_URL is required when KB_CHAT_MODEL is set and differs from embedding API")
 	}
 
 	return nil

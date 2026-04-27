@@ -94,6 +94,13 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **KB_PUBLIC_WEB_BASE_URL**                                       | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); **обязателен в режиме Google OAuth** (редирект после входа в SPA), в ответе бота — ссылка «Открыть на сайте» |
 | **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL**                  | LLM для ingestion (OpenAI-совместимый API)                                                                                                                                                      |
 | **JINA_API_KEY**                                                 | Ключ Jina для эмбеддингов (опционально)                                                                                                                                                         |
+| **KB_EMBEDDING_ENABLED**                                         | Включить RAG и чат-бота (true/false, по умолчанию false)                                                                                                                                        |
+| **KB_EMBEDDING_API_URL**                                         | URL API для эмбеддингов (Ollama: http://localhost:11434)                                                                                                                                        |
+| **KB_EMBEDDING_API_KEY**                                         | API key для эмбеддингов (Ollama: пустой)                                                                                                                                                        |
+| **KB_EMBEDDING_MODEL**                                           | Модель для эмбеддингов (по умолчанию text-embedding-3-small)                                                                                                                                    |
+| **KB_CHAT_MODEL**                                                | Модель для чат-бота (например llama3, mistral)                                                                                                                                                 |
+| **KB_CHAT_API_URL**                                              | URL API для чата (если отличается от KB_EMBEDDING_API_URL)                                                                                                                                      |
+| **KB_CHAT_API_KEY**                                              | API key для чата                                                                                                                                                                               |
 | **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                             |
 | **VITE_API_URL**                                                 | URL API для web (по умолчанию [http://localhost:8080](http://localhost:8080))                                                                                                                   |
 | **ALLOWED_CORS_ORIGIN**                                          | CORS origin для dev (например [http://localhost:5173](http://localhost:5173))                                                                                                                   |
@@ -137,6 +144,55 @@ UI и API должны согласовываться по CORS: для producti
 При публичном доступе (вне localhost) рекомендуется использовать TLS: cookie `Secure` требует HTTPS. Настройте reverse proxy (nginx, Caddy) с TLS и корректные заголовки `X-Forwarded-Proto`, `X-Forwarded-For`.
 
 При включённой авторизации для production задайте `ALLOWED_CORS_ORIGIN` (origin вашего web UI) — это усиливает проверку Origin/Referer для state-changing auth-запросов.
+
+## RAG и чат-бот
+
+Сервер поддерживает семантический поиск и чат-бот на основе RAG (Retrieval Augmented Generation). Работает с локальными LLM через Ollama и LM Studio.
+
+### Быстрый старт с локальными моделями
+
+**1. Запустите Ollama** (для эмбеддингов):
+
+```bash
+ollama serve
+ollama pull bge-m3
+```
+
+**2. Запустите LM Studio** (для чата):
+
+- Скачайте LM Studio с https://lmstudio.ai
+- Загрузите модель (llama3, mistral и т.п.)
+- Запустите локальный сервер (кнопка в левом нижнем углу)
+- По умолчанию: http://localhost:1234/v1
+
+**3. Запустите kb-server**:
+
+```bash
+export KB_DATA_PATH=/path/to/data
+export KB_EMBEDDING_ENABLED=true
+export KB_EMBEDDING_API_URL=http://localhost:11434
+export KB_EMBEDDING_API_KEY=""
+export KB_EMBEDDING_MODEL=bge-m3
+export KB_CHAT_MODEL=openai/gpt-oss-20b
+export KB_CHAT_API_URL=http://localhost:1234/v1
+export KB_CHAT_API_KEY="-"
+
+./kb-server
+```
+
+### API эндпоинты
+
+- `POST /api/chat` — чат-бот с контекстом из базы
+- `GET /api/search?q=запрос` — семантический поиск
+- `GET /api/index/status` — статус индекса
+
+### Переиндексация
+
+После добавления новых записей в базу запустите переиндексацию:
+
+```bash
+curl -X POST http://localhost:8080/api/index/rebuild
+```
 
 ## Docker
 

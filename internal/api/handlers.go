@@ -13,10 +13,10 @@ import (
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/import/session"
+	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
-	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 	"github.com/strider2038/knowledge-db/internal/ui"
@@ -24,19 +24,19 @@ import (
 
 // Handler — HTTP handlers для API.
 type Handler struct {
-	dataPath             string
-	uploadsDir           string
-	ingester             ingestion.Ingester
-	sessionStore         session.SessionStore
-	translationQueue     *translationqueue.Queue
-	gitCommitter         igit.GitCommitter
-	commitMsgGen         *igit.CommitMessageGenerator
-	gitDisabled          bool
-	indexStore           *index.IndexStore
-	syncWorker           *index.SyncWorker
-	embeddingProvider    index.EmbeddingProvider
-	embeddingConfig      config.Embedding
-	chatClient           chatResponsesClient
+	dataPath          string
+	uploadsDir        string
+	ingester          ingestion.Ingester
+	sessionStore      session.SessionStore
+	translationQueue  *translationqueue.Queue
+	gitCommitter      igit.GitCommitter
+	commitMsgGen      *igit.CommitMessageGenerator
+	gitDisabled       bool
+	indexStore        *index.IndexStore
+	syncWorker        *index.SyncWorker
+	embeddingProvider index.EmbeddingProvider
+	embeddingConfig   config.Embedding
+	chatClient        chatResponsesClient
 }
 
 // NewHandler создаёт Handler.
@@ -74,7 +74,8 @@ func (h *Handler) SetIndexComponents(store *index.IndexStore, worker *index.Sync
 	h.embeddingProvider = provider
 	h.embeddingConfig = cfg
 	if cfg.IsConfigured() {
-		h.chatClient = newOpenAIChatClient(cfg.APIURL, cfg.APIKey)
+		chatURL, chatKey := cfg.ChatAPIConfig()
+		h.chatClient = newOpenAIChatClient(chatURL, chatKey)
 	}
 }
 
