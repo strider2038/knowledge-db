@@ -71,7 +71,9 @@ func NewSyncWorker(store *IndexStore, provider EmbeddingProvider, dataPath, mode
 func (w *SyncWorker) Send(event SyncEvent) {
 	select {
 	case w.events <- event:
+		clog.Debug(context.Background(), "sync: event queued", "event", fmt.Sprintf("%T", event))
 	default:
+		clog.Info(context.Background(), "sync: event dropped (queue full)", "event", fmt.Sprintf("%T", event))
 	}
 }
 
@@ -92,22 +94,33 @@ func (w *SyncWorker) Run(ctx context.Context) error {
 }
 
 func (w *SyncWorker) handleEvent(ctx context.Context, event SyncEvent) {
+	logger := clog.FromContext(ctx)
+	logger.Debug("sync: event received", "event", fmt.Sprintf("%T", event))
+
 	switch e := event.(type) {
 	case SingleNodeEvent:
+		logger.Debug("sync: processing single node", "path", e.Path)
 		w.processSingleNode(ctx, e.Path)
 	case GitSyncDiffEvent:
+		logger.Info("sync: git diff event, starting full reconcile")
 		w.fullReconcile(ctx)
 	case FullReconcileEvent:
+		logger.Info("sync: full reconcile event")
 		w.fullReconcile(ctx)
 	case ManualRebuildEvent:
+		logger.Info("sync: manual rebuild event")
 		w.manualRebuild(ctx)
 	}
 }
 
 func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
+	logger := clog.FromContext(ctx)
+	logger.Debug("sync: processing node", "path", path)
+
 	node, err := w.kbStore.GetNode(ctx, w.dataPath, path)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
+			logger.Debug("sync: node not found, deleting from index", "path", path)
 			if err := w.store.DeleteNode(ctx, path); err != nil {
 				clog.Errorf(ctx, "sync: delete node from index: %w", err)
 			}
@@ -124,8 +137,12 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 
 	existing, err := w.store.GetNodeByPath(ctx, path)
 	if err == nil && existing.ContentHash == contentHash && existing.BodyHash == bodyHash {
+		logger.Debug("sync: node unchanged, skipping", "path", path)
+
 		return
 	}
+
+	logger.Debug("sync: node changed or new, indexing", "path", path)
 
 	nodeType, _ := node.Metadata["type"].(string)
 	embeddingText := buildNodeEmbeddingText(node, nodeType)
@@ -150,6 +167,7 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 	}
 
 	if nodeType == "article" && strings.TrimSpace(node.Content) != "" {
+		clog.Debug(ctx, "sync: processing article chunks", "path", path)
 		w.processChunks(ctx, path, node.Content)
 	}
 
@@ -157,10 +175,13 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 }
 
 func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
+	logger := clog.FromContext(ctx)
 	textChunks := ChunkText(body)
 	if len(textChunks) == 0 {
 		return
 	}
+
+	clog.Debug(ctx, "sync: embedding text chunks", "path", nodePath, "chunks", len(textChunks))
 
 	texts := make([]string, len(textChunks))
 	for i, c := range textChunks {
@@ -194,9 +215,15 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
 	if err := w.store.UpsertChunks(ctx, nodePath, chunks); err != nil {
 		clog.Errorf(ctx, "sync: upsert chunks for %s: %w", nodePath, err)
 	}
+
+	logger.Debug("sync: chunks indexed", "path", nodePath, "chunks", len(chunks))
 }
 
 func (w *SyncWorker) fullReconcile(ctx context.Context) {
+	logger := clog.FromContext(ctx)
+	logger.Info("sync: full reconcile started")
+
+	startTime := time.Now()
 	allNodes, err := w.kbStore.ListAllNodes(ctx, w.dataPath)
 	if err != nil {
 		clog.Errorf(ctx, "sync: list all nodes: %w", err)
@@ -217,35 +244,46 @@ func (w *SyncWorker) fullReconcile(ctx context.Context) {
 	}
 
 	fsSet := make(map[string]bool, len(allNodes))
+	indexedCount := 0
 	for _, n := range allNodes {
 		fsSet[n.Path] = true
 		w.processSingleNode(ctx, n.Path)
 		w.rateLimitWait(ctx)
+		indexedCount++
 	}
 
 	for path := range indexedSet {
 		if !fsSet[path] {
+			logger.Debug("sync: deleting stale node", "path", path)
 			if err := w.store.DeleteNode(ctx, path); err != nil {
 				clog.Errorf(ctx, "sync: delete stale node %s: %w", path, err)
 			}
 		}
 	}
 
-	clog.Info(ctx, "sync: full reconcile complete", "total_nodes", len(allNodes))
+	logger.Info("sync: full reconcile complete",
+		"total_nodes", len(allNodes),
+		"stale_deleted", len(indexedSet)-indexedCount,
+		"duration_ms", time.Since(startTime).Milliseconds(),
+	)
 }
 
 func (w *SyncWorker) manualRebuild(ctx context.Context) {
-	clog.Info(ctx, "sync: starting manual rebuild")
+	logger := clog.FromContext(ctx)
+	logger.Info("sync: manual rebuild started")
 
+	startTime := time.Now()
 	if err := w.store.ClearAll(ctx); err != nil {
 		clog.Errorf(ctx, "sync: clear index: %w", err)
 
 		return
 	}
 
+	logger.Debug("sync: index cleared, starting full reconcile")
+
 	w.fullReconcile(ctx)
 
-	clog.Info(ctx, "sync: manual rebuild complete")
+	logger.Info("sync: manual rebuild complete", "duration_ms", time.Since(startTime).Milliseconds())
 }
 
 func (w *SyncWorker) rateLimitWait(ctx context.Context) {
