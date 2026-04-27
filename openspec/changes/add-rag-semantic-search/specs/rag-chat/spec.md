@@ -1,7 +1,6 @@
-## Purpose
+## ADDED Requirements
 
 RAG-чатбот для вопросов о контенте базы знаний. Endpoint `/api/chat`, двухуровневый векторный поиск, контекстная сборка для LLM, streaming-ответ.
-## Requirements
 
 ### Requirement: Endpoint чатбота
 

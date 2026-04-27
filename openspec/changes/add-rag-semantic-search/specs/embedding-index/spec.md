@@ -1,7 +1,6 @@
-## Purpose
+## ADDED Requirements
 
 SQLite-индекс для семантического поиска: хранение embeddings и chunks, синхронизация с git-репозиторием, markdown-aware chunking, интерфейс EmbeddingProvider.
-## Requirements
 
 ### Requirement: EmbeddingProvider — интерфейс генерации эмбеддингов
 
