@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"strings"
 	"time"
 
@@ -119,13 +120,14 @@ func (a Auth) anyGoogleEnvSet() bool {
 
 // Embedding — конфигурация эмбеддингов и RAG (опционально).
 type Embedding struct {
-	Enabled    bool   `env:"KB_EMBEDDING_ENABLED" envDefault:"false"`
-	APIKey     string `env:"KB_EMBEDDING_API_KEY" envDefault:""`
-	APIURL     string `env:"KB_EMBEDDING_API_URL" envDefault:""`
-	Model      string `env:"KB_EMBEDDING_MODEL" envDefault:"text-embedding-3-small"`
-	ChatModel  string `env:"KB_CHAT_MODEL" envDefault:""`
-	ChatAPIURL string `env:"KB_CHAT_API_URL" envDefault:""`
-	ChatAPIKey string `env:"KB_CHAT_API_KEY" envDefault:""`
+	Enabled    bool          `env:"KB_EMBEDDING_ENABLED" envDefault:"false"`
+	APIKey     string        `env:"KB_EMBEDDING_API_KEY" envDefault:""`
+	APIURL     string        `env:"KB_EMBEDDING_API_URL" envDefault:""`
+	Model      string        `env:"KB_EMBEDDING_MODEL" envDefault:"text-embedding-3-small"`
+	ChatModel  string        `env:"KB_CHAT_MODEL" envDefault:""`
+	ChatAPIURL string        `env:"KB_CHAT_API_URL" envDefault:""`
+	ChatAPIKey string        `env:"KB_CHAT_API_KEY" envDefault:""`
+	RateLimit  time.Duration `env:"KB_EMBEDDING_RATE_LIMIT" envDefault:"1s"`
 }
 
 // IsConfigured возвращает true, если эмбеддинги включены и ключ API задан.
@@ -159,6 +161,30 @@ func (e Embedding) Validate() error {
 	return nil
 }
 
+var validLogLevels = map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+
+func ValidateLogLevel(level string) error {
+	if !validLogLevels[level] {
+		return errors.New("log: invalid LOG_LEVEL — must be one of: debug, info, warn, error")
+	}
+	return nil
+}
+
+func ParseLogLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 // Config — конфигурация приложения.
 type Config struct {
 	DataPath   string `env:"KB_DATA_PATH" envDefault:""`
@@ -171,6 +197,8 @@ type Config struct {
 	AutoTranslate    bool          `env:"KB_AUTO_TRANSLATE" envDefault:"true"`
 	// IngestExpandURLs — после LLM раскрывать http(s) в теле и annotation (короткие ссылки, UTM).
 	IngestExpandURLs bool `env:"KB_INGEST_EXPAND_URLS" envDefault:"true"`
+	// LogLevel — уровень логирования: debug, info, warn, error.
+	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
 
 	HTTP      HTTP
 	LLM       LLM

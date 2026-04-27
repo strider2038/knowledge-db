@@ -105,7 +105,7 @@ func TestSyncWorker_Send_ExpectNonBlocking(t *testing.T) {
 
 	store := setupTestStore(t)
 	provider := &mockProvider{}
-	worker := NewSyncWorker(store, provider, "/data", "model")
+	worker := NewSyncWorker(store, provider, "/data", "model", time.Second)
 
 	for i := 0; i < 200; i++ {
 		worker.Send(SingleNodeEvent{Path: "test/path"})
@@ -117,7 +117,7 @@ func TestSyncWorker_Run_WhenCancelled_ExpectStop(t *testing.T) {
 
 	store := setupTestStore(t)
 	provider := &mockProvider{}
-	worker := NewSyncWorker(store, provider, "/data", "model")
+	worker := NewSyncWorker(store, provider, "/data", "model", time.Second)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -138,8 +138,8 @@ func TestSyncWorker_Run_WhenCancelled_ExpectStop(t *testing.T) {
 
 func testNode(title, annotation string, keywords []string, nodeType, content string) *kb.Node {
 	return &kb.Node{
-		Path:     "test/path",
-		Content:  content,
+		Path:    "test/path",
+		Content: content,
 		Metadata: map[string]any{
 			"title":      title,
 			"annotation": annotation,

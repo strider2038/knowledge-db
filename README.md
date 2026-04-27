@@ -101,7 +101,9 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **KB_CHAT_MODEL**                                                | Модель для чат-бота (например llama3, mistral)                                                                                                                                                 |
 | **KB_CHAT_API_URL**                                              | URL API для чата (если отличается от KB_EMBEDDING_API_URL)                                                                                                                                      |
 | **KB_CHAT_API_KEY**                                              | API key для чата                                                                                                                                                                               |
-| **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                             |
+| **KB_EMBEDDING_RATE_LIMIT**                                     | Rate limit между запросами к API эмбеддингов (по умолчанию 1s)                                                                                                                                |
+| **LOG_LEVEL**                                                    | Уровень логирования: debug, info, warn, error (по умолчанию info)                                                                                                                             |
+| **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                           |
 | **VITE_API_URL**                                                 | URL API для web (по умолчанию [http://localhost:8080](http://localhost:8080))                                                                                                                   |
 | **ALLOWED_CORS_ORIGIN**                                          | CORS origin для dev (например [http://localhost:5173](http://localhost:5173))                                                                                                                   |
 
@@ -149,6 +151,11 @@ UI и API должны согласовываться по CORS: для producti
 
 Сервер поддерживает семантический поиск и чат-бот на основе RAG (Retrieval Augmented Generation). Работает с локальными LLM через Ollama и LM Studio.
 
+**Полезные переменные окружения:**
+
+- `LOG_LEVEL=debug` — подробное логирование синхронизации индекса
+- `KB_EMBEDDING_RATE_LIMIT=500ms` — rate limit между запросами (по умолчанию 1s)
+
 ### Быстрый старт с локальными моделями
 
 **1. Запустите Ollama** (для эмбеддингов):
@@ -188,11 +195,26 @@ export KB_CHAT_API_KEY="-"
 
 ### Переиндексация
 
-После добавления новых записей в базу запустите переиндексацию:
+При старте сервера автоматически выполняется полная синхронизация индекса с файловой системой. После добавления новых записей можно запустить переиндексацию вручную:
 
 ```bash
 curl -X POST http://localhost:8080/api/index/rebuild
 ```
+
+### Логирование синхронизации индекса
+
+При уровне `LOG_LEVEL=debug` логируются все операции синхронизации:
+
+- `sync: performing initial full reconcile` — начальный reconcile при старте
+- `sync: event queued` — событие поставлено в очередь
+- `sync: event received` — событие получено на обработку
+- `sync: processing node` — обработка ноды
+- `sync: node deleted from index` — нода удалена из индекса
+- `sync: node unchanged, skipping` — хеши совпали, нода пропущена
+- `sync: node indexed` — нода успешно проиндексирована
+- `sync: embedding article chunks` — чанкинг article
+- `sync: article chunks indexed` — чанки проиндексированы
+- `sync: full reconcile complete` — финальная статистика (total_nodes, stale_deleted, duration_ms)
 
 ## Docker
 

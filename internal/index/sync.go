@@ -55,7 +55,7 @@ type SyncWorker struct {
 }
 
 // NewSyncWorker создаёт SyncWorker.
-func NewSyncWorker(store *IndexStore, provider EmbeddingProvider, dataPath, model string) *SyncWorker {
+func NewSyncWorker(store *IndexStore, provider EmbeddingProvider, dataPath, model string, rateLimit time.Duration) *SyncWorker {
 	return &SyncWorker{
 		store:     store,
 		provider:  provider,
@@ -63,7 +63,7 @@ func NewSyncWorker(store *IndexStore, provider EmbeddingProvider, dataPath, mode
 		dataPath:  dataPath,
 		model:     model,
 		events:    make(chan SyncEvent, 100),
-		rateLimit: 1 * time.Second,
+		rateLimit: rateLimit,
 	}
 }
 
@@ -82,6 +82,9 @@ func (w *SyncWorker) Run(ctx context.Context) error {
 	logger := clog.FromContext(ctx)
 	logger.Info("index sync worker: started")
 	defer logger.Info("index sync worker: stopped")
+
+	logger.Info("sync: performing initial full reconcile")
+	w.fullReconcile(ctx)
 
 	for {
 		select {
@@ -120,7 +123,7 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 	node, err := w.kbStore.GetNode(ctx, w.dataPath, path)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
-			logger.Debug("sync: node not found, deleting from index", "path", path)
+			logger.Info("sync: node deleted from index", "path", path)
 			if err := w.store.DeleteNode(ctx, path); err != nil {
 				clog.Errorf(ctx, "sync: delete node from index: %w", err)
 			}
@@ -166,6 +169,8 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 		return
 	}
 
+	logger.Info("sync: node indexed", "path", path, "type", nodeType)
+
 	if nodeType == "article" && strings.TrimSpace(node.Content) != "" {
 		clog.Debug(ctx, "sync: processing article chunks", "path", path)
 		w.processChunks(ctx, path, node.Content)
@@ -181,7 +186,7 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
 		return
 	}
 
-	clog.Debug(ctx, "sync: embedding text chunks", "path", nodePath, "chunks", len(textChunks))
+	clog.Info(ctx, "sync: embedding article chunks", "path", nodePath, "chunks", len(textChunks))
 
 	texts := make([]string, len(textChunks))
 	for i, c := range textChunks {
@@ -216,7 +221,7 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
 		clog.Errorf(ctx, "sync: upsert chunks for %s: %w", nodePath, err)
 	}
 
-	logger.Debug("sync: chunks indexed", "path", nodePath, "chunks", len(chunks))
+	logger.Info("sync: article chunks indexed", "path", nodePath, "chunks", len(chunks))
 }
 
 func (w *SyncWorker) fullReconcile(ctx context.Context) {
@@ -246,6 +251,13 @@ func (w *SyncWorker) fullReconcile(ctx context.Context) {
 	fsSet := make(map[string]bool, len(allNodes))
 	indexedCount := 0
 	for _, n := range allNodes {
+		select {
+		case <-ctx.Done():
+			logger.Warn("sync: full reconcile cancelled by context")
+			return
+		default:
+		}
+
 		fsSet[n.Path] = true
 		w.processSingleNode(ctx, n.Path)
 		w.rateLimitWait(ctx)
@@ -253,6 +265,13 @@ func (w *SyncWorker) fullReconcile(ctx context.Context) {
 	}
 
 	for path := range indexedSet {
+		select {
+		case <-ctx.Done():
+			logger.Warn("sync: full reconcile cancelled by context (stale deletion phase)")
+			return
+		default:
+		}
+
 		if !fsSet[path] {
 			logger.Debug("sync: deleting stale node", "path", path)
 			if err := w.store.DeleteNode(ctx, path); err != nil {
@@ -287,6 +306,10 @@ func (w *SyncWorker) manualRebuild(ctx context.Context) {
 }
 
 func (w *SyncWorker) rateLimitWait(ctx context.Context) {
+	if w.rateLimit <= 0 {
+		return
+	}
+
 	select {
 	case <-ctx.Done():
 	case <-time.After(w.rateLimit):

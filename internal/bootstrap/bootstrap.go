@@ -15,6 +15,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/auth"
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
+	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
 	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
@@ -22,7 +23,6 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion/translation"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationworker"
-	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/mcp"
 	"github.com/strider2038/knowledge-db/internal/pkg/tracing"
@@ -51,6 +51,15 @@ func Run() error {
 	if err := cfg.Embedding.Validate(); err != nil {
 		return errors.Errorf("invalid embedding configuration: %w", err)
 	}
+	if err := config.ValidateLogLevel(cfg.LogLevel); err != nil {
+		return err
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: config.ParseLogLevel(cfg.LogLevel),
+	}
+	logHandler := slog.NewJSONHandler(os.Stdout, opts)
+	slog.SetDefault(slog.New(logHandler))
 
 	slog.Info("kb-server: starting", "addr", cfg.HTTP.Addr, "data_path", cfg.DataPath)
 
@@ -65,19 +74,19 @@ func Run() error {
 		indexStore, syncWorker, embeddingProvider = buildIndexComponents(cfg)
 	}
 
-	handler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
+	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 
 	commitMsgGen := igit.NewCommitMessageGenerator(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model)
 	if !cfg.LLM.IsConfigured() {
 		commitMsgGen = nil
 	}
-	handler.SetGitCommitter(committer, commitMsgGen, cfg.GitDisabled)
-	handler.SetIndexComponents(indexStore, syncWorker, embeddingProvider, cfg.Embedding)
+	apiHandler.SetGitCommitter(committer, commitMsgGen, cfg.GitDisabled)
+	apiHandler.SetIndexComponents(indexStore, syncWorker, embeddingProvider, cfg.Embedding)
 
 	sessionStore := session.NewStore()
 	authHandler := api.NewAuthHandler(sessionStore, cfg)
 
-	mux, err := api.NewMux(handler, authHandler)
+	mux, err := api.NewMux(apiHandler, authHandler)
 	if err != nil {
 		return errors.Errorf("new mux: %w", err)
 	}
@@ -204,7 +213,7 @@ func buildIndexComponents(cfg *config.Config) (*index.IndexStore, *index.SyncWor
 	}
 
 	provider := index.NewAPIProvider(cfg.Embedding.APIURL, cfg.Embedding.APIKey, cfg.Embedding.Model)
-	worker := index.NewSyncWorker(store, provider, cfg.DataPath, cfg.Embedding.Model)
+	worker := index.NewSyncWorker(store, provider, cfg.DataPath, cfg.Embedding.Model, cfg.Embedding.RateLimit)
 
 	return store, worker, provider
 }
