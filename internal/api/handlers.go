@@ -580,6 +580,8 @@ func NewSPAHandler() (http.Handler, error) {
 			} else if strings.HasPrefix(trimmed, "assets/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			}
+			// embed.FS: ModTime() ноль — ETag/304 без BuildID несовместимы с PWA/кэшем; см. internal/ui/etag.go
+			ui.SetStaticETagIfSet(w, trimmed)
 			fileServer.ServeHTTP(w, r)
 
 			return
@@ -628,6 +630,7 @@ func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
 
 		return
 	}
+	ui.SetStaticETagIfSet(w, indexFile)
 	http.ServeContent(w, r, indexFile, stat.ModTime(), reader)
 }
 
