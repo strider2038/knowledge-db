@@ -1,8 +1,8 @@
+# embedding-index Specification
+
 ## Purpose
-
-SQLite-индекс для семантического поиска: хранение embeddings и chunks, синхронизация с git-репозиторием, markdown-aware chunking, интерфейс EmbeddingProvider.
+TBD - created by archiving change add-rag-semantic-search. Update Purpose after archive.
 ## Requirements
-
 ### Requirement: EmbeddingProvider — интерфейс генерации эмбеддингов
 
 Система ДОЛЖНА (SHALL) предоставлять интерфейс `EmbeddingProvider` для генерации векторных представлений текста. Интерфейс SHALL содержать метод `Embed(ctx, texts []string) ([][]float32, error)`. Система MUST предоставлять реализацию `APIProvider`, использующую OpenAI-совместимое API (OpenRouter) через конфигурацию: `KB_EMBEDDING_API_KEY`, `KB_EMBEDDING_API_URL`, `KB_EMBEDDING_MODEL`.
@@ -149,3 +149,4 @@ SQLite-индекс для семантического поиска: хране
 
 - **WHEN** `GET /api/index/status` при `KB_EMBEDDING_ENABLED=false`
 - **THEN** возвращается 503 с сообщением о недоступности
+

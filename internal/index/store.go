@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/muonsoft/errors"
@@ -14,10 +16,10 @@ import (
 
 // IndexedNode — запись о проиндексированной ноде.
 type IndexedNode struct {
-	Path          string
-	ContentHash   string
-	BodyHash      string
-	IndexedAt     time.Time
+	Path            string
+	ContentHash     string
+	BodyHash        string
+	IndexedAt       time.Time
 	NodeEmbeddingID int64
 }
 
@@ -41,16 +43,17 @@ type EmbeddingRecord struct {
 
 // IndexStatus — состояние индекса.
 type IndexStatus struct {
-	TotalNodes   int
-	TotalChunks  int
+	TotalNodes     int
+	TotalChunks    int
 	EmbeddingModel string
-	LastIndexedAt time.Time
-	Status       string
+	LastIndexedAt  time.Time
+	Status         string
 }
 
 // IndexStore управляет SQLite-индексом эмбеддингов и чанков.
 type IndexStore struct {
-	db *sql.DB
+	db     *sql.DB
+	dbPath string
 }
 
 // NewIndexStore создаёт IndexStore и применяет миграции.
@@ -60,7 +63,7 @@ func NewIndexStore(dbPath string) (*IndexStore, error) {
 		return nil, errors.Errorf("open index database: %w", err)
 	}
 
-	store := &IndexStore{db: db}
+	store := &IndexStore{db: db, dbPath: dbPath}
 	if err := store.migrate(); err != nil {
 		db.Close()
 
@@ -68,6 +71,19 @@ func NewIndexStore(dbPath string) (*IndexStore, error) {
 	}
 
 	return store, nil
+}
+
+// DataPath возвращает базовый путь данных kb для этого index store.
+// Для in-memory или DSN без файлового пути возвращает пустую строку.
+func (s *IndexStore) DataPath() string {
+	if s.dbPath == "" || s.dbPath == ":memory:" {
+		return ""
+	}
+	if !strings.Contains(s.dbPath, "/") {
+		return ""
+	}
+
+	return filepath.Dir(filepath.Dir(s.dbPath))
 }
 
 // Close закрывает соединение с базой.

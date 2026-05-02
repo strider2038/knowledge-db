@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
-	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/index"
+	"github.com/strider2038/knowledge-db/internal/ingestion"
 )
 
 func setupTestHandlerWithIndex(t *testing.T) (http.Handler, *index.IndexStore) {
@@ -25,6 +25,7 @@ func setupTestHandlerWithIndex(t *testing.T) (http.Handler, *index.IndexStore) {
 	t.Cleanup(func() { store.Close() })
 
 	provider := index.NewAPIProvider("http://localhost", "key", "model")
+	worker := index.NewSyncWorker(store, provider, tmp, "model", 0)
 	embeddingCfg := config.Embedding{
 		Enabled:   true,
 		APIKey:    "key",
@@ -32,7 +33,7 @@ func setupTestHandlerWithIndex(t *testing.T) (http.Handler, *index.IndexStore) {
 		Model:     "text-embedding-3-small",
 		ChatModel: "gpt-4o",
 	}
-	h.SetIndexComponents(store, nil, provider, embeddingCfg)
+	h.SetIndexComponents(store, worker, provider, embeddingCfg)
 
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
@@ -86,6 +87,19 @@ func TestPostIndexRebuild_WhenIndexUnavailable_Expect503(t *testing.T) {
 	resp := apitest.HandlePOST(t, handler, "/api/index/rebuild", nil)
 
 	resp.HasCode(503)
+}
+
+func TestPostIndexRebuild_WhenIndexAvailable_Expect202(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := setupTestHandlerWithIndex(t)
+
+	resp := apitest.HandlePOST(t, handler, "/api/index/rebuild", nil)
+
+	resp.HasCode(202)
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("status").IsString().EqualTo("rebuild started")
+	})
 }
 
 func TestPostChat_WhenIndexUnavailable_Expect503(t *testing.T) {

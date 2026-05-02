@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"sort"
+
+	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
 // SearchResult — результат векторного поиска.
@@ -62,7 +64,23 @@ func VectorSearch(ctx context.Context, store *IndexStore, provider EmbeddingProv
 
 	results := make([]SearchResult, len(scores))
 	for i, s := range scores {
-		results[i] = SearchResult{Path: s.path, Score: s.score}
+		title := s.path
+		annotation := ""
+		node, nodeErr := kb.GetNode(ctx, store.DataPath(), s.path)
+		if nodeErr == nil {
+			if metaTitle, ok := node.Metadata["title"].(string); ok && metaTitle != "" {
+				title = metaTitle
+			}
+			if ann, ok := node.Metadata["annotation"].(string); ok {
+				annotation = ann
+			}
+		}
+		results[i] = SearchResult{
+			Path:       s.path,
+			Title:      title,
+			Annotation: annotation,
+			Score:      s.score,
+		}
 	}
 
 	return results, nil

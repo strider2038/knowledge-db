@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,6 +135,26 @@ func TestSyncWorker_Run_WhenCancelled_ExpectStop(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker did not stop after context cancellation")
 	}
+}
+
+func TestSyncWorker_Run_WhenPeriodicTick_ExpectFullReconcileTriggered(t *testing.T) {
+	t.Parallel()
+
+	worker := &SyncWorker{
+		periodicInterval: 10 * time.Millisecond,
+		events:           make(chan SyncEvent, 1),
+	}
+	var calls int32
+	worker.fullReconcileFn = func(context.Context) {
+		atomic.AddInt32(&calls, 1)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Millisecond)
+	defer cancel()
+
+	_ = worker.Run(ctx)
+
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&calls), int32(2))
 }
 
 func testNode(title, annotation string, keywords []string, nodeType, content string) *kb.Node {

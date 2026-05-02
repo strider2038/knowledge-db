@@ -7,16 +7,18 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/muonsoft/clog"
+	"github.com/muonsoft/errors"
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
-	"github.com/muonsoft/clog"
-	"github.com/muonsoft/errors"
 
 	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
+
+const ragContextTokenBudget = 4000
 
 // ChatRequest — запрос к чатботу.
 type ChatRequest struct {
@@ -128,6 +130,7 @@ func (h *Handler) PostIndexRebuild(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.syncWorker.Send(index.ManualRebuildEvent{})
+	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]any{"status": "rebuild started"})
 }
 
@@ -148,11 +151,11 @@ func (h *Handler) GetIndexStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]any{
-		"total_nodes":    status.TotalNodes,
-		"total_chunks":   status.TotalChunks,
+		"total_nodes":     status.TotalNodes,
+		"total_chunks":    status.TotalChunks,
 		"embedding_model": status.EmbeddingModel,
 		"last_indexed_at": status.LastIndexedAt,
-		"status":         status.Status,
+		"status":          status.Status,
 	})
 }
 
@@ -183,7 +186,14 @@ func (h *Handler) buildSources(nodeResults []index.SearchResult, chunkResults []
 	for _, r := range chunkResults {
 		if !seen[r.NodePath] {
 			seen[r.NodePath] = true
-			sources = append(sources, ChatSource{Path: r.NodePath})
+			title := r.NodePath
+			node, err := h.getNodeForContext(r.NodePath)
+			if err == nil {
+				if metaTitle, ok := node.Metadata["title"].(string); ok && strings.TrimSpace(metaTitle) != "" {
+					title = metaTitle
+				}
+			}
+			sources = append(sources, ChatSource{Path: r.NodePath, Title: title})
 		}
 	}
 
@@ -192,19 +202,25 @@ func (h *Handler) buildSources(nodeResults []index.SearchResult, chunkResults []
 
 func (h *Handler) buildContextText(nodeResults []index.SearchResult, chunkResults []index.ChunkSearchResult) string {
 	var buf strings.Builder
+	usedTokens := 0
 
 	coveredNodes := make(map[string]bool)
 	for _, cr := range chunkResults {
-		coveredNodes[cr.NodePath] = true
-		buf.WriteString(fmt.Sprintf("--- Fragment from %s ---\n", cr.NodePath))
-		if cr.Heading != "" {
-			buf.WriteString(fmt.Sprintf("## %s\n", cr.Heading))
+		piece := formatChunkContextPiece(cr)
+		pieceTokens := estimateContextTokens(piece)
+		if usedTokens+pieceTokens > ragContextTokenBudget {
+			break
 		}
-		buf.WriteString(cr.Content)
-		buf.WriteString("\n\n")
+
+		coveredNodes[cr.NodePath] = true
+		buf.WriteString(piece)
+		usedTokens += pieceTokens
 	}
 
 	for _, nr := range nodeResults {
+		if usedTokens >= ragContextTokenBudget {
+			break
+		}
 		if coveredNodes[nr.Path] {
 			continue
 		}
@@ -213,10 +229,34 @@ func (h *Handler) buildContextText(nodeResults []index.SearchResult, chunkResult
 			continue
 		}
 		annotation, _ := node.Metadata["annotation"].(string)
-		buf.WriteString(fmt.Sprintf("--- %s ---\n%s\n\n", nr.Path, annotation))
+		piece := fmt.Sprintf("--- %s ---\n%s\n\n", nr.Path, annotation)
+		pieceTokens := estimateContextTokens(piece)
+		if usedTokens+pieceTokens > ragContextTokenBudget {
+			break
+		}
+		buf.WriteString(piece)
+		usedTokens += pieceTokens
 	}
 
 	return buf.String()
+}
+
+func formatChunkContextPiece(cr index.ChunkSearchResult) string {
+	var buf strings.Builder
+	buf.WriteString(fmt.Sprintf("--- Fragment from %s ---\n", cr.NodePath))
+	if cr.Heading != "" {
+		buf.WriteString(fmt.Sprintf("## %s\n", cr.Heading))
+	}
+	buf.WriteString(cr.Content)
+	buf.WriteString("\n\n")
+
+	return buf.String()
+}
+
+func estimateContextTokens(text string) int {
+	words := len(strings.Fields(text))
+
+	return int(float64(words) * 1.3)
 }
 
 func (h *Handler) getNodeForContext(path string) (*kb.Node, error) {

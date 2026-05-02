@@ -1,7 +1,4 @@
-## Purpose
-
-RAG-чатбот для вопросов о контенте базы знаний. Endpoint `/api/chat`, двухуровневый векторный поиск, контекстная сборка для LLM, streaming-ответ.
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Endpoint чатбота
 

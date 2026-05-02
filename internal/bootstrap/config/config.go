@@ -154,8 +154,8 @@ func (e Embedding) Validate() error {
 	if e.APIURL == "" {
 		return errors.New("embedding: KB_EMBEDDING_API_URL is required when KB_EMBEDDING_ENABLED=true")
 	}
-	if e.ChatModel != "" && e.ChatAPIURL != "" && e.ChatAPIURL == "" {
-		return errors.New("embedding: KB_CHAT_API_URL is required when KB_CHAT_MODEL is set and differs from embedding API")
+	if e.ChatModel != "" && e.ChatAPIURL != "" && e.ChatAPIKey == "" {
+		return errors.New("embedding: KB_CHAT_API_KEY is required when KB_CHAT_API_URL is set")
 	}
 
 	return nil

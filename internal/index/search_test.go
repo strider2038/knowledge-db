@@ -85,6 +85,8 @@ func TestVectorSearch_WhenMatch_ExpectSorted(t *testing.T) {
 	require.Len(t, results, 2)
 
 	assert.Equal(t, "a/b", results[0].Path)
+	assert.Equal(t, "a/b", results[0].Title)
+	assert.Equal(t, "", results[0].Annotation)
 	assert.True(t, results[0].Score > results[1].Score)
 }
 

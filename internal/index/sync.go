@@ -45,25 +45,28 @@ func (ManualRebuildEvent) syncEventType() {}
 
 // SyncWorker синхронизирует индекс с git-репозиторием.
 type SyncWorker struct {
-	store     *IndexStore
-	provider  EmbeddingProvider
-	kbStore   *kb.Store
-	dataPath  string
-	model     string
-	events    chan SyncEvent
-	rateLimit time.Duration
+	store            *IndexStore
+	provider         EmbeddingProvider
+	kbStore          *kb.Store
+	dataPath         string
+	model            string
+	events           chan SyncEvent
+	rateLimit        time.Duration
+	periodicInterval time.Duration
+	fullReconcileFn  func(context.Context)
 }
 
 // NewSyncWorker создаёт SyncWorker.
 func NewSyncWorker(store *IndexStore, provider EmbeddingProvider, dataPath, model string, rateLimit time.Duration) *SyncWorker {
 	return &SyncWorker{
-		store:     store,
-		provider:  provider,
-		kbStore:   kb.NewStore(afero.NewOsFs()),
-		dataPath:  dataPath,
-		model:     model,
-		events:    make(chan SyncEvent, 100),
-		rateLimit: rateLimit,
+		store:            store,
+		provider:         provider,
+		kbStore:          kb.NewStore(afero.NewOsFs()),
+		dataPath:         dataPath,
+		model:            model,
+		events:           make(chan SyncEvent, 100),
+		rateLimit:        rateLimit,
+		periodicInterval: 24 * time.Hour,
 	}
 }
 
@@ -84,7 +87,13 @@ func (w *SyncWorker) Run(ctx context.Context) error {
 	defer logger.Info("index sync worker: stopped")
 
 	logger.Info("sync: performing initial full reconcile")
-	w.fullReconcile(ctx)
+	w.runFullReconcile(ctx)
+
+	var periodicTicker *time.Ticker
+	if w.periodicInterval > 0 {
+		periodicTicker = time.NewTicker(w.periodicInterval)
+		defer periodicTicker.Stop()
+	}
 
 	for {
 		select {
@@ -92,6 +101,9 @@ func (w *SyncWorker) Run(ctx context.Context) error {
 			return nil
 		case event := <-w.events:
 			w.handleEvent(ctx, event)
+		case <-tickerChan(periodicTicker):
+			logger.Info("sync: periodic reconcile event")
+			w.runFullReconcile(ctx)
 		}
 	}
 }
@@ -106,10 +118,10 @@ func (w *SyncWorker) handleEvent(ctx context.Context, event SyncEvent) {
 		w.processSingleNode(ctx, e.Path)
 	case GitSyncDiffEvent:
 		logger.Info("sync: git diff event, starting full reconcile")
-		w.fullReconcile(ctx)
+		w.runFullReconcile(ctx)
 	case FullReconcileEvent:
 		logger.Info("sync: full reconcile event")
-		w.fullReconcile(ctx)
+		w.runFullReconcile(ctx)
 	case ManualRebuildEvent:
 		logger.Info("sync: manual rebuild event")
 		w.manualRebuild(ctx)
@@ -300,9 +312,26 @@ func (w *SyncWorker) manualRebuild(ctx context.Context) {
 
 	logger.Debug("sync: index cleared, starting full reconcile")
 
-	w.fullReconcile(ctx)
+	w.runFullReconcile(ctx)
 
 	logger.Info("sync: manual rebuild complete", "duration_ms", time.Since(startTime).Milliseconds())
+}
+
+func (w *SyncWorker) runFullReconcile(ctx context.Context) {
+	if w.fullReconcileFn != nil {
+		w.fullReconcileFn(ctx)
+
+		return
+	}
+	w.fullReconcile(ctx)
+}
+
+func tickerChan(t *time.Ticker) <-chan time.Time {
+	if t == nil {
+		return nil
+	}
+
+	return t.C
 }
 
 func (w *SyncWorker) rateLimitWait(ctx context.Context) {
