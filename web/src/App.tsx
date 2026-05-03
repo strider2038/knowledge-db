@@ -9,6 +9,7 @@ import { ChatPage } from './pages/ChatPage'
 import { LoginPage } from './pages/LoginPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { NodePage } from './pages/NodePage'
+import { SearchPage } from './pages/SearchPage'
 
 function MainLayout() {
   return (
@@ -38,6 +39,7 @@ function App() {
           }
         >
           <Route index element={<OverviewPage />} />
+          <Route path="search" element={<SearchPage />} />
           <Route path="add" element={<AddPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="node/*" element={<NodePage />} />

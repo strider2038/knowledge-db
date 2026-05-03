@@ -1,10 +1,13 @@
-import { useState, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { streamChat, type ChatSource } from '@/services/api'
 import { Button } from '@/components/ui/button'
 
 export function ChatPage() {
-  const [message, setMessage] = useState('')
+  const location = useLocation()
+  const state = location.state as { query?: string; sourcePaths?: string[] } | null
+  const [message, setMessage] = useState(state?.query ?? '')
+  const [sourcePaths, setSourcePaths] = useState<string[]>(state?.sourcePaths ?? [])
   const [response, setResponse] = useState('')
   const [sources, setSources] = useState<ChatSource[]>([])
   const [loading, setLoading] = useState(false)
@@ -23,6 +26,7 @@ export function ChatPage() {
 
     abortRef.current = streamChat(
       msg,
+      { sourcePaths },
       (srcs) => setSources(srcs),
       (token) => setResponse((prev) => prev + token),
       () => setLoading(false),
@@ -32,6 +36,11 @@ export function ChatPage() {
       },
     )
   }
+
+  useEffect(() => {
+    if (state?.query) setMessage(state.query)
+    if (state?.sourcePaths) setSourcePaths(state.sourcePaths)
+  }, [state?.query, state?.sourcePaths])
 
   const handleStop = () => {
     abortRef.current?.abort()
@@ -45,18 +54,39 @@ export function ChatPage() {
       {sources.length > 0 && (
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">Источники:</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="space-y-2">
             {sources.map((s, i) => (
-              <Link
-                key={i}
-                to={`/node/${s.path}`}
-                className="inline-block rounded border px-2 py-1 text-sm text-blue-600 hover:bg-accent"
-              >
-                {s.title || s.path}
-              </Link>
+              <div key={i} className="rounded border p-2 text-sm">
+                <Link
+                  to={`/node/${s.path}`}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  {s.title || s.path}
+                </Link>
+                <span className="ml-2 text-xs text-muted-foreground">{s.type || 'node'}</span>
+                {s.fragments && s.fragments.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs text-muted-foreground">Найденный контекст</summary>
+                    <div className="mt-2 space-y-2">
+                      {s.fragments.map((fragment, idx) => (
+                        <div key={idx} className="rounded bg-muted p-2">
+                          {fragment.heading && <div className="font-medium">{fragment.heading}</div>}
+                          <div>{fragment.snippet || fragment.content}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
             ))}
           </div>
         </div>
+      )}
+
+      {sourcePaths.length > 0 && sources.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Ответ будет ограничен выбранными источниками: {sourcePaths.join(', ')}
+        </p>
       )}
 
       {response && (

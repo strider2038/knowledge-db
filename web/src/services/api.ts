@@ -404,6 +404,7 @@ export interface IndexStatusResponse {
   total_nodes: number;
   total_chunks: number;
   embedding_model: string;
+  keyword_index: 'fts5' | 'scan' | 'disabled';
   last_indexed_at: string;
   status: string;
 }
@@ -420,13 +421,73 @@ export async function postIndexRebuild(): Promise<{ status: string }> {
   return res.json();
 }
 
+export interface SearchFragment {
+  heading?: string;
+  snippet?: string;
+  content?: string;
+  score: number;
+  match_type: string;
+}
+
+export interface SearchResult {
+  path: string;
+  title: string;
+  type: string;
+  annotation: string;
+  keywords: string[];
+  source_url?: string;
+  score: number;
+  rank: number;
+  match_reasons: string[];
+  source_kinds: string[];
+  fragments?: SearchFragment[];
+}
+
+export interface SearchRequest {
+  query: string;
+  type?: string[];
+  path?: string;
+  recursive?: boolean;
+  manual_processed?: boolean;
+  limit?: number;
+  offset?: number;
+  mode?: 'search' | 'chat';
+  source_paths?: string[];
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  query: string;
+  mode: 'search' | 'chat';
+  meta: {
+    keyword_index: 'fts5' | 'scan' | 'disabled';
+  };
+}
+
+export async function searchKnowledgeBase(req: SearchRequest): Promise<SearchResponse> {
+  const res = await apiFetch(`${API_URL}/api/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Search failed');
+  }
+  return res.json();
+}
+
 export interface ChatSource {
   path: string;
   title?: string;
+  type?: string;
+  fragments?: SearchFragment[];
 }
 
 export function streamChat(
   message: string,
+  options: { sourcePaths?: string[] } | undefined,
   onSources: (sources: ChatSource[]) => void,
   onToken: (token: string) => void,
   onDone: () => void,
@@ -439,7 +500,10 @@ export function streamChat(
         ...fetchOptions,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          source_paths: options?.sourcePaths,
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {

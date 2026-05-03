@@ -27,6 +27,7 @@ func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 	mux.HandleFunc("GET /api/assets/{path...}", h.GetAsset)
 	mux.HandleFunc("GET /api/tree", h.GetTree)
 	mux.HandleFunc("GET /api/search", h.Search)
+	mux.HandleFunc("POST /api/search", h.PostSearch)
 	mux.HandleFunc("POST /api/ingest", h.Ingest)
 	mux.HandleFunc("GET /api/git/status", h.GetGitStatus)
 	mux.HandleFunc("POST /api/git/commit", h.PostGitCommit)

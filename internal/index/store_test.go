@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,34 @@ func TestIndexStore_Migrate_ExpectSchemaCreated(t *testing.T) {
 	err := store.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM embeddings").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
+
+	err = store.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM node_search").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	err = store.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM chunk_search").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+	assert.Contains(t, []string{"fts5", "scan"}, store.KeywordIndexMode())
+}
+
+func TestIndexStore_Migrate_WhenExistingIndex_ExpectSearchTablesAdded(t *testing.T) {
+	t.Parallel()
+
+	dbPath := filepath.Join(t.TempDir(), "index.db")
+	store, err := NewIndexStore(dbPath)
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+
+	store, err = NewIndexStore(dbPath)
+	require.NoError(t, err)
+	defer store.Close()
+
+	var count int
+	err = store.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM node_search").Scan(&count)
+	require.NoError(t, err)
+	err = store.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM chunk_search").Scan(&count)
+	require.NoError(t, err)
 }
 
 func TestIndexStore_InsertEmbedding_ExpectRoundTrip(t *testing.T) {
@@ -83,6 +112,41 @@ func TestIndexStore_UpsertNode_ExpectCreated(t *testing.T) {
 	assert.Equal(t, "hash1", node.ContentHash)
 	assert.Equal(t, "hash2", node.BodyHash)
 	assert.Equal(t, embID, node.NodeEmbeddingID)
+}
+
+func TestIndexStore_UpsertNodeSearch_ExpectSearchableTextStored(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "topic/node", "hash1", "hash2", embID))
+
+	err = store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:            "topic/node",
+		Title:           "SQLite Search",
+		Type:            "note",
+		Aliases:         []string{"fts"},
+		Annotation:      "local index",
+		Keywords:        []string{"keyword"},
+		SourceURL:       "https://example.com",
+		ManualProcessed: true,
+		Body:            "note body",
+	})
+	require.NoError(t, err)
+
+	var title, searchable string
+	var manualProcessed int
+	err = store.db.QueryRowContext(ctx, `
+		SELECT title, searchable_text, manual_processed FROM node_search WHERE path = ?`, "topic/node",
+	).Scan(&title, &searchable, &manualProcessed)
+	require.NoError(t, err)
+	assert.Equal(t, "SQLite Search", title)
+	assert.Contains(t, searchable, "keyword")
+	assert.Contains(t, searchable, "note body")
+	assert.Equal(t, 1, manualProcessed)
 }
 
 func TestIndexStore_UpsertNode_WhenExists_ExpectUpdated(t *testing.T) {
@@ -167,6 +231,11 @@ func TestIndexStore_Chunks_ExpectCRUD(t *testing.T) {
 	assert.Len(t, result, 2)
 	assert.Equal(t, "Intro", result[0].Heading)
 	assert.Equal(t, "Details", result[1].Heading)
+
+	var count int
+	err = store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunk_search WHERE node_path = ?`, "topic/node").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
 }
 
 func TestIndexStore_UpsertChunks_WhenReplaced_ExpectOldRemoved(t *testing.T) {
@@ -204,6 +273,7 @@ func TestIndexStore_GetStatus_ExpectMetrics(t *testing.T) {
 	assert.Equal(t, 0, status.TotalNodes)
 	assert.Equal(t, 0, status.TotalChunks)
 	assert.Equal(t, "text-embedding-3-small", status.EmbeddingModel)
+	assert.Contains(t, []string{"fts5", "scan"}, status.KeywordIndex)
 	assert.Equal(t, "ready", status.Status)
 }
 
@@ -215,6 +285,10 @@ func TestIndexStore_ClearAll_ExpectEmpty(t *testing.T) {
 
 	embID, _ := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, store.UpsertNode(ctx, "a/b", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{Path: "a/b", Title: "Title"}))
+	require.NoError(t, store.UpsertChunks(ctx, "a/b", []Chunk{
+		{NodePath: "a/b", ChunkIndex: 0, Heading: "Heading", Content: "content", EmbeddingID: embID},
+	}))
 
 	err := store.ClearAll(ctx)
 	require.NoError(t, err)
@@ -222,6 +296,14 @@ func TestIndexStore_ClearAll_ExpectEmpty(t *testing.T) {
 	nodes, err := store.ListAllIndexed(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, nodes)
+
+	var count int
+	err = store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM node_search`).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+	err = store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunk_search`).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
 }
 
 func TestEncodeDecodeVector_ExpectRoundTrip(t *testing.T) {

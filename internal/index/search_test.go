@@ -157,3 +157,127 @@ func TestChunkSearch_WhenEmpty_ExpectNil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, results)
 }
+
+func TestKeywordSearchNodes_WhenKeywordMatch_ExpectHit(t *testing.T) {
+	t.Parallel()
+
+	store := setupKeywordStore(t)
+	ctx := context.Background()
+
+	results, err := KeywordSearchNodes(ctx, store, "sqlite", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	assert.Equal(t, "articles/sqlite", results[0].Path)
+	assert.Contains(t, results[0].MatchFields, "keywords")
+}
+
+func TestKeywordSearchNodes_WhenExactTitleMatch_ExpectBoostedFirst(t *testing.T) {
+	t.Parallel()
+
+	store := setupKeywordStore(t)
+	ctx := context.Background()
+
+	embID, err := store.InsertEmbedding(ctx, []float32{0.2}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "articles/other", "h3", "bh3", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:       "articles/other",
+		Title:      "Other",
+		Annotation: "SQLite Search appears in this annotation many times SQLite Search",
+		Keywords:   []string{"search"},
+	}))
+
+	results, err := KeywordSearchNodes(ctx, store, "SQLite Search", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	assert.Equal(t, "articles/sqlite", results[0].Path)
+	assert.Greater(t, results[0].ExactBoost, 0.0)
+}
+
+func TestKeywordSearchNodes_WhenPathMatch_ExpectHit(t *testing.T) {
+	t.Parallel()
+
+	store := setupKeywordStore(t)
+	ctx := context.Background()
+
+	results, err := KeywordSearchNodes(ctx, store, "articles/sqlite", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "articles/sqlite", results[0].Path)
+	assert.Contains(t, results[0].MatchFields, "path")
+}
+
+func TestKeywordSearchChunks_WhenContentMatch_ExpectSnippet(t *testing.T) {
+	t.Parallel()
+
+	store := setupKeywordStore(t)
+	ctx := context.Background()
+
+	results, err := KeywordSearchChunks(ctx, store, "hybrid retrieval", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "articles/sqlite", results[0].NodePath)
+	assert.Equal(t, "Retrieval", results[0].Heading)
+	assert.Contains(t, results[0].Snippet, "hybrid retrieval")
+}
+
+func TestKeywordSearch_WhenScanFallback_ExpectHits(t *testing.T) {
+	t.Parallel()
+
+	store := setupKeywordStore(t)
+	store.keywordIndexMode = "scan"
+	ctx := context.Background()
+
+	nodes, chunks, err := KeywordSearch(ctx, store, "local index", 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, nodes)
+	require.NotEmpty(t, chunks)
+	assert.Equal(t, "articles/sqlite", nodes[0].Path)
+	assert.Equal(t, "articles/sqlite", chunks[0].NodePath)
+}
+
+func setupKeywordStore(t *testing.T) *IndexStore {
+	t.Helper()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "articles/sqlite", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:       "articles/sqlite",
+		Title:      "SQLite Search",
+		Type:       "article",
+		Aliases:    []string{"localdb"},
+		Annotation: "Local index notes",
+		Keywords:   []string{"sqlite", "fts"},
+		SourceURL:  "https://example.com/sqlite",
+	}))
+
+	chunkEmbID, err := store.InsertEmbedding(ctx, []float32{0.3}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertChunks(ctx, "articles/sqlite", []Chunk{
+		{
+			NodePath:    "articles/sqlite",
+			ChunkIndex:  0,
+			Heading:     "Retrieval",
+			Content:     "This chunk explains hybrid retrieval with a local index and snippets.",
+			EmbeddingID: chunkEmbID,
+		},
+	}))
+
+	embID, err = store.InsertEmbedding(ctx, []float32{0.4}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "notes/go", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:       "notes/go",
+		Title:      "Go Notes",
+		Type:       "note",
+		Annotation: "goroutine scheduler",
+		Keywords:   []string{"golang"},
+		Body:       "notes about channels",
+	}))
+
+	return store
+}

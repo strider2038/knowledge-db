@@ -22,13 +22,67 @@ const ragContextTokenBudget = 4000
 
 // ChatRequest — запрос к чатботу.
 type ChatRequest struct {
-	Message string `json:"message"`
+	Message     string   `json:"message"`
+	SourcePaths []string `json:"source_paths"` //nolint:tagliatelle // REST API snake_case
 }
 
 // ChatSource — источник ответа чатбота.
 type ChatSource struct {
-	Path  string `json:"path"`
-	Title string `json:"title"`
+	Path      string           `json:"path"`
+	Title     string           `json:"title"`
+	Type      string           `json:"type,omitempty"`
+	Fragments []SearchFragment `json:"fragments,omitempty"`
+}
+
+// SearchRequest — запрос гибридного поиска.
+type SearchRequest struct {
+	Query           string   `json:"query"`
+	Types           []string `json:"type"`
+	Path            string   `json:"path"`
+	Recursive       bool     `json:"recursive"`
+	ManualProcessed *bool    `json:"manual_processed"` //nolint:tagliatelle // REST API snake_case
+	Limit           int      `json:"limit"`
+	Offset          int      `json:"offset"`
+	Mode            string   `json:"mode"`
+	SourcePaths     []string `json:"source_paths"` //nolint:tagliatelle // REST API snake_case
+}
+
+// SearchResponse — ответ гибридного поиска.
+type SearchResponse struct {
+	Results []SearchResult `json:"results"`
+	Total   int            `json:"total"`
+	Query   string         `json:"query"`
+	Mode    string         `json:"mode"`
+	Meta    SearchMeta     `json:"meta"`
+}
+
+// SearchMeta — metadata retrieval ответа.
+type SearchMeta struct {
+	KeywordIndex string `json:"keyword_index"` //nolint:tagliatelle // REST API snake_case
+}
+
+// SearchResult — карточка результата гибридного поиска.
+type SearchResult struct {
+	Path         string           `json:"path"`
+	Title        string           `json:"title"`
+	Type         string           `json:"type"`
+	Annotation   string           `json:"annotation"`
+	Keywords     []string         `json:"keywords"`
+	SourceURL    string           `json:"source_url,omitempty"` //nolint:tagliatelle // REST API snake_case
+	Score        float64          `json:"score"`
+	Rank         int              `json:"rank"`
+	MatchReasons []string         `json:"match_reasons"` //nolint:tagliatelle // REST API snake_case
+	SourceKinds  []string         `json:"source_kinds"`  //nolint:tagliatelle // REST API snake_case
+	Fragments    []SearchFragment `json:"fragments,omitempty"`
+}
+
+// SearchFragment — найденный фрагмент статьи/заметки.
+type SearchFragment struct {
+	Heading   string  `json:"heading,omitempty"`
+	Snippet   string  `json:"snippet,omitempty"`
+	Content   string  `json:"content,omitempty"`
+	Score     float64 `json:"score"`
+	MatchType string  `json:"match_type"` //nolint:tagliatelle // REST API snake_case
 }
 
 // chatStream — интерфейс для чтения SSE-потока от Responses API.
@@ -86,7 +140,14 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	nodeResults, chunkResults, err := h.searchContext(ctx, req.Message)
+	service := index.NewRetrievalService(h.indexStore, h.embeddingProvider)
+	results, err := service.Retrieve(ctx, index.RetrievalOptions{
+		Query:       req.Message,
+		Mode:        index.RetrievalModeChat,
+		Limit:       5,
+		TopK:        10,
+		SourcePaths: req.SourcePaths,
+	})
 	if err != nil {
 		clog.Errorf(ctx, "chat: search context: %w", err)
 		writeError(w, http.StatusInternalServerError, "search failed")
@@ -94,8 +155,8 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sources := h.buildSources(nodeResults, chunkResults)
-	contextText := h.buildContextText(nodeResults, chunkResults)
+	sources := buildChatSources(results)
+	contextText := h.buildHybridContextText(results)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -109,7 +170,9 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	if err := h.streamLLMResponse(ctx, w, req.Message, contextText, canFlush, flusher); err != nil {
+	if strings.TrimSpace(contextText) == "" {
+		h.writeChatToken(w, "Недостаточно данных в базе знаний для ответа.", canFlush, flusher)
+	} else if err := h.streamLLMResponse(ctx, w, req.Message, contextText, canFlush, flusher); err != nil {
 		clog.Errorf(ctx, "chat: stream LLM response: %w", err)
 
 		return
@@ -119,6 +182,70 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	if canFlush {
 		flusher.Flush()
 	}
+}
+
+// PostSearch обрабатывает POST /api/search — гибридный поиск по индексу.
+func (h *Handler) PostSearch(w http.ResponseWriter, r *http.Request) {
+	if h.indexStore == nil || h.embeddingProvider == nil {
+		writeError(w, http.StatusServiceUnavailable, "embedding service unavailable")
+
+		return
+	}
+
+	var req SearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
+
+		return
+	}
+
+	mode := index.RetrievalModeSearch
+	if req.Mode == string(index.RetrievalModeChat) {
+		mode = index.RetrievalModeChat
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	service := index.NewRetrievalService(h.indexStore, h.embeddingProvider)
+	results, err := service.Retrieve(r.Context(), index.RetrievalOptions{
+		Query:           query,
+		Mode:            mode,
+		Types:           req.Types,
+		Path:            req.Path,
+		Recursive:       req.Recursive,
+		ManualProcessed: req.ManualProcessed,
+		Limit:           limit + max(req.Offset, 0),
+		TopK:            max(limit+max(req.Offset, 0), 10),
+		SourcePaths:     req.SourcePaths,
+	})
+	if err != nil {
+		clog.Errorf(r.Context(), "search: retrieve: %w", err)
+		writeError(w, http.StatusInternalServerError, "search failed")
+
+		return
+	}
+
+	total := len(results)
+	offset := min(max(req.Offset, 0), total)
+	end := min(offset+limit, total)
+	writeJSON(w, SearchResponse{
+		Results: mapSearchResults(results[offset:end]),
+		Total:   total,
+		Query:   query,
+		Mode:    string(mode),
+		Meta:    SearchMeta{KeywordIndex: h.indexStore.KeywordIndexMode()},
+	})
 }
 
 // PostIndexRebuild обрабатывает POST /api/index/rebuild — запуск перестройки индекса.
@@ -154,6 +281,7 @@ func (h *Handler) GetIndexStatus(w http.ResponseWriter, r *http.Request) {
 		"total_nodes":     status.TotalNodes,
 		"total_chunks":    status.TotalChunks,
 		"embedding_model": status.EmbeddingModel,
+		"keyword_index":   status.KeywordIndex,
 		"last_indexed_at": status.LastIndexedAt,
 		"status":          status.Status,
 	})
@@ -241,6 +369,53 @@ func (h *Handler) buildContextText(nodeResults []index.SearchResult, chunkResult
 	return buf.String()
 }
 
+func (h *Handler) buildHybridContextText(results []index.HybridSearchResult) string {
+	var buf strings.Builder
+	usedTokens := 0
+	for _, result := range results {
+		for _, fragment := range result.Fragments {
+			piece := formatHybridFragmentContextPiece(result, fragment)
+			pieceTokens := estimateContextTokens(piece)
+			if usedTokens+pieceTokens > ragContextTokenBudget {
+				return buf.String()
+			}
+			buf.WriteString(piece)
+			usedTokens += pieceTokens
+		}
+		if len(result.Fragments) > 0 {
+			continue
+		}
+		piece := fmt.Sprintf("--- %s ---\n%s\n\n", result.Path, result.Annotation)
+		pieceTokens := estimateContextTokens(piece)
+		if usedTokens+pieceTokens > ragContextTokenBudget {
+			return buf.String()
+		}
+		buf.WriteString(piece)
+		usedTokens += pieceTokens
+	}
+
+	return buf.String()
+}
+
+func formatHybridFragmentContextPiece(result index.HybridSearchResult, fragment index.HybridFragment) string {
+	var buf strings.Builder
+	buf.WriteString(fmt.Sprintf("--- Fragment from %s ---\n", result.Path))
+	if fragment.Heading != "" {
+		buf.WriteString(fmt.Sprintf("## %s\n", fragment.Heading))
+	}
+	if fragment.Snippet != "" {
+		buf.WriteString("Snippet: ")
+		buf.WriteString(fragment.Snippet)
+		buf.WriteString("\n")
+	}
+	if fragment.Content != "" {
+		buf.WriteString(fragment.Content)
+	}
+	buf.WriteString("\n\n")
+
+	return buf.String()
+}
+
 func formatChunkContextPiece(cr index.ChunkSearchResult) string {
 	var buf strings.Builder
 	buf.WriteString(fmt.Sprintf("--- Fragment from %s ---\n", cr.NodePath))
@@ -257,6 +432,56 @@ func estimateContextTokens(text string) int {
 	words := len(strings.Fields(text))
 
 	return int(float64(words) * 1.3)
+}
+
+func buildChatSources(results []index.HybridSearchResult) []ChatSource {
+	sources := make([]ChatSource, 0, len(results))
+	for _, result := range results {
+		sources = append(sources, ChatSource{
+			Path:      result.Path,
+			Title:     result.Title,
+			Type:      result.Type,
+			Fragments: mapSearchFragments(result.Fragments),
+		})
+	}
+
+	return sources
+}
+
+func mapSearchResults(results []index.HybridSearchResult) []SearchResult {
+	mapped := make([]SearchResult, len(results))
+	for i, result := range results {
+		mapped[i] = SearchResult{
+			Path:         result.Path,
+			Title:        result.Title,
+			Type:         result.Type,
+			Annotation:   result.Annotation,
+			Keywords:     result.Keywords,
+			SourceURL:    result.SourceURL,
+			Score:        result.Score,
+			Rank:         result.Rank,
+			MatchReasons: result.MatchReasons,
+			SourceKinds:  result.SourceKinds,
+			Fragments:    mapSearchFragments(result.Fragments),
+		}
+	}
+
+	return mapped
+}
+
+func mapSearchFragments(fragments []index.HybridFragment) []SearchFragment {
+	mapped := make([]SearchFragment, len(fragments))
+	for i, fragment := range fragments {
+		mapped[i] = SearchFragment{
+			Heading:   fragment.Heading,
+			Snippet:   fragment.Snippet,
+			Content:   fragment.Content,
+			Score:     fragment.Score,
+			MatchType: fragment.MatchType,
+		}
+	}
+
+	return mapped
 }
 
 func (h *Handler) getNodeForContext(path string) (*kb.Node, error) {
@@ -308,4 +533,12 @@ func (h *Handler) streamLLMResponse(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	return stream.Err()
+}
+
+func (h *Handler) writeChatToken(w http.ResponseWriter, token string, canFlush bool, flusher http.Flusher) {
+	tokenJSON, _ := json.Marshal(map[string]string{"token": token})
+	fmt.Fprintf(w, "data: %s\n\n", tokenJSON)
+	if canFlush {
+		flusher.Flush()
+	}
 }

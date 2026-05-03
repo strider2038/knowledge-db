@@ -17,11 +17,18 @@ export function Navbar() {
   const { status: gitStatus, refresh: refreshGit } = useGitStatus()
   const [committing, setCommitting] = useState(false)
   const [chatAvailable, setChatAvailable] = useState(false)
+  const [searchAvailable, setSearchAvailable] = useState(false)
 
   useEffect(() => {
     getIndexStatus()
-      .then(() => setChatAvailable(true))
-      .catch(() => setChatAvailable(false))
+      .then((status) => {
+        setChatAvailable(true)
+        setSearchAvailable(status.keyword_index === 'fts5' || status.keyword_index === 'scan')
+      })
+      .catch(() => {
+        setChatAvailable(false)
+        setSearchAvailable(false)
+      })
   }, [])
 
   const handleLogout = async () => {
@@ -95,6 +102,18 @@ export function Navbar() {
       >
         Добавить
       </Link>
+      {searchAvailable && (
+        <Link
+          to="/search"
+          className={
+            location.pathname === '/search'
+              ? 'font-semibold text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }
+        >
+          Поиск
+        </Link>
+      )}
       {chatAvailable && (
         <Link
           to="/chat"

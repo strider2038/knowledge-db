@@ -33,6 +33,27 @@ type Chunk struct {
 	EmbeddingID int64
 }
 
+// NodeSearchDocument — searchable text and metadata for a node.
+type NodeSearchDocument struct {
+	Path            string
+	Title           string
+	Type            string
+	Aliases         []string
+	Annotation      string
+	Keywords        []string
+	SourceURL       string
+	ManualProcessed bool
+	Body            string
+}
+
+// ChunkSearchDocument — searchable text for an article chunk.
+type ChunkSearchDocument struct {
+	NodePath   string
+	ChunkIndex int
+	Heading    string
+	Content    string
+}
+
 // EmbeddingRecord — запись эмбеддинга.
 type EmbeddingRecord struct {
 	ID         int64
@@ -46,14 +67,16 @@ type IndexStatus struct {
 	TotalNodes     int
 	TotalChunks    int
 	EmbeddingModel string
+	KeywordIndex   string
 	LastIndexedAt  time.Time
 	Status         string
 }
 
 // IndexStore управляет SQLite-индексом эмбеддингов и чанков.
 type IndexStore struct {
-	db     *sql.DB
-	dbPath string
+	db               *sql.DB
+	dbPath           string
+	keywordIndexMode string
 }
 
 // NewIndexStore создаёт IndexStore и применяет миграции.
@@ -122,13 +145,91 @@ func (s *IndexStore) migrate() error {
 		UNIQUE(node_path, chunk_index),
 		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE,
 		FOREIGN KEY (embedding_id) REFERENCES embeddings(id) ON DELETE CASCADE
+	);
+	CREATE TABLE IF NOT EXISTS node_search (
+		path TEXT PRIMARY KEY,
+		title TEXT NOT NULL DEFAULT '',
+		type TEXT NOT NULL DEFAULT '',
+		aliases TEXT NOT NULL DEFAULT '',
+		annotation TEXT NOT NULL DEFAULT '',
+		keywords TEXT NOT NULL DEFAULT '',
+		source_url TEXT NOT NULL DEFAULT '',
+		manual_processed INTEGER NOT NULL DEFAULT 0,
+		body TEXT NOT NULL DEFAULT '',
+		searchable_text TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY (path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
+	);
+	CREATE TABLE IF NOT EXISTS chunk_search (
+		node_path TEXT NOT NULL,
+		chunk_index INTEGER NOT NULL,
+		heading TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL DEFAULT '',
+		searchable_text TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (node_path, chunk_index),
+		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
 	);`
 
 	if _, err := s.db.Exec(schema); err != nil {
 		return errors.Errorf("create schema: %w", err)
 	}
 
+	if err := s.migrateFTS(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (s *IndexStore) migrateFTS() error {
+	if !s.detectFTS5() {
+		s.keywordIndexMode = "scan"
+
+		return nil
+	}
+
+	schema := `
+	CREATE VIRTUAL TABLE IF NOT EXISTS node_search_fts USING fts5(
+		path UNINDEXED,
+		title,
+		type,
+		aliases,
+		annotation,
+		keywords,
+		source_url,
+		body,
+		searchable_text
+	);
+	CREATE VIRTUAL TABLE IF NOT EXISTS chunk_search_fts USING fts5(
+		node_path UNINDEXED,
+		chunk_index UNINDEXED,
+		heading,
+		content,
+		searchable_text
+	);`
+	if _, err := s.db.Exec(schema); err != nil {
+		return errors.Errorf("create fts schema: %w", err)
+	}
+
+	s.keywordIndexMode = "fts5"
+
+	return nil
+}
+
+func (s *IndexStore) detectFTS5() bool {
+	_, err := s.db.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS __kb_fts5_probe USING fts5(value);
+		DROP TABLE IF EXISTS __kb_fts5_probe;`)
+
+	return err == nil
+}
+
+// KeywordIndexMode returns keyword search capability mode: fts5 or scan.
+func (s *IndexStore) KeywordIndexMode() string {
+	if s.keywordIndexMode == "" {
+		return "scan"
+	}
+
+	return s.keywordIndexMode
 }
 
 // InsertEmbedding вставляет эмбеддинг и возвращает его ID.
@@ -200,8 +301,70 @@ func (s *IndexStore) UpsertNode(ctx context.Context, path, contentHash, bodyHash
 	return nil
 }
 
+// UpsertNodeSearch stores searchable metadata for node-level keyword search.
+func (s *IndexStore) UpsertNodeSearch(ctx context.Context, doc NodeSearchDocument) error {
+	aliases := strings.Join(doc.Aliases, " ")
+	keywords := strings.Join(doc.Keywords, " ")
+	searchableText := joinSearchText(
+		doc.Path, doc.Title, doc.Type, aliases, doc.Annotation, keywords, doc.SourceURL, doc.Body,
+	)
+	manualProcessed := 0
+	if doc.ManualProcessed {
+		manualProcessed = 1
+	}
+
+	_, err := s.execContext(ctx, `
+		INSERT INTO node_search (
+			path, title, type, aliases, annotation, keywords, source_url, manual_processed, body, searchable_text
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(path) DO UPDATE SET
+			title = excluded.title,
+			type = excluded.type,
+			aliases = excluded.aliases,
+			annotation = excluded.annotation,
+			keywords = excluded.keywords,
+			source_url = excluded.source_url,
+			manual_processed = excluded.manual_processed,
+			body = excluded.body,
+			searchable_text = excluded.searchable_text`,
+		doc.Path, doc.Title, doc.Type, aliases, doc.Annotation, keywords, doc.SourceURL, manualProcessed, doc.Body, searchableText,
+	)
+	if err != nil {
+		return errors.Errorf("upsert node search: %w", err)
+	}
+
+	if s.KeywordIndexMode() == "fts5" {
+		if _, err := s.execContext(ctx, `DELETE FROM node_search_fts WHERE path = ?`, doc.Path); err != nil {
+			return errors.Errorf("delete node search fts: %w", err)
+		}
+		_, err := s.execContext(ctx, `
+			INSERT INTO node_search_fts (
+				path, title, type, aliases, annotation, keywords, source_url, body, searchable_text
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			doc.Path, doc.Title, doc.Type, aliases, doc.Annotation, keywords, doc.SourceURL, doc.Body, searchableText,
+		)
+		if err != nil {
+			return errors.Errorf("upsert node search fts: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // DeleteNode удаляет ноду и её чанки из индекса.
 func (s *IndexStore) DeleteNode(ctx context.Context, path string) error {
+	if err := s.DeleteChunks(ctx, path); err != nil {
+		return err
+	}
+	if _, err := s.execContext(ctx, `DELETE FROM node_search WHERE path = ?`, path); err != nil {
+		return errors.Errorf("delete node search: %w", err)
+	}
+	if s.KeywordIndexMode() == "fts5" {
+		if _, err := s.execContext(ctx, `DELETE FROM node_search_fts WHERE path = ?`, path); err != nil {
+			return errors.Errorf("delete node search fts: %w", err)
+		}
+	}
+
 	_, err := s.execContext(ctx, `DELETE FROM indexed_nodes WHERE path = ?`, path)
 	if err != nil {
 		return errors.Errorf("delete node: %w", err)
@@ -261,6 +424,48 @@ func (s *IndexStore) UpsertChunks(ctx context.Context, nodePath string, chunks [
 		if err != nil {
 			return errors.Errorf("insert chunk: %w", err)
 		}
+
+		if err := s.UpsertChunkSearch(ctx, ChunkSearchDocument{
+			NodePath:   nodePath,
+			ChunkIndex: c.ChunkIndex,
+			Heading:    c.Heading,
+			Content:    c.Content,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// UpsertChunkSearch stores searchable text for chunk-level keyword search.
+func (s *IndexStore) UpsertChunkSearch(ctx context.Context, doc ChunkSearchDocument) error {
+	searchableText := joinSearchText(doc.NodePath, doc.Heading, doc.Content)
+	_, err := s.execContext(ctx, `
+		INSERT INTO chunk_search (node_path, chunk_index, heading, content, searchable_text)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(node_path, chunk_index) DO UPDATE SET
+			heading = excluded.heading,
+			content = excluded.content,
+			searchable_text = excluded.searchable_text`,
+		doc.NodePath, doc.ChunkIndex, doc.Heading, doc.Content, searchableText,
+	)
+	if err != nil {
+		return errors.Errorf("upsert chunk search: %w", err)
+	}
+
+	if s.KeywordIndexMode() == "fts5" {
+		if _, err := s.execContext(ctx, `DELETE FROM chunk_search_fts WHERE node_path = ? AND chunk_index = ?`, doc.NodePath, doc.ChunkIndex); err != nil {
+			return errors.Errorf("delete chunk search fts: %w", err)
+		}
+		_, err := s.execContext(ctx, `
+			INSERT INTO chunk_search_fts (node_path, chunk_index, heading, content, searchable_text)
+			VALUES (?, ?, ?, ?, ?)`,
+			doc.NodePath, doc.ChunkIndex, doc.Heading, doc.Content, searchableText,
+		)
+		if err != nil {
+			return errors.Errorf("upsert chunk search fts: %w", err)
+		}
 	}
 
 	return nil
@@ -268,6 +473,15 @@ func (s *IndexStore) UpsertChunks(ctx context.Context, nodePath string, chunks [
 
 // DeleteChunks удаляет все чанки ноды.
 func (s *IndexStore) DeleteChunks(ctx context.Context, nodePath string) error {
+	if _, err := s.execContext(ctx, `DELETE FROM chunk_search WHERE node_path = ?`, nodePath); err != nil {
+		return errors.Errorf("delete chunk search: %w", err)
+	}
+	if s.KeywordIndexMode() == "fts5" {
+		if _, err := s.execContext(ctx, `DELETE FROM chunk_search_fts WHERE node_path = ?`, nodePath); err != nil {
+			return errors.Errorf("delete chunk search fts: %w", err)
+		}
+	}
+
 	_, err := s.execContext(ctx, `DELETE FROM chunks WHERE node_path = ?`, nodePath)
 	if err != nil {
 		return errors.Errorf("delete chunks: %w", err)
@@ -351,7 +565,7 @@ func (s *IndexStore) GetAllNodeEmbeddings(ctx context.Context) ([]NodeEmbedding,
 
 // GetStatus возвращает статус индекса.
 func (s *IndexStore) GetStatus(ctx context.Context, model string) (*IndexStatus, error) {
-	status := &IndexStatus{EmbeddingModel: model, Status: "ready"}
+	status := &IndexStatus{EmbeddingModel: model, KeywordIndex: s.KeywordIndexMode(), Status: "ready"}
 
 	err := s.queryRowContext(ctx, `SELECT COUNT(*) FROM indexed_nodes`).Scan(&status.TotalNodes)
 	if err != nil {
@@ -377,6 +591,20 @@ func (s *IndexStore) GetStatus(ctx context.Context, model string) (*IndexStatus,
 
 // ClearAll удаляет все данные из индекса.
 func (s *IndexStore) ClearAll(ctx context.Context) error {
+	if _, err := s.execContext(ctx, `DELETE FROM chunk_search`); err != nil {
+		return errors.Errorf("clear chunk search: %w", err)
+	}
+	if _, err := s.execContext(ctx, `DELETE FROM node_search`); err != nil {
+		return errors.Errorf("clear node search: %w", err)
+	}
+	if s.KeywordIndexMode() == "fts5" {
+		if _, err := s.execContext(ctx, `DELETE FROM chunk_search_fts`); err != nil {
+			return errors.Errorf("clear chunk search fts: %w", err)
+		}
+		if _, err := s.execContext(ctx, `DELETE FROM node_search_fts`); err != nil {
+			return errors.Errorf("clear node search fts: %w", err)
+		}
+	}
 	if _, err := s.execContext(ctx, `DELETE FROM chunks`); err != nil {
 		return errors.Errorf("clear chunks: %w", err)
 	}
@@ -429,6 +657,22 @@ func decodeVector(b []byte) []float32 {
 	}
 
 	return v
+}
+
+func joinSearchText(parts ...string) string {
+	var builder strings.Builder
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte(' ')
+		}
+		builder.WriteString(part)
+	}
+
+	return builder.String()
 }
 
 // NodeEmbedding — нода с эмбеддингом для поиска.

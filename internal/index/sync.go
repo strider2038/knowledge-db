@@ -180,12 +180,19 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 
 		return
 	}
+	if err := w.store.UpsertNodeSearch(ctx, buildNodeSearchDocument(node, nodeType)); err != nil {
+		clog.Errorf(ctx, "sync: upsert node search %s: %w", path, err)
+
+		return
+	}
 
 	logger.Info("sync: node indexed", "path", path, "type", nodeType)
 
 	if nodeType == "article" && strings.TrimSpace(node.Content) != "" {
 		clog.Debug(ctx, "sync: processing article chunks", "path", path)
 		w.processChunks(ctx, path, node.Content)
+	} else if err := w.store.DeleteChunks(ctx, path); err != nil {
+		clog.Errorf(ctx, "sync: delete chunks for %s: %w", path, err)
 	}
 
 	w.rateLimitWait(ctx)
@@ -378,8 +385,34 @@ func buildNodeEmbeddingText(node *kb.Node, nodeType string) string {
 	return strings.Join(parts, " ")
 }
 
+func buildNodeSearchDocument(node *kb.Node, nodeType string) NodeSearchDocument {
+	title, _ := node.Metadata["title"].(string)
+	annotation, _ := node.Metadata["annotation"].(string)
+	sourceURL, _ := node.Metadata["source_url"].(string)
+	body := ""
+	if nodeType == "note" {
+		body = node.Content
+	}
+
+	return NodeSearchDocument{
+		Path:            node.Path,
+		Title:           title,
+		Type:            nodeType,
+		Aliases:         extractStringList(node.Metadata, "aliases"),
+		Annotation:      annotation,
+		Keywords:        extractKeywords(node.Metadata),
+		SourceURL:       sourceURL,
+		ManualProcessed: kb.ManualProcessedEffective(node.Metadata),
+		Body:            body,
+	}
+}
+
 func extractKeywords(meta map[string]any) []string {
-	raw, ok := meta["keywords"]
+	return extractStringList(meta, "keywords")
+}
+
+func extractStringList(meta map[string]any, key string) []string {
+	raw, ok := meta[key]
 	if !ok {
 		return nil
 	}

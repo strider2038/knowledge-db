@@ -78,6 +78,35 @@ func TestBuildNodeEmbeddingText_WhenLink_ExpectBodyExcluded(t *testing.T) {
 	assert.Contains(t, text, "Annotation")
 }
 
+func TestBuildNodeSearchDocument_WhenNote_ExpectSearchMetadata(t *testing.T) {
+	t.Parallel()
+
+	node := testNode("Title", "Annotation", []string{"kw"}, "note", "Body content")
+	node.Metadata["aliases"] = []string{"alias"}
+	node.Metadata["source_url"] = "https://example.com"
+	node.Metadata["manual_processed"] = true
+
+	doc := buildNodeSearchDocument(node, "note")
+
+	assert.Equal(t, "test/path", doc.Path)
+	assert.Equal(t, "Title", doc.Title)
+	assert.Equal(t, "note", doc.Type)
+	assert.Equal(t, []string{"alias"}, doc.Aliases)
+	assert.Equal(t, []string{"kw"}, doc.Keywords)
+	assert.Equal(t, "https://example.com", doc.SourceURL)
+	assert.True(t, doc.ManualProcessed)
+	assert.Equal(t, "Body content", doc.Body)
+}
+
+func TestBuildNodeSearchDocument_WhenArticle_ExpectBodyExcluded(t *testing.T) {
+	t.Parallel()
+
+	node := testNode("Title", "Annotation", nil, "article", "Body content")
+	doc := buildNodeSearchDocument(node, "article")
+
+	assert.Empty(t, doc.Body)
+}
+
 func TestExtractKeywords_WhenStringSlice_ExpectReturn(t *testing.T) {
 	t.Parallel()
 
