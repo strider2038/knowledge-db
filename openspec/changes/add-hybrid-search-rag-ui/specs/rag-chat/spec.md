@@ -2,7 +2,7 @@
 
 ### Requirement: Endpoint чатбота
 
-API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` для RAG-чатбота. Запрос MUST содержать поле `message` (string, обязательно). Запрос MAY содержать список `source_paths` для ограничения ответа выбранными источниками из поиска. Ответ MUST быть streaming (Server-Sent Events) с источниками, найденным контекстом (при наличии) и токенами ответа LLM. Endpoint MUST возвращать 503 при `KB_EMBEDDING_ENABLED=false`.
+API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` для RAG-чатбота. Запрос MUST содержать поле `message` (string, обязательно). Запрос MAY содержать список `source_paths` для ограничения ответа выбранными источниками из поиска. Ответ MUST быть streaming (Server-Sent Events) с источниками, найденным контекстом (при наличии) и токенами ответа LLM. Генерация ответа SHOULD использовать OpenAI-compatible Chat Completions streaming, чтобы работать с локальными провайдерами вроде LM Studio. Endpoint MUST возвращать 503 при `KB_EMBEDDING_ENABLED=false`.
 
 #### Scenario: Успешный запрос к чатботу
 
@@ -23,6 +23,16 @@ API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` д
 
 - **WHEN** `POST /api/chat` при `KB_EMBEDDING_ENABLED=false`
 - **THEN** возвращается 503
+
+#### Scenario: Streaming совместим с LM Studio
+
+- **WHEN** chat provider настроен на OpenAI-compatible `/v1` endpoint локальной модели
+- **THEN** backend использует chat completions streaming и stream-ит delta content как SSE token events
+
+#### Scenario: SSE не буферизуется gzip middleware
+
+- **WHEN** браузер или клиент отправляет `Accept-Encoding: gzip`
+- **THEN** `/api/chat` response не сжимается gzip и содержит headers, разрешающие немедленную доставку SSE chunks
 
 ### Requirement: Контекстная сборка для RAG
 
@@ -61,3 +71,12 @@ API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` д
 
 - **WHEN** источником ответа является chunk статьи
 - **THEN** source содержит fragment с heading и snippet, чтобы пользователь мог понять основание ответа
+
+### Requirement: Отсутствие серверной памяти диалога
+
+Чат ДОЛЖЕН (SHALL) обрабатывать каждый `POST /api/chat` как самостоятельный RAG-запрос, пока отдельная capability памяти не реализована. Backend MUST не полагаться на предыдущие сообщения UI и MUST строить prompt из текущего `message`, выбранных `source_paths` и найденного RAG-контекста.
+
+#### Scenario: Следующий вопрос не получает историю автоматически
+
+- **WHEN** пользователь отправляет несколько сообщений подряд в одном UI-сеансе
+- **THEN** backend получает и обрабатывает только текущее сообщение и не использует предыдущие user/assistant ответы как conversation history

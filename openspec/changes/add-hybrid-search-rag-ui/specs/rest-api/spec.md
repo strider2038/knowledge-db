@@ -2,7 +2,7 @@
 
 ### Requirement: Endpoint гибридного поиска POST /api/search
 
-API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/search` для гибридного поиска по базе знаний. Запрос MUST содержать `query` (string). Запрос MAY содержать `type`, `path`, `recursive`, `manual_processed`, `limit`, `offset` и `mode`. Ответ MUST содержать `results`, `total`, `query`, `mode` и метаданные retrieval. Endpoint MUST возвращать 503, если индекс недоступен для гибридного поиска.
+API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/search` для гибридного поиска по базе знаний. Запрос MUST содержать `query` (string). Запрос MAY содержать `type`, `path`, `recursive`, `manual_processed`, `limit`, `offset` и `mode`. Ответ MUST содержать `results`, `total`, `query`, `mode` и метаданные retrieval. Метаданные MUST содержать `keyword_index` и MAY содержать `query_rewrite`, если поиск использовал LLM-normalized query. Endpoint MUST возвращать 503, если индекс недоступен для гибридного поиска.
 
 #### Scenario: Успешный гибридный поиск
 
@@ -24,11 +24,16 @@ API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/search` 
 - **WHEN** `KB_EMBEDDING_ENABLED=false` или индекс не инициализирован
 - **THEN** `POST /api/search` возвращает 503
 
+#### Scenario: Ответ содержит query rewrite metadata
+
+- **WHEN** поиск использует LLM rewrite исходного запроса
+- **THEN** JSON response содержит `meta.query_rewrite` с фактически использованным rewrite query
+
 ## MODIFIED Requirements
 
 ### Requirement: Endpoint чатбота POST /api/chat
 
-API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` для RAG-чатбота. Запрос MUST содержать `message` (string). Запрос MAY содержать `source_paths` для ограничения ответа выбранными источниками. Ответ MUST быть streaming (SSE) и MUST использовать гибридный retrieval pipeline для поиска контекста. При `KB_EMBEDDING_ENABLED=false` MUST возвращать 503. При пустом `message` MUST возвращать 400.
+API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` для RAG-чатбота. Запрос MUST содержать `message` (string). Запрос MAY содержать `source_paths` для ограничения ответа выбранными источниками. Ответ MUST быть streaming (SSE) и MUST использовать гибридный retrieval pipeline для поиска контекста. Генерация LLM ответа SHOULD использовать OpenAI-compatible Chat Completions streaming для совместимости с локальными провайдерами. SSE response MUST не сжиматься gzip middleware и MUST отправлять headers, предотвращающие buffering/transform. При `KB_EMBEDDING_ENABLED=false` MUST возвращать 503. При пустом `message` MUST возвращать 400.
 
 #### Scenario: Успешный запрос
 
@@ -39,6 +44,11 @@ API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` д
 
 - **WHEN** `POST /api/chat` содержит `source_paths`
 - **THEN** контекст ответа ограничивается указанными источниками
+
+#### Scenario: SSE не сжимается
+
+- **WHEN** клиент запрашивает `/api/chat` с `Accept-Encoding: gzip`
+- **THEN** response не содержит `Content-Encoding: gzip`, имеет `Content-Type: text/event-stream` и может отдавать токены без gzip buffering
 
 #### Scenario: Сервис недоступен
 

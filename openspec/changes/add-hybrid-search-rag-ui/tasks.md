@@ -28,6 +28,12 @@
 - [x] 3.6 Реализовать фильтры по type, path/recursive, manual_processed и source_paths.
 - [x] 3.7 Реализовать chat relevance cutoff для слабых vector-only результатов.
 - [x] 3.8 Добавить unit-тесты fusion/ranking/cutoff/filtering на маленьких фикстурах.
+- [x] 3.9 Добавить нормализацию keyword query со стоп-словами и fallback на исходные токены.
+- [x] 3.10 Добавить token-level exact boost и match reason `exact_token`.
+- [x] 3.11 Ограничить вклад нескольких vector chunks одной ноды в итоговый score.
+- [x] 3.12 Исправить UTF-8 safe chunk/snippet slicing для кириллицы и других многобайтных символов.
+- [x] 3.13 Добавить LLM query rewrite для search mode с fallback на исходный запрос.
+- [x] 3.14 Добавить vocabulary hints selection с параметрами лимитов слов/терминов.
 
 ## 4. REST API
 
@@ -41,6 +47,10 @@
 - [x] 4.8 Добавить API-тесты для `POST /api/search`: success, empty query, filters, service unavailable.
 - [x] 4.9 Обновить API-тесты для `POST /api/chat`: hybrid retrieval, source_paths, empty sources/cutoff.
 - [x] 4.10 Обновить API-тесты для `GET /api/index/status` с `keyword_index`.
+- [x] 4.11 Добавить `meta.query_rewrite` в `POST /api/search`.
+- [x] 4.12 Перевести LLM generation в `POST /api/chat` на OpenAI-compatible Chat Completions streaming.
+- [x] 4.13 Отключить gzip middleware для `/api/chat` и добавить SSE no-buffer/no-transform headers.
+- [x] 4.14 Добавить тест gzip passthrough для `/api/chat`.
 
 ## 5. Chat Context Assembly
 
@@ -68,14 +78,21 @@
 - [x] 7.6 Добавить переход по title карточки на страницу ноды с сохранением returnTo.
 - [x] 7.7 Добавить действие “Спросить по этим источникам” с передачей query/source_paths в чат.
 - [x] 7.8 Добавить frontend-тесты SearchPage: success, empty, unavailable, action to chat.
+- [x] 7.9 Добавить раскрываемый diagnostics block “Как выполнен поиск”.
+- [x] 7.10 Показывать score/rank, match reasons, source kinds и fragment score на карточках.
+- [x] 7.11 Сворачивать хвост результатов после заметного перепада score.
 
 ## 8. Chat UI
 
-- [x] 8.1 Обновить ChatPage для initial message/source hints из route state или query params.
+- [x] 8.1 Обновить ChatPage для initial message/source hints из route state.
 - [x] 8.2 Обновить отображение sources: title, type, path, fragments.
 - [x] 8.3 Добавить раскрытие найденного контекста/fragments.
 - [x] 8.4 Показать “недостаточно данных в базе” как нормальное состояние, не техническую ошибку.
 - [x] 8.5 Добавить frontend-тесты ChatPage для sources with fragments и source_paths flow.
+- [x] 8.6 Переделать ChatPage в message feed: user/assistant bubbles, markdown rendering, stop during streaming.
+- [x] 8.7 Перенести sources под конкретный assistant response.
+- [x] 8.8 Добавить плашку выбранных источников из поиска и reset-кнопку с tooltip.
+- [x] 8.9 Убрать лишнюю прокрутку пустого состояния чата.
 
 ## 9. Verification
 
@@ -83,4 +100,8 @@
 - [x] 9.2 Запустить frontend tests (`npm test` или существующую команду проекта).
 - [x] 9.3 Запустить frontend build (`npm run build` в `web/`).
 - [x] 9.4 Запустить `openspec validate add-hybrid-search-rag-ui`.
-- [ ] 9.5 Ручная проверка: rebuild индекса, поиск по точному keyword, semantic-only поиск, переход поиск → чат.
+- [x] 9.5 Ручная проверка: поиск по точному keyword, semantic-only поиск, переход поиск → чат.
+- [x] 9.6 Ручная проверка Search UI diagnostics и score-cliff collapse через Playwright.
+- [x] 9.7 Ручная проверка Chat UI: sources under answer, reset source scope, пустой чат без скролла.
+- [x] 9.8 Ручная проверка SSE headers `/api/chat`: без gzip, `text/event-stream`, `X-Accel-Buffering: no`.
+- [ ] 9.9 Ручная проверка rebuild индекса после всех изменений.

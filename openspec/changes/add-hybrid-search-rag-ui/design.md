@@ -127,6 +127,32 @@ score = Σ weight(source) / (k + rank(source))
 
 **Почему:** это соединяет исследовательский и ответный режимы без смешивания интерфейсов.
 
+### D9: LLM rewrite как опциональная нормализация поискового запроса
+
+**Решение:** перед гибридным retrieval для `POST /api/search` выполнять короткий LLM rewrite, если включён чатовый LLM provider. Rewrite получает исходный запрос и локально отобранный vocabulary из индекса: keywords, aliases, path/title terms и другие термины, ограниченные лимитами длины и частотности. Если rewrite недоступен, ошибся или вернул подозрительный результат, поиск использует исходный запрос.
+
+**Почему:** локальные эвристики для русско-английских терминов быстро превращаются в гадание. LLM rewrite лучше связывает пользовательский вопрос (“как эффективно управлять контекстом ии”) с терминами базы (“Context Mode”, “context management”), но fallback сохраняет offline-first поведение при отсутствии LLM.
+
+**Альтернативы:** продолжать расширять стоп-слова/стемминг/синонимы локально. Это проще инфраструктурно, но плохо масштабируется на реальные формулировки.
+
+### D10: Диагностический Search UI для настройки ранжирования
+
+**Решение:** Search UI показывает раскрываемый блок “Как выполнен поиск” с исходным запросом, rewrite-запросом, режимом keyword index и количеством результатов. Каждая карточка показывает score, rank, match reasons, source kinds и score фрагментов. При заметном перепаде score UI сворачивает оставшийся хвост выдачи в компактные карточки.
+
+**Почему:** гибридный поиск требует настройки на реальной базе. Пользователь должен видеть не только “что найдено”, но и почему результат оказался высоко или низко. Сворачивание хвоста снижает визуальный шум, когда верхние результаты заметно сильнее оставшихся.
+
+### D11: Chat UI как лента сообщений без долгосрочной памяти
+
+**Решение:** Web Chat отображается как обычная лента сообщений: user/assistant bubbles, поле ввода внизу, stop во время генерации, markdown rendering ответа. Источники отображаются под конкретным ответом ассистента. Ограничение `source_paths`, пришедшее из поиска, показывается отдельной плашкой с возможностью сброса. История сообщений хранится только в состоянии страницы и не отправляется в backend как conversational memory.
+
+**Почему:** UX должен соответствовать ожиданиям пользователя от ChatGPT/OpenWebUI-подобного чата, но полноценная память — отдельная capability с другими рисками token budget и приватности. Явная плашка выбранных источников предотвращает скрытое поведение “чат игнорирует часть базы”.
+
+### D12: Streaming через Chat Completions и запрет gzip для SSE
+
+**Решение:** генерация ответа в `/api/chat` использует OpenAI-compatible Chat Completions streaming (`/v1/chat/completions`) вместо Responses API streaming. SSE ответ `/api/chat` не проходит через gzip middleware; endpoint выставляет `Cache-Control: no-cache, no-transform` и `X-Accel-Buffering: no`.
+
+**Почему:** LM Studio и похожие локальные провайдеры обычно лучше поддерживают Chat Completions API. Gzip поверх SSE может буферизовать chunks и превращать stream в большой ответ с задержкой, поэтому для `/api/chat` сжатие должно быть отключено.
+
 ## Risks / Trade-offs
 
 **[Risk] FTS5 может быть недоступен в pure-Go SQLite окружении.** → Сделать capability detection при миграции и fallback keyword scan; статус индекса может сообщать `keyword_index: "fts5"` или `"scan"`.
@@ -139,6 +165,12 @@ score = Σ weight(source) / (k + rank(source))
 
 **[Risk] Search UI может дублировать Overview.** → Явно разделить назначения: Overview — дерево/таблица/администрирование; Search — relevance cards/snippets/semantic exploration.
 
+**[Risk] LLM rewrite может ухудшить запрос.** → Делать rewrite коротким, ограничивать vocabulary hints, валидировать результат и всегда fallback на исходный запрос.
+
+**[Risk] Chat UI выглядит как многоходовый чат, но backend не имеет памяти.** → Не обещать память в UI; при необходимости добавить отдельный future change для передачи bounded history в `/api/chat`.
+
+**[Risk] Отключение gzip для `/api/chat` увеличит объём ответа.** → SSE-токены небольшие, а низкая задержка важнее сжатия; остальные endpoints продолжают сжиматься.
+
 ## Migration Plan
 
 1. Добавить новую схему/таблицы searchable text/FTS как additive migration.
@@ -146,7 +178,10 @@ score = Σ weight(source) / (k + rank(source))
 3. Реализовать RetrievalService и покрыть unit-тестами fusion/ranking/cutoff.
 4. Перевести `POST /api/chat` на RetrievalService.
 5. Реализовать `POST /api/search` и API-тесты.
-6. Добавить Search UI и обновить Chat UI.
-7. Проверить ручной rebuild: удаление `.kb/index.db` или `POST /api/index/rebuild` должны полностью восстановить индекс.
+6. Добавить LLM rewrite и vocabulary hints с fallback на исходный запрос.
+7. Добавить Search UI diagnostics и компактное отображение слабого хвоста результатов.
+8. Добавить Chat UI как message feed, sources under assistant response и reset для выбранных source paths.
+9. Перевести chat streaming на Chat Completions и отключить gzip/buffering для SSE.
+10. Проверить ручной rebuild: удаление `.kb/index.db` или `POST /api/index/rebuild` должны полностью восстановить индекс.
 
 Rollback: отключить `KB_EMBEDDING_ENABLED` или удалить `.kb/index.db`; markdown-база не меняется.
