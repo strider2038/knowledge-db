@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/assert"
@@ -177,6 +178,10 @@ func (m *rewriteMockClient) New(_ context.Context, _ responses.ResponseNewParams
 }
 
 func (m *rewriteMockClient) NewStreaming(context.Context, responses.ResponseNewParams, ...option.RequestOption) chatStream {
+	return nil
+}
+
+func (m *rewriteMockClient) NewChatStreaming(context.Context, openai.ChatCompletionNewParams, ...option.RequestOption) chatCompletionStream {
 	return nil
 }
 

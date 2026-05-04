@@ -104,23 +104,36 @@ type chatStream interface {
 	Close() error
 }
 
-// chatResponsesClient — интерфейс для OpenAI Responses API с streaming.
-type chatResponsesClient interface {
-	New(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) (*responses.Response, error)
-	NewStreaming(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) chatStream
+type chatCompletionStream interface {
+	Next() bool
+	Current() openai.ChatCompletionChunk
+	Err() error
+	Close() error
 }
 
-// openaiChatClient оборачивает responses.ResponseService для соответствия chatResponsesClient.
+// chatClient — интерфейс для rewrite через Responses API и ответа через Chat Completions streaming.
+type chatClient interface {
+	New(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) (*responses.Response, error)
+	NewStreaming(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) chatStream
+	NewChatStreaming(ctx context.Context, body openai.ChatCompletionNewParams, opts ...option.RequestOption) chatCompletionStream
+}
+
+// openaiChatClient оборачивает OpenAI-compatible APIs для rewrite и streaming-чата.
 type openaiChatClient struct {
-	service *responses.ResponseService
+	responsesService       *responses.ResponseService
+	chatCompletionsService *openai.ChatCompletionService
 }
 
 func (c *openaiChatClient) NewStreaming(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) chatStream {
-	return c.service.NewStreaming(ctx, body, opts...)
+	return c.responsesService.NewStreaming(ctx, body, opts...)
 }
 
 func (c *openaiChatClient) New(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) (*responses.Response, error) {
-	return c.service.New(ctx, body, opts...)
+	return c.responsesService.New(ctx, body, opts...)
+}
+
+func (c *openaiChatClient) NewChatStreaming(ctx context.Context, body openai.ChatCompletionNewParams, opts ...option.RequestOption) chatCompletionStream {
+	return c.chatCompletionsService.NewStreaming(ctx, body, opts...)
 }
 
 // newOpenAIChatClient создаёт клиент для чата через OpenAI Responses API.
@@ -131,7 +144,10 @@ func newOpenAIChatClient(apiURL, apiKey string) *openaiChatClient {
 	}
 	client := openai.NewClient(opts...)
 
-	return &openaiChatClient{service: &client.Responses}
+	return &openaiChatClient{
+		responsesService:       &client.Responses,
+		chatCompletionsService: &client.Chat.Completions,
+	}
 }
 
 // PostChat обрабатывает POST /api/chat — RAG-чатбот с SSE streaming.
@@ -175,8 +191,9 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	contextText := h.buildHybridContextText(results)
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	flusher, canFlush := w.(http.Flusher)
 
@@ -588,37 +605,28 @@ func (h *Handler) streamLLMResponse(ctx context.Context, w http.ResponseWriter, 
 		"If the context is empty or doesn't contain relevant information, say that you couldn't find relevant information in the knowledge base. " +
 		"Answer in the same language as the user's question."
 
-	params := responses.ResponseNewParams{
-		Model:        shared.ResponsesModel(chatModel),
-		Instructions: openai.String(instructions),
-		Input: responses.ResponseNewParamsInputUnion{
-			OfInputItemList: responses.ResponseInputParam{
-				responses.ResponseInputItemParamOfMessage(
-					"Context:\n"+contextText+"\n\nQuestion: "+message,
-					responses.EasyInputMessageRoleUser,
-				),
-			},
+	params := openai.ChatCompletionNewParams{
+		Model: shared.ChatModel(chatModel),
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(instructions),
+			openai.UserMessage("Context:\n" + contextText + "\n\nQuestion: " + message),
 		},
 	}
 
-	stream := h.chatClient.NewStreaming(ctx, params)
+	stream := h.chatClient.NewChatStreaming(ctx, params)
 	defer stream.Close()
 
 	for stream.Next() {
-		event := stream.Current()
-		switch event.Type {
-		case "response.output_text.delta":
-			delta := event.AsResponseOutputTextDelta()
-			if delta.Delta == "" {
+		chunk := stream.Current()
+		for _, choice := range chunk.Choices {
+			if choice.Delta.Content == "" {
 				continue
 			}
-			tokenJSON, _ := json.Marshal(map[string]string{"token": delta.Delta})
+			tokenJSON, _ := json.Marshal(map[string]string{"token": choice.Delta.Content})
 			fmt.Fprintf(w, "data: %s\n\n", tokenJSON)
 			if canFlush {
 				flusher.Flush()
 			}
-		case "error":
-			return errors.Errorf("stream error: %s", event.AsError().Message)
 		}
 	}
 

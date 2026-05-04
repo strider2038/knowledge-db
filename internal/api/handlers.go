@@ -36,7 +36,7 @@ type Handler struct {
 	syncWorker        *index.SyncWorker
 	embeddingProvider index.EmbeddingProvider
 	embeddingConfig   config.Embedding
-	chatClient        chatResponsesClient
+	chatClient        chatClient
 }
 
 // NewHandler создаёт Handler.
