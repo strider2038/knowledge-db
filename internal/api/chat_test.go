@@ -1,11 +1,16 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/index"
 )
 
@@ -121,4 +126,91 @@ func TestBuildHybridContextText_WhenNoFragments_ExpectAnnotationContext(t *testi
 
 	assert.Contains(t, contextText, "notes/local")
 	assert.Contains(t, contextText, "note annotation")
+}
+
+func TestRewriteSearchQuery_WhenEnabled_ExpectRewrittenQuery(t *testing.T) {
+	t.Parallel()
+
+	h := &Handler{
+		chatClient: &rewriteMockClient{response: buildSearchRewriteResponse(t, "context mode контекст управление")},
+		embeddingConfig: config.Embedding{
+			SearchRewriteEnabled: true,
+			ChatModel:            "gpt-4o-mini",
+		},
+	}
+
+	query := h.rewriteSearchQuery(context.Background(), "как эффективно управлять контекстом ии")
+
+	assert.Equal(t, "context mode контекст управление", query)
+}
+
+func TestRewriteSearchQuery_WhenDisabled_ExpectOriginalQuery(t *testing.T) {
+	t.Parallel()
+
+	h := &Handler{
+		chatClient: &rewriteMockClient{response: buildSearchRewriteResponse(t, "rewritten")},
+		embeddingConfig: config.Embedding{
+			SearchRewriteEnabled: false,
+		},
+	}
+
+	query := h.rewriteSearchQuery(context.Background(), "original")
+
+	assert.Equal(t, "original", query)
+}
+
+func TestSanitizeSearchRewrite(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "context mode", sanitizeSearchRewrite("  `Query: context mode`  "))
+	assert.Empty(t, sanitizeSearchRewrite(strings.Repeat("word ", 80)))
+	assert.Empty(t, sanitizeSearchRewrite("one\n\ntwo"))
+}
+
+type rewriteMockClient struct {
+	response *responses.Response
+	err      error
+}
+
+func (m *rewriteMockClient) New(_ context.Context, _ responses.ResponseNewParams, _ ...option.RequestOption) (*responses.Response, error) {
+	return m.response, m.err
+}
+
+func (m *rewriteMockClient) NewStreaming(context.Context, responses.ResponseNewParams, ...option.RequestOption) chatStream {
+	return nil
+}
+
+func buildSearchRewriteResponse(tb testing.TB, text string) *responses.Response {
+	tb.Helper()
+	content := []responses.ResponseOutputMessageContentUnion{
+		{Type: "output_text", Text: text},
+	}
+	outputItem := responses.ResponseOutputItemUnion{
+		Type:    "message",
+		Content: content,
+	}
+	data := map[string]any{
+		"id":                 "resp-search-rewrite",
+		"created_at":         float64(0),
+		"error":              map[string]any{},
+		"incomplete_details": map[string]any{},
+		"instructions":       "",
+		"metadata":           map[string]any{},
+		"model":              "gpt-4o-mini",
+		"object":             "response",
+		"output":             []any{outputItem},
+		"usage":              map[string]any{},
+		"status":             "completed",
+		"tool_choice":        "auto",
+	}
+	b, err := json.Marshal(data)
+	if err != nil {
+		tb.Fatalf("marshal: %v", err)
+	}
+	var resp responses.Response
+	if err := json.Unmarshal(b, &resp); err != nil {
+		tb.Fatalf("unmarshal: %v", err)
+	}
+
+	return &resp
 }

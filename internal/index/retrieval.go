@@ -161,6 +161,7 @@ func (s *RetrievalService) addVectorCandidates(ctx context.Context, opts Retriev
 			item.result.Title = result.Title
 			item.result.Annotation = result.Annotation
 		}
+		item.applyLexicalBoost(keywordQueryTokens(opts.Query))
 		item.addSource("vector_node", rank+1, 1.0, float64(result.Score))
 		item.maxVectorScore = max(item.maxVectorScore, float64(result.Score))
 		item.matchReasons["vector"] = struct{}{}
@@ -170,13 +171,21 @@ func (s *RetrievalService) addVectorCandidates(ctx context.Context, opts Retriev
 	if err != nil {
 		return errors.Errorf("vector chunk search: %w", err)
 	}
+	vectorChunkCounts := make(map[string]int)
 	for rank, result := range chunkResults {
+		count := vectorChunkCounts[result.NodePath]
+		if count >= maxVectorChunksPerNode {
+			continue
+		}
+		vectorChunkCounts[result.NodePath] = count + 1
+
 		item := ensureHybridAccumulator(acc, result.NodePath)
 		doc, err := s.loadNodeSearchDocument(ctx, result.NodePath)
 		if err == nil {
 			item.applyDocument(doc)
 		}
-		item.addSource("vector_chunk", rank+1, 1.0, float64(result.Score))
+		item.applyLexicalBoost(keywordQueryTokens(opts.Query))
+		item.addSource("vector_chunk", rank+1, vectorChunkWeights[count], float64(result.Score))
 		item.maxVectorScore = max(item.maxVectorScore, float64(result.Score))
 		item.matchReasons["vector"] = struct{}{}
 		item.result.Fragments = append(item.result.Fragments, HybridFragment{
@@ -251,6 +260,7 @@ type hybridAccumulator struct {
 	score           float64
 	maxVectorScore  float64
 	manualProcessed bool
+	lexicalBoosted  bool
 }
 
 func ensureHybridAccumulator(acc map[string]*hybridAccumulator, path string) *hybridAccumulator {
@@ -287,6 +297,9 @@ func (a *hybridAccumulator) applyKeywordNode(hit KeywordNodeHit) {
 		a.matchReasons["exact"] = struct{}{}
 		a.score += hit.ExactBoost / 10
 	}
+	if hit.TokenBoost > 0 {
+		a.lexicalBoosted = true
+	}
 }
 
 func (a *hybridAccumulator) applyDocument(doc NodeSearchDocument) {
@@ -302,6 +315,24 @@ func (a *hybridAccumulator) applyDocument(doc NodeSearchDocument) {
 func (a *hybridAccumulator) addSource(kind string, rank int, weight, rawScore float64) {
 	a.sourceKinds[kind] = struct{}{}
 	a.score += weight/(rrfK+float64(rank)) + rawScore/100
+}
+
+func (a *hybridAccumulator) applyLexicalBoost(tokens []string) {
+	if a.lexicalBoosted {
+		return
+	}
+	boost := exactTokenBoost(tokens, KeywordNodeHit{
+		Path:     a.result.Path,
+		Title:    a.result.Title,
+		Keywords: a.result.Keywords,
+	})
+	if boost == 0 {
+		return
+	}
+	a.lexicalBoosted = true
+	a.sourceKinds["exact"] = struct{}{}
+	a.matchReasons["exact_token"] = struct{}{}
+	a.score += boost / 100
 }
 
 func (a *hybridAccumulator) isWeakVectorOnly() bool {
@@ -405,3 +436,7 @@ const (
 	rrfK             = 60
 	chatVectorCutoff = 0.55
 )
+
+const maxVectorChunksPerNode = 3
+
+var vectorChunkWeights = []float64{1.0, 0.5, 0.25}

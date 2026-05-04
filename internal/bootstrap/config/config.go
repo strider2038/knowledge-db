@@ -120,14 +120,15 @@ func (a Auth) anyGoogleEnvSet() bool {
 
 // Embedding — конфигурация эмбеддингов и RAG (опционально).
 type Embedding struct {
-	Enabled    bool          `env:"KB_EMBEDDING_ENABLED" envDefault:"false"`
-	APIKey     string        `env:"KB_EMBEDDING_API_KEY" envDefault:""`
-	APIURL     string        `env:"KB_EMBEDDING_API_URL" envDefault:""`
-	Model      string        `env:"KB_EMBEDDING_MODEL" envDefault:"text-embedding-3-small"`
-	ChatModel  string        `env:"KB_CHAT_MODEL" envDefault:""`
-	ChatAPIURL string        `env:"KB_CHAT_API_URL" envDefault:""`
-	ChatAPIKey string        `env:"KB_CHAT_API_KEY" envDefault:""`
-	RateLimit  time.Duration `env:"KB_EMBEDDING_RATE_LIMIT" envDefault:"1s"`
+	Enabled              bool          `env:"KB_EMBEDDING_ENABLED" envDefault:"false"`
+	APIKey               string        `env:"KB_EMBEDDING_API_KEY" envDefault:""`
+	APIURL               string        `env:"KB_EMBEDDING_API_URL" envDefault:""`
+	Model                string        `env:"KB_EMBEDDING_MODEL" envDefault:"text-embedding-3-small"`
+	ChatModel            string        `env:"KB_CHAT_MODEL" envDefault:""`
+	ChatAPIURL           string        `env:"KB_CHAT_API_URL" envDefault:""`
+	ChatAPIKey           string        `env:"KB_CHAT_API_KEY" envDefault:""`
+	SearchRewriteEnabled bool          `env:"KB_SEARCH_REWRITE_ENABLED" envDefault:"true"`
+	RateLimit            time.Duration `env:"KB_EMBEDDING_RATE_LIMIT" envDefault:"1s"`
 }
 
 // IsConfigured возвращает true, если эмбеддинги включены и ключ API задан.

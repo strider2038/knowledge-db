@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
@@ -19,6 +20,15 @@ import (
 )
 
 const ragContextTokenBudget = 4000
+const searchRewriteTimeout = 2 * time.Second
+
+var searchRewriteVocabularyOptions = index.SearchVocabularyOptions{
+	Limit:                     150,
+	MaxDocumentFrequencyRatio: 0.3,
+	MinTermRunes:              3,
+	MaxTermRunes:              64,
+	MaxWords:                  5,
+}
 
 // ChatRequest — запрос к чатботу.
 type ChatRequest struct {
@@ -58,7 +68,8 @@ type SearchResponse struct {
 
 // SearchMeta — metadata retrieval ответа.
 type SearchMeta struct {
-	KeywordIndex string `json:"keyword_index"` //nolint:tagliatelle // REST API snake_case
+	KeywordIndex string `json:"keyword_index"`           //nolint:tagliatelle // REST API snake_case
+	QueryRewrite string `json:"query_rewrite,omitempty"` //nolint:tagliatelle // REST API snake_case
 }
 
 // SearchResult — карточка результата гибридного поиска.
@@ -95,6 +106,7 @@ type chatStream interface {
 
 // chatResponsesClient — интерфейс для OpenAI Responses API с streaming.
 type chatResponsesClient interface {
+	New(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) (*responses.Response, error)
 	NewStreaming(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) chatStream
 }
 
@@ -105,6 +117,10 @@ type openaiChatClient struct {
 
 func (c *openaiChatClient) NewStreaming(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) chatStream {
 	return c.service.NewStreaming(ctx, body, opts...)
+}
+
+func (c *openaiChatClient) New(ctx context.Context, body responses.ResponseNewParams, opts ...option.RequestOption) (*responses.Response, error) {
+	return c.service.New(ctx, body, opts...)
 }
 
 // newOpenAIChatClient создаёт клиент для чата через OpenAI Responses API.
@@ -217,9 +233,10 @@ func (h *Handler) PostSearch(w http.ResponseWriter, r *http.Request) {
 		limit = 50
 	}
 
+	retrievalQuery := h.rewriteSearchQuery(r.Context(), query)
 	service := index.NewRetrievalService(h.indexStore, h.embeddingProvider)
 	results, err := service.Retrieve(r.Context(), index.RetrievalOptions{
-		Query:           query,
+		Query:           retrievalQuery,
 		Mode:            mode,
 		Types:           req.Types,
 		Path:            req.Path,
@@ -244,8 +261,81 @@ func (h *Handler) PostSearch(w http.ResponseWriter, r *http.Request) {
 		Total:   total,
 		Query:   query,
 		Mode:    string(mode),
-		Meta:    SearchMeta{KeywordIndex: h.indexStore.KeywordIndexMode()},
+		Meta:    SearchMeta{KeywordIndex: h.indexStore.KeywordIndexMode(), QueryRewrite: queryRewriteMeta(query, retrievalQuery)},
 	})
+}
+
+func (h *Handler) rewriteSearchQuery(ctx context.Context, query string) string {
+	if !h.embeddingConfig.SearchRewriteEnabled || h.chatClient == nil {
+		return query
+	}
+
+	chatModel := h.embeddingConfig.ChatModel
+	if chatModel == "" {
+		chatModel = "gpt-4o"
+	}
+	var vocabulary []string
+	if h.indexStore != nil {
+		var err error
+		vocabulary, err = h.indexStore.SearchVocabulary(ctx, searchRewriteVocabularyOptions)
+		if err != nil {
+			clog.Debug(ctx, "search: vocabulary failed", "error", err.Error())
+		}
+	}
+
+	rewriteCtx, cancel := context.WithTimeout(ctx, searchRewriteTimeout)
+	defer cancel()
+
+	params := responses.ResponseNewParams{
+		Model: shared.ResponsesModel(chatModel),
+		Instructions: openai.String(
+			"Rewrite the user's knowledge-base search question into a compact search query. " +
+				"Keep important exact terms, product names, acronyms, and domain terms. " +
+				"Add common synonyms in Russian and English when useful. " +
+				"Remove filler/question words. Return only the rewritten query as plain text. " +
+				"Prefer vocabulary terms only when they are relevant to the user's intent.\n\n" +
+				"Knowledge base vocabulary:\n" + strings.Join(vocabulary, ", "),
+		),
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: responses.ResponseInputParam{
+				responses.ResponseInputItemParamOfMessage(query, responses.EasyInputMessageRoleUser),
+			},
+		},
+	}
+
+	resp, err := h.chatClient.New(rewriteCtx, params)
+	if err != nil {
+		clog.Debug(ctx, "search: query rewrite failed", "error", err.Error())
+
+		return query
+	}
+	rewritten := sanitizeSearchRewrite(resp.OutputText())
+	if rewritten == "" {
+		return query
+	}
+
+	return rewritten
+}
+
+func sanitizeSearchRewrite(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, "`\"' \n\t")
+	value = strings.TrimPrefix(value, "query:")
+	value = strings.TrimPrefix(value, "Query:")
+	value = strings.TrimSpace(value)
+	if value == "" || len([]rune(value)) > 240 || strings.Contains(value, "\n\n") {
+		return ""
+	}
+
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func queryRewriteMeta(original, rewritten string) string {
+	if rewritten == "" || rewritten == original {
+		return ""
+	}
+
+	return rewritten
 }
 
 // PostIndexRebuild обрабатывает POST /api/index/rebuild — запуск перестройки индекса.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -39,6 +40,7 @@ type KeywordNodeHit struct {
 	RawScore     float64
 	Rank         int
 	ExactBoost   float64
+	TokenBoost   float64
 	ManualScoped bool
 }
 
@@ -135,16 +137,16 @@ func KeywordSearchNodes(ctx context.Context, store *IndexStore, query string, to
 	if topK <= 0 {
 		topK = 5
 	}
-	tokens := queryTokens(query)
+	tokens := keywordQueryTokens(query)
 	if len(tokens) == 0 {
 		return nil, nil
 	}
 
 	if store.KeywordIndexMode() == "fts5" {
-		return keywordSearchNodesFTS(ctx, store, query, tokens, topK)
+		return fallbackKeywordSearchNodes(ctx, store, query, tokens, topK, keywordSearchNodesFTS)
 	}
 
-	return keywordSearchNodesScan(ctx, store, query, tokens, topK)
+	return fallbackKeywordSearchNodes(ctx, store, query, tokens, topK, keywordSearchNodesScan)
 }
 
 // KeywordSearchChunks выполняет keyword/FTS поиск по searchable text чанков.
@@ -152,16 +154,16 @@ func KeywordSearchChunks(ctx context.Context, store *IndexStore, query string, t
 	if topK <= 0 {
 		topK = 5
 	}
-	tokens := queryTokens(query)
+	tokens := keywordQueryTokens(query)
 	if len(tokens) == 0 {
 		return nil, nil
 	}
 
 	if store.KeywordIndexMode() == "fts5" {
-		return keywordSearchChunksFTS(ctx, store, query, tokens, topK)
+		return fallbackKeywordSearchChunks(ctx, store, query, tokens, topK, keywordSearchChunksFTS)
 	}
 
-	return keywordSearchChunksScan(ctx, store, query, tokens, topK)
+	return fallbackKeywordSearchChunks(ctx, store, query, tokens, topK, keywordSearchChunksScan)
 }
 
 // ChunkSearch выполняет поиск по chunk-level эмбеддингам.
@@ -259,9 +261,10 @@ func keywordSearchNodesFTS(ctx context.Context, store *IndexStore, query string,
 		}
 		hit.Aliases = splitSearchList(aliasText)
 		hit.Keywords = splitSearchList(keywordText)
-		hit.MatchFields = matchNodeFields(query, tokens, hit)
 		hit.ExactBoost = exactNodeBoost(query, hit)
-		hit.RawScore = -rawRank + hit.ExactBoost
+		hit.TokenBoost = exactTokenBoost(tokens, hit)
+		hit.MatchFields = matchNodeFields(query, tokens, hit)
+		hit.RawScore = -rawRank + hit.ExactBoost + hit.TokenBoost
 		hit.ManualScoped = manualProcessed == 1
 		hits = append(hits, hit)
 	}
@@ -294,14 +297,45 @@ func keywordSearchNodesScan(ctx context.Context, store *IndexStore, query string
 		}
 		hit.Aliases = splitSearchList(aliasText)
 		hit.Keywords = splitSearchList(keywordText)
-		hit.MatchFields = matchNodeFields(query, tokens, hit)
 		hit.ExactBoost = exactNodeBoost(query, hit)
-		hit.RawScore = float64(len(hit.MatchFields)) + hit.ExactBoost
+		hit.TokenBoost = exactTokenBoost(tokens, hit)
+		hit.MatchFields = matchNodeFields(query, tokens, hit)
+		hit.RawScore = float64(len(hit.MatchFields)) + hit.ExactBoost + hit.TokenBoost
 		hit.ManualScoped = manualProcessed == 1
 		hits = append(hits, hit)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	return rankKeywordNodeHits(hits, topK), nil
+}
+
+type keywordNodeSearchFunc func(context.Context, *IndexStore, string, []string, int) ([]KeywordNodeHit, error)
+
+func fallbackKeywordSearchNodes(ctx context.Context, store *IndexStore, query string, tokens []string, topK int, search keywordNodeSearchFunc) ([]KeywordNodeHit, error) {
+	hits, err := search(ctx, store, query, tokens, topK)
+	if err != nil || len(hits) > 0 || len(tokens) <= 1 {
+		return hits, err
+	}
+
+	merged := make(map[string]KeywordNodeHit)
+	for _, token := range tokens {
+		tokenHits, tokenErr := search(ctx, store, query, []string{token}, topK)
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
+		for _, hit := range tokenHits {
+			if existing, ok := merged[hit.Path]; ok && existing.RawScore >= hit.RawScore {
+				continue
+			}
+			merged[hit.Path] = hit
+		}
+	}
+
+	hits = make([]KeywordNodeHit, 0, len(merged))
+	for _, hit := range merged {
+		hits = append(hits, hit)
 	}
 
 	return rankKeywordNodeHits(hits, topK), nil
@@ -333,6 +367,37 @@ func keywordSearchChunksFTS(ctx context.Context, store *IndexStore, query string
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	return rankKeywordChunkHits(hits, topK), nil
+}
+
+type keywordChunkSearchFunc func(context.Context, *IndexStore, string, []string, int) ([]KeywordChunkHit, error)
+
+func fallbackKeywordSearchChunks(ctx context.Context, store *IndexStore, query string, tokens []string, topK int, search keywordChunkSearchFunc) ([]KeywordChunkHit, error) {
+	hits, err := search(ctx, store, query, tokens, topK)
+	if err != nil || len(hits) > 0 || len(tokens) <= 1 {
+		return hits, err
+	}
+
+	merged := make(map[string]KeywordChunkHit)
+	for _, token := range tokens {
+		tokenHits, tokenErr := search(ctx, store, query, []string{token}, topK)
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
+		for _, hit := range tokenHits {
+			key := hit.NodePath + "\x00" + strconv.Itoa(hit.ChunkIndex)
+			if existing, ok := merged[key]; ok && existing.RawScore >= hit.RawScore {
+				continue
+			}
+			merged[key] = hit
+		}
+	}
+
+	hits = make([]KeywordChunkHit, 0, len(merged))
+	for _, hit := range merged {
+		hits = append(hits, hit)
 	}
 
 	return rankKeywordChunkHits(hits, topK), nil
@@ -422,8 +487,16 @@ func matchNodeFields(query string, tokens []string, hit KeywordNodeHit) []string
 		"keywords":   strings.Join(hit.Keywords, " "),
 		"source_url": hit.SourceURL,
 	}
+	result := matchedFields(fieldValues, query, tokens)
+	if len(result) == 0 {
+		result = append(result, "searchable_text")
+	}
+	if hit.TokenBoost > 0 {
+		result = append(result, "exact_token")
+	}
+	sort.Strings(result)
 
-	return matchedFields(fieldValues, query, tokens)
+	return result
 }
 
 func matchChunkFields(tokens []string, hit KeywordChunkHit) []string {
@@ -485,6 +558,56 @@ func exactNodeBoost(query string, hit KeywordNodeHit) float64 {
 	return boost
 }
 
+func exactTokenBoost(tokens []string, hit KeywordNodeHit) float64 {
+	var boost float64
+	pathSegments := queryTokens(hit.Path)
+	titleTokens := queryTokens(hit.Title)
+	for _, token := range tokens {
+		if containsToken(pathSegments, token) {
+			boost += 8
+		}
+		if containsToken(hit.Keywords, token) {
+			boost += 8
+		}
+		if containsToken(hit.Aliases, token) {
+			boost += 8
+		}
+		if containsToken(titleTokens, token) {
+			boost += 6
+		}
+	}
+
+	return boost
+}
+
+func containsToken(values []string, token string) bool {
+	token = normalizeSearchToken(token)
+	if token == "" {
+		return false
+	}
+	for _, value := range values {
+		if normalizeSearchToken(value) == token {
+			return true
+		}
+	}
+
+	return false
+}
+
+func normalizeSearchToken(token string) string {
+	token = strings.ToLower(strings.TrimSpace(token))
+	if len([]rune(token)) <= 4 {
+		return token
+	}
+	for _, suffix := range russianSearchSuffixes {
+		if strings.HasSuffix(token, suffix) && len([]rune(token)) > len([]rune(suffix))+3 {
+			return strings.TrimSuffix(token, suffix)
+		}
+	}
+
+	return token
+}
+
 func matchesTokens(text string, tokens []string) bool {
 	text = strings.ToLower(text)
 	for _, token := range tokens {
@@ -517,6 +640,22 @@ func queryTokens(query string) []string {
 	return tokens
 }
 
+func keywordQueryTokens(query string) []string {
+	tokens := queryTokens(query)
+	filtered := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if _, ok := keywordStopWords[token]; ok {
+			continue
+		}
+		filtered = append(filtered, token)
+	}
+	if len(filtered) == 0 {
+		return tokens
+	}
+
+	return filtered
+}
+
 func buildFTSQuery(tokens []string) string {
 	quoted := make([]string, 0, len(tokens))
 	for _, token := range tokens {
@@ -539,10 +678,11 @@ func buildSnippet(content string, tokens []string) string {
 	if strings.TrimSpace(content) == "" {
 		return ""
 	}
-	lower := strings.ToLower(content)
+	lowerRunes := []rune(strings.ToLower(content))
+	contentRunes := []rune(content)
 	start := -1
 	for _, token := range tokens {
-		if idx := strings.Index(lower, token); idx >= 0 && (start == -1 || idx < start) {
+		if idx := indexRunes(lowerRunes, []rune(strings.ToLower(token))); idx >= 0 && (start == -1 || idx < start) {
 			start = idx
 		}
 	}
@@ -550,25 +690,115 @@ func buildSnippet(content string, tokens []string) string {
 		return truncateSnippet(content)
 	}
 	from := max(0, start-60)
-	to := min(len(content), start+180)
-	snippet := strings.TrimSpace(content[from:to])
+	to := min(len(contentRunes), start+180)
+	snippet := strings.TrimSpace(string(contentRunes[from:to]))
 	if from > 0 {
 		snippet = "..." + snippet
 	}
-	if to < len(content) {
+	if to < len(contentRunes) {
 		snippet += "..."
 	}
 
 	return snippet
 }
 
+func indexRunes(text, pattern []rune) int {
+	if len(pattern) == 0 || len(pattern) > len(text) {
+		return -1
+	}
+	for i := 0; i <= len(text)-len(pattern); i++ {
+		matched := true
+		for j := range pattern {
+			if text[i+j] != pattern[j] {
+				matched = false
+
+				break
+			}
+		}
+		if matched {
+			return i
+		}
+	}
+
+	return -1
+}
+
 func truncateSnippet(content string) string {
 	content = strings.TrimSpace(content)
-	if len(content) <= 240 {
+	runes := []rune(content)
+	if len(runes) <= 240 {
 		return content
 	}
 
-	return content[:240] + "..."
+	return string(runes[:240]) + "..."
 }
 
 const keywordOversampleFactor = 5
+
+var keywordStopWords = map[string]struct{}{
+	"a":        {},
+	"an":       {},
+	"are":      {},
+	"for":      {},
+	"how":      {},
+	"in":       {},
+	"is":       {},
+	"of":       {},
+	"on":       {},
+	"the":      {},
+	"what":     {},
+	"where":    {},
+	"which":    {},
+	"ai":       {},
+	"база":     {},
+	"базе":     {},
+	"в":        {},
+	"во":       {},
+	"где":      {},
+	"для":      {},
+	"есть":     {},
+	"из":       {},
+	"ии":       {},
+	"как":      {},
+	"какая":    {},
+	"какие":    {},
+	"какой":    {},
+	"какое":    {},
+	"найди":    {},
+	"на":       {},
+	"по":       {},
+	"покажи":   {},
+	"про":      {},
+	"расскажи": {},
+	"что":      {},
+}
+
+var russianSearchSuffixes = []string{
+	"ами",
+	"ями",
+	"ого",
+	"его",
+	"ому",
+	"ему",
+	"ыми",
+	"ими",
+	"ах",
+	"ях",
+	"ом",
+	"ем",
+	"ой",
+	"ый",
+	"ий",
+	"ая",
+	"ое",
+	"ые",
+	"ую",
+	"юю",
+	"а",
+	"я",
+	"ы",
+	"и",
+	"е",
+	"у",
+	"ю",
+}

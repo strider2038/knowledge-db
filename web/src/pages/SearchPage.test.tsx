@@ -52,7 +52,7 @@ describe('SearchPage', () => {
       total: 1,
       query: 'sqlite',
       mode: 'search',
-      meta: { keyword_index: 'fts5' },
+      meta: { keyword_index: 'fts5', query_rewrite: 'sqlite local index' },
     })
 
     renderSearchPage()
@@ -60,6 +60,15 @@ describe('SearchPage', () => {
     expect(await screen.findByText('SQLite')).toBeInTheDocument()
     expect(screen.getByText('Local database')).toBeInTheDocument()
     expect(screen.getByText('sqlite snippet')).toBeInTheDocument()
+    expect(screen.getByText('Как выполнен поиск')).toBeInTheDocument()
+    expect(screen.getByText('Исходный запрос')).toBeInTheDocument()
+    expect(screen.getByText('Запрос к индексу')).toBeInTheDocument()
+    expect(screen.getByText('sqlite local index')).toBeInTheDocument()
+    expect(screen.getByText('score 1.000')).toBeInTheDocument()
+    expect(screen.getByText('reason: keywords')).toBeInTheDocument()
+    expect(screen.getByText('source: keyword')).toBeInTheDocument()
+    expect(screen.getAllByText('keyword').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('1.000').length).toBeGreaterThan(0)
   })
 
   it('shows empty state', async () => {
@@ -74,6 +83,59 @@ describe('SearchPage', () => {
     renderSearchPage('/search?q=missing')
 
     expect(await screen.findByText('Ничего не найдено.')).toBeInTheDocument()
+  })
+
+  it('collapses results after a strong score drop', async () => {
+    searchKnowledgeBase.mockResolvedValue({
+      results: [
+        {
+          path: 'articles/strong',
+          title: 'Strong match',
+          type: 'article',
+          annotation: '',
+          keywords: [],
+          score: 1,
+          rank: 1,
+          match_reasons: ['exact_token'],
+          source_kinds: ['exact'],
+          fragments: [],
+        },
+        {
+          path: 'articles/close',
+          title: 'Close match',
+          type: 'article',
+          annotation: '',
+          keywords: [],
+          score: 0.9,
+          rank: 2,
+          match_reasons: ['vector'],
+          source_kinds: ['vector_node'],
+          fragments: [],
+        },
+        {
+          path: 'articles/tail',
+          title: 'Tail match',
+          type: 'article',
+          annotation: 'Hidden until expanded',
+          keywords: [],
+          score: 0.4,
+          rank: 3,
+          match_reasons: ['vector'],
+          source_kinds: ['vector_node'],
+          fragments: [],
+        },
+      ],
+      total: 3,
+      query: 'sqlite',
+      mode: 'search',
+      meta: { keyword_index: 'fts5' },
+    })
+
+    const { container } = renderSearchPage()
+
+    expect(await screen.findByText('Strong match')).toBeInTheDocument()
+    expect(screen.getByText('Ниже заметный перепад score: результаты показаны свернуто.')).toBeInTheDocument()
+    expect(container.querySelectorAll('details').length).toBeGreaterThanOrEqual(2)
   })
 
   it('shows unavailable error', async () => {

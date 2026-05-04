@@ -2,7 +2,9 @@ package index
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -207,6 +209,97 @@ func TestKeywordSearchNodes_WhenPathMatch_ExpectHit(t *testing.T) {
 	assert.Contains(t, results[0].MatchFields, "path")
 }
 
+func TestKeywordQueryTokens_WhenQuestionWithStopWords_ExpectImportantTerms(t *testing.T) {
+	t.Parallel()
+
+	tokens := keywordQueryTokens("какие альтернативы rag есть в базе?")
+
+	assert.Equal(t, []string{"альтернативы", "rag"}, tokens)
+}
+
+func TestKeywordQueryTokens_WhenOnlyStopWords_ExpectFallback(t *testing.T) {
+	t.Parallel()
+
+	tokens := keywordQueryTokens("что где")
+
+	assert.Equal(t, []string{"что", "где"}, tokens)
+}
+
+func TestKeywordQueryTokens_WhenDomainStopWords_ExpectRemoved(t *testing.T) {
+	t.Parallel()
+
+	tokens := keywordQueryTokens("как эффективно управлять контекстом ии")
+
+	assert.Equal(t, []string{"эффективно", "управлять", "контекстом"}, tokens)
+}
+
+func TestExactTokenBoost_WhenRussianSuffixDiffers_ExpectTitleBoost(t *testing.T) {
+	t.Parallel()
+
+	boost := exactTokenBoost([]string{"контекстом"}, KeywordNodeHit{
+		Title: "Context Mode: использование токенов контекста",
+	})
+
+	assert.Equal(t, 6.0, boost)
+}
+
+func TestKeywordSearchNodes_WhenQuestionHasStopWords_ExpectCleanKeywordMatch(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "ai/rag/rag-alternatives", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:     "ai/rag/rag-alternatives",
+		Title:    "RAG retrieval notes",
+		Type:     "note",
+		Keywords: []string{"rag"},
+	}))
+
+	embID, err = store.InsertEmbedding(ctx, []float32{0.2}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "programming/jira-alternatives", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:     "programming/jira-alternatives",
+		Title:    "Jira alternatives",
+		Type:     "article",
+		Keywords: []string{"альтернативы"},
+	}))
+
+	results, err := KeywordSearchNodes(ctx, store, "какие альтернативы rag есть в базе?", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	assert.Equal(t, "ai/rag/rag-alternatives", results[0].Path)
+	assert.Contains(t, results[0].MatchFields, "exact_token")
+	assert.Greater(t, results[0].TokenBoost, 0.0)
+}
+
+func TestKeywordSearchNodes_WhenBodyMatchOnly_ExpectSearchableTextReason(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "notes/body-only", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:  "notes/body-only",
+		Title: "Body Only",
+		Type:  "note",
+		Body:  "hidden retrieval term",
+	}))
+
+	results, err := KeywordSearchNodes(ctx, store, "retrieval", 5)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, "notes/body-only", results[0].Path)
+	assert.Contains(t, results[0].MatchFields, "searchable_text")
+}
+
 func TestKeywordSearchChunks_WhenContentMatch_ExpectSnippet(t *testing.T) {
 	t.Parallel()
 
@@ -234,6 +327,30 @@ func TestKeywordSearch_WhenScanFallback_ExpectHits(t *testing.T) {
 	require.NotEmpty(t, chunks)
 	assert.Equal(t, "articles/sqlite", nodes[0].Path)
 	assert.Equal(t, "articles/sqlite", chunks[0].NodePath)
+}
+
+func TestBuildSnippet_WhenCyrillicBoundary_ExpectValidUTF8(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("человеческого текста ", 20) + "rag " + strings.Repeat("полезного контекста ", 20)
+
+	snippet := buildSnippet(content, []string{"rag"})
+
+	assert.True(t, utf8.ValidString(snippet))
+	assert.NotContains(t, snippet, "�")
+	assert.Contains(t, snippet, "rag")
+}
+
+func TestTruncateSnippet_WhenCyrillicBoundary_ExpectValidUTF8(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("человеческого текста ", 40)
+
+	snippet := truncateSnippet(content)
+
+	assert.True(t, utf8.ValidString(snippet))
+	assert.NotContains(t, snippet, "�")
+	assert.True(t, strings.HasSuffix(snippet, "..."))
 }
 
 func setupKeywordStore(t *testing.T) *IndexStore {

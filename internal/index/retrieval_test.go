@@ -165,6 +165,132 @@ func TestRetrievalService_Retrieve_WhenChatWeakVectorOnly_ExpectCutoff(t *testin
 	assert.Empty(t, results)
 }
 
+func TestRetrievalService_Retrieve_WhenManyVectorChunks_ExpectChunkCap(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	nodeEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "articles/many-chunks", "h1", "bh1", nodeEmbID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:  "articles/many-chunks",
+		Title: "Many Chunks",
+		Type:  "article",
+	}))
+
+	chunks := make([]Chunk, 0, 5)
+	for i := range 5 {
+		chunkEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
+		require.NoError(t, err)
+		chunks = append(chunks, Chunk{
+			NodePath:    "articles/many-chunks",
+			ChunkIndex:  i,
+			Heading:     "Chunk",
+			Content:     "semantic vector match",
+			EmbeddingID: chunkEmbID,
+		})
+	}
+	require.NoError(t, store.UpsertChunks(ctx, "articles/many-chunks", chunks))
+
+	service := NewRetrievalService(store, &mockProvider{vectors: [][]float32{{1, 0}}})
+	results, err := service.Retrieve(ctx, RetrievalOptions{Query: "semantic", Limit: 5})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	var vectorFragments int
+	for _, fragment := range results[0].Fragments {
+		if fragment.MatchType == "vector" {
+			vectorFragments++
+		}
+	}
+	assert.Equal(t, maxVectorChunksPerNode, vectorFragments)
+}
+
+func TestRetrievalService_Retrieve_WhenExactTokenAndVectorNoise_ExpectKeywordFirst(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	ragEmbID, err := store.InsertEmbedding(ctx, []float32{0, 1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "ai/rag/rag-alternatives", "h1", "bh1", ragEmbID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:     "ai/rag/rag-alternatives",
+		Title:    "RAG budget",
+		Type:     "note",
+		Keywords: []string{"rag"},
+	}))
+
+	jiraEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "programming/jira-alternatives", "h2", "bh2", jiraEmbID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:     "programming/jira-alternatives",
+		Title:    "Jira alternatives",
+		Type:     "article",
+		Keywords: []string{"альтернативы"},
+	}))
+
+	chunks := make([]Chunk, 0, 5)
+	for i := range 5 {
+		chunkEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
+		require.NoError(t, err)
+		chunks = append(chunks, Chunk{
+			NodePath:    "programming/jira-alternatives",
+			ChunkIndex:  i,
+			Heading:     "Alternative",
+			Content:     "jira alternative semantic vector match",
+			EmbeddingID: chunkEmbID,
+		})
+	}
+	require.NoError(t, store.UpsertChunks(ctx, "programming/jira-alternatives", chunks))
+
+	service := NewRetrievalService(store, &mockProvider{vectors: [][]float32{{1, 0}}})
+	results, err := service.Retrieve(ctx, RetrievalOptions{
+		Query: "какие альтернативы rag есть в базе?",
+		Limit: 5,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	assert.Equal(t, "ai/rag/rag-alternatives", results[0].Path)
+	assert.Contains(t, results[0].SourceKinds, "keyword")
+	assert.Contains(t, results[0].MatchReasons, "exact_token")
+}
+
+func TestRetrievalService_Retrieve_WhenVectorResultHasExactTokenPath_ExpectBoosted(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	ragEmbID, err := store.InsertEmbedding(ctx, []float32{0.8, 0.2}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "ai/rag/rag-budget", "h1", "bh1", ragEmbID))
+
+	jiraEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
+	require.NoError(t, err)
+	require.NoError(t, store.UpsertNode(ctx, "programming/jira-alternatives", "h2", "bh2", jiraEmbID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{
+		Path:     "programming/jira-alternatives",
+		Title:    "Jira alternatives",
+		Type:     "article",
+		Keywords: []string{"альтернативы"},
+	}))
+
+	service := NewRetrievalService(store, &mockProvider{vectors: [][]float32{{1, 0}}})
+	results, err := service.Retrieve(ctx, RetrievalOptions{
+		Query: "какие альтернативы rag есть в базе?",
+		Limit: 5,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	assert.Equal(t, "ai/rag/rag-budget", results[0].Path)
+	assert.Contains(t, results[0].SourceKinds, "exact")
+	assert.Contains(t, results[0].MatchReasons, "exact_token")
+}
+
 func setupRetrievalStore(t *testing.T) *IndexStore {
 	t.Helper()
 

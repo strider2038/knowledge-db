@@ -149,6 +149,53 @@ func TestIndexStore_UpsertNodeSearch_ExpectSearchableTextStored(t *testing.T) {
 	assert.Equal(t, 1, manualProcessed)
 }
 
+func TestIndexStore_SearchVocabulary_ExpectCuratedTermsWithLimits(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	for _, doc := range []NodeSearchDocument{
+		{
+			Path:     "ai/context-mode",
+			Title:    "Context Mode: Context Management",
+			Aliases:  []string{"context management"},
+			Keywords: []string{"context mode", "ai"},
+		},
+		{
+			Path:     "ai/harness",
+			Title:    "Harness architecture",
+			Aliases:  []string{"agent harness"},
+			Keywords: []string{"context mode", "infrastructure"},
+		},
+		{
+			Path:     "ai/skills",
+			Title:    "Agent Skills",
+			Keywords: []string{"context mode", "skills"},
+		},
+	} {
+		embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
+		require.NoError(t, err)
+		require.NoError(t, store.UpsertNode(ctx, doc.Path, "hash", "body", embID))
+		require.NoError(t, store.UpsertNodeSearch(ctx, doc))
+	}
+
+	terms, err := store.SearchVocabulary(ctx, SearchVocabularyOptions{
+		Limit:                     10,
+		MaxDocumentFrequencyRatio: 0.7,
+		MinTermRunes:              3,
+		MaxTermRunes:              32,
+		MaxWords:                  3,
+	})
+	require.NoError(t, err)
+
+	assert.LessOrEqual(t, len(terms), 10)
+	assert.Contains(t, terms, "Context Management")
+	assert.Contains(t, terms, "Context Mode")
+	assert.NotContains(t, terms, "context mode")
+	assert.NotContains(t, terms, "ai")
+}
+
 func TestIndexStore_UpsertNode_WhenExists_ExpectUpdated(t *testing.T) {
 	t.Parallel()
 

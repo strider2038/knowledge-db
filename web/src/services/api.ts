@@ -462,6 +462,7 @@ export interface SearchResponse {
   mode: 'search' | 'chat';
   meta: {
     keyword_index: 'fts5' | 'scan' | 'disabled';
+    query_rewrite?: string;
   };
 }
 
