@@ -104,4 +104,4 @@
 - [x] 9.6 Ручная проверка Search UI diagnostics и score-cliff collapse через Playwright.
 - [x] 9.7 Ручная проверка Chat UI: sources under answer, reset source scope, пустой чат без скролла.
 - [x] 9.8 Ручная проверка SSE headers `/api/chat`: без gzip, `text/event-stream`, `X-Accel-Buffering: no`.
-- [ ] 9.9 Ручная проверка rebuild индекса после всех изменений.
+- [x] 9.9 Ручная проверка rebuild индекса после всех изменений.
