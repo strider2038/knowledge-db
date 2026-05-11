@@ -21,6 +21,14 @@ vi.mock('@/services/api', () => ({
   takeStoredOAuthRedirect: (fallback: string) => fallback,
   startGoogleOAuth: vi.fn(),
   getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
+  getIndexStatus: vi.fn().mockResolvedValue({
+    total_nodes: 0,
+    total_chunks: 0,
+    embedding_model: '',
+    keyword_index: 'fts5',
+    last_indexed_at: '',
+    status: '',
+  }),
 }))
 
 function renderLogin(initialEntry = '/login') {
