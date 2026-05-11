@@ -8,6 +8,7 @@ import (
 
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 
@@ -109,8 +110,11 @@ func newOpenAIOrchestratorWithClientAndMetaFetcher(
 //
 // Используется stateless-подход: полная история диалога в каждом запросе.
 // Это необходимо для OpenRouter и других провайдеров, которые не поддерживают
-// previous_response_id или конвертируют его в формат Chat Completions некорректно
-// (ошибка: "messages with role 'tool' must be a response to a preceding message with 'tool_calls'").
+// previous_response_id или конвертируют его в формат Chat Completions некорректно.
+// В теле следующего запроса нужно повторять вызовы инструментов с полями id/call_id и
+// для function_call_output — с уникальным id (см. replayFunctionCallAsInputItem и
+// functionCallOutputAsInputItem); иначе провайдер отвечает ошибкой про role 'tool'
+// без предшествующих tool_calls.
 //
 // Контент, полученный через fetch_url_content, кешируется в памяти и подставляется
 // в результат напрямую — LLM не воспроизводит его в create_node, чтобы избежать усечения.
@@ -237,22 +241,22 @@ func (o *OpenAIOrchestrator) processResponse(
 		case "fetch_url_content":
 			url := extractURLFromArgs(item.Arguments)
 			clog.Info(ctx, "ingest: llm call fetch_url_content", "url", url)
-			functionCalls = append(functionCalls, responses.ResponseInputItemParamOfFunctionCall(item.Arguments, item.CallID, item.Name))
+			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
 			fetchStart := time.Now()
 			output, fetchResult := o.executeFetchURLContent(ctx, item.Arguments)
 			if fetchResult != nil && url != "" {
 				fetchCache[url] = fetchResult
 			}
-			toolOutputs = append(toolOutputs, responses.ResponseInputItemParamOfFunctionCallOutput(item.CallID, output))
+			toolOutputs = append(toolOutputs, functionCallOutputAsInputItem(item.CallID, output))
 			clog.Info(ctx, "ingest: llm fetch_url_content done", "url", url, "duration_ms", time.Since(fetchStart).Milliseconds())
 
 		case "fetch_url_meta":
 			url := extractURLFromArgs(item.Arguments)
 			clog.Info(ctx, "ingest: llm call fetch_url_meta", "url", url)
-			functionCalls = append(functionCalls, responses.ResponseInputItemParamOfFunctionCall(item.Arguments, item.CallID, item.Name))
+			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
 			metaStart := time.Now()
 			output := o.executeFetchURLMeta(ctx, item.Arguments)
-			toolOutputs = append(toolOutputs, responses.ResponseInputItemParamOfFunctionCallOutput(item.CallID, output))
+			toolOutputs = append(toolOutputs, functionCallOutputAsInputItem(item.CallID, output))
 			clog.Info(ctx, "ingest: llm fetch_url_meta done", "url", url, "duration_ms", time.Since(metaStart).Milliseconds())
 		}
 	}
@@ -505,6 +509,31 @@ func extractURLFromArgs(argsJSON string) string {
 // function call, что приводит к появлению литеральных \n в сохранённом контенте.
 func unescapeNewlines(s string) string {
 	return strings.ReplaceAll(s, `\n`, "\n")
+}
+
+// replayFunctionCallAsInputItem кладёт в input следующего запроса ровно те поля вызова,
+// что вернула модель (через RawJSON → ToParam), включая id объекта function_call.
+// OpenRouter при проксировании на Chat Completions требует id и корректную связку с tool results.
+func replayFunctionCallAsInputItem(item responses.ResponseOutputItemUnion) responses.ResponseInputItemUnionParam {
+	fc := item.AsFunctionCall()
+	p := fc.ToParam()
+	if strings.TrimSpace(fc.ID) == "" && fc.CallID != "" {
+		p.ID = param.NewOpt("fc_" + fc.CallID)
+	}
+
+	return responses.ResponseInputItemUnionParam{OfFunctionCall: &p}
+}
+
+// functionCallOutputAsInputItem формирует function_call_output для истории диалога.
+// Поле id обязательно для OpenRouter при продолжении разговора после tool calls.
+func functionCallOutputAsInputItem(callID, output string) responses.ResponseInputItemUnionParam {
+	o := responses.ResponseInputItemFunctionCallOutputParam{
+		CallID: callID,
+		Output: output,
+		ID:     param.NewOpt("fc_output_" + callID),
+	}
+
+	return responses.ResponseInputItemUnionParam{OfFunctionCallOutput: &o}
 }
 
 func jsonError(msg string) string {

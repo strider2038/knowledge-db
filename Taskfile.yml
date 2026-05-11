@@ -3,6 +3,10 @@ version: "3"
 vars:
   WEB_DIR: ./web
   UI_STATIC: ./internal/ui/static
+  # Уникален на сборку — ETag встроенного UI (см. internal/ui/buildid.go).
+  KB_UI_BUILD_ID:
+    sh: 'echo "$(git rev-parse --short=12 HEAD 2>/dev/null || date -u +%Y%m%d%H%M%S)-local"'
+  KB_UI_LDFLAGS: -X github.com/strider2038/knowledge-db/internal/ui.BuildID={{.KB_UI_BUILD_ID}}
 
 tasks:
   web:install:
@@ -52,7 +56,7 @@ tasks:
     cmds:
       - mkdir -p {{.UI_STATIC}}
       - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
-      - go build -o kb-server ./cmd/kb-server
+      - go build -ldflags="{{.KB_UI_LDFLAGS}}" -o kb-server ./cmd/kb-server
 
   build-cli:
     desc: Собрать kb-cli
@@ -65,7 +69,7 @@ tasks:
       - task: web:build
       - mkdir -p {{.UI_STATIC}}
       - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
-      - go build -o kb-server ./cmd/kb-server
+      - go build -ldflags="{{.KB_UI_LDFLAGS}}" -o kb-server ./cmd/kb-server
       - go build -o kb-cli ./cmd/kb-cli
 
   server:dev:

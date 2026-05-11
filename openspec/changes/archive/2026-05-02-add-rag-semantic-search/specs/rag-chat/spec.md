@@ -1,5 +1,7 @@
 ## ADDED Requirements
 
+RAG-чатбот для вопросов о контенте базы знаний. Endpoint `/api/chat`, двухуровневый векторный поиск, контекстная сборка для LLM, streaming-ответ.
+
 ### Requirement: Endpoint чатбота
 
 API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` для RAG-чатбота. Запрос MUST содержать поле `message` (string, обязательно). Ответ MUST быть streaming (Server-Sent Events) с токенами ответа LLM. Endpoint MUST возвращать 503 при `KB_EMBEDDING_ENABLED=false`.

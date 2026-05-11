@@ -10,13 +10,17 @@ RUN npm run build
 
 # Stage 2: build kb-server
 FROM golang:1.25-alpine AS builder
+# Уникален на образ: ETag для embed-статики (If-None-Match иначе 304 с прежними бандлами).
+ARG BUILD_ID=
 WORKDIR /app
 RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /app/web/dist ./internal/ui/static
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o kb-server ./cmd/kb-server
+RUN BID="${BUILD_ID}"; \
+  if [ -z "$BID" ]; then BID="$(date -u +%Y%m%d%H%M%S)-local"; fi; \
+  CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/strider2038/knowledge-db/internal/ui.BuildID=${BID}" -o kb-server ./cmd/kb-server
 
 # Stage 3: minimal runtime
 FROM alpine:3.19

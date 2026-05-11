@@ -1,5 +1,7 @@
 ## ADDED Requirements
 
+SQLite-индекс для семантического поиска: хранение embeddings и chunks, синхронизация с git-репозиторием, markdown-aware chunking, интерфейс EmbeddingProvider.
+
 ### Requirement: EmbeddingProvider — интерфейс генерации эмбеддингов
 
 Система ДОЛЖНА (SHALL) предоставлять интерфейс `EmbeddingProvider` для генерации векторных представлений текста. Интерфейс SHALL содержать метод `Embed(ctx, texts []string) ([][]float32, error)`. Система MUST предоставлять реализацию `APIProvider`, использующую OpenAI-совместимое API (OpenRouter) через конфигурацию: `KB_EMBEDDING_API_KEY`, `KB_EMBEDDING_API_URL`, `KB_EMBEDDING_MODEL`.
