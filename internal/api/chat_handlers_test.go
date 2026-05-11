@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
+	"github.com/strider2038/knowledge-db/internal/chat"
 	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 )
@@ -21,6 +24,10 @@ func setupTestHandlerWithIndex(t *testing.T) (http.Handler, *index.IndexStore) {
 
 	tmp := t.TempDir()
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
+	chatStore, err := chat.NewStore(filepath.Join(tmp, "chat.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = chatStore.Close() })
+	h.SetChatStore(chatStore)
 
 	store, err := index.NewIndexStore(":memory:")
 	require.NoError(t, err)
@@ -61,11 +68,27 @@ func setupTestHandlerWithoutIndex(t *testing.T) http.Handler {
 
 	tmp := t.TempDir()
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
+	chatStore, err := chat.NewStore(filepath.Join(tmp, "chat.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = chatStore.Close() })
+	h.SetChatStore(chatStore)
 
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
 	return mux
+}
+
+func createChatSessionID(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	resp := apitest.HandlePOST(t, handler, "/api/chats", strings.NewReader(`{"title":"t"}`))
+	resp.IsOK()
+	var data struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Recorder().Body.Bytes(), &data))
+	require.NotEmpty(t, data.ID)
+	return data.ID
 }
 
 func TestGetIndexStatus_WhenIndexAvailable_ExpectOK(t *testing.T) {
@@ -122,8 +145,9 @@ func TestPostChat_WhenIndexUnavailable_Expect503(t *testing.T) {
 	t.Parallel()
 
 	handler := setupTestHandlerWithoutIndex(t)
+	sessionID := createChatSessionID(t, handler)
 
-	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{"message":"hello"}`))
+	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{"session_id":"`+sessionID+`","message":"hello"}`))
 
 	resp.HasCode(503)
 }
@@ -132,8 +156,9 @@ func TestPostChat_WhenEmptyMessage_Expect400(t *testing.T) {
 	t.Parallel()
 
 	handler, _ := setupTestHandlerWithIndex(t)
+	sessionID := createChatSessionID(t, handler)
 
-	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{"message":""}`))
+	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{"session_id":"`+sessionID+`","message":""}`))
 
 	resp.IsBadRequest()
 }
@@ -142,10 +167,31 @@ func TestPostChat_WhenMissingMessage_Expect400(t *testing.T) {
 	t.Parallel()
 
 	handler, _ := setupTestHandlerWithIndex(t)
+	sessionID := createChatSessionID(t, handler)
 
-	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{}`))
+	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{"session_id":"`+sessionID+`"}`))
 
 	resp.IsBadRequest()
+}
+
+func TestPostChat_WhenMissingSessionID_Expect400(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := setupTestHandlerWithIndex(t)
+
+	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{"message":"hello"}`))
+
+	resp.IsBadRequest()
+}
+
+func TestPostChat_WhenUnknownSession_Expect404(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := setupTestHandlerWithIndex(t)
+
+	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{"session_id":"missing-session","message":"hello"}`))
+
+	resp.HasCode(404)
 }
 
 func TestPostChat_WhenSourcePathsExcludeMatches_ExpectInsufficientData(t *testing.T) {
@@ -153,8 +199,10 @@ func TestPostChat_WhenSourcePathsExcludeMatches_ExpectInsufficientData(t *testin
 
 	handler, store := setupTestHandlerWithIndex(t)
 	seedSearchIndex(t, store)
+	sessionID := createChatSessionID(t, handler)
 
 	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{
+		"session_id":"`+sessionID+`",
 		"message":"sqlite",
 		"source_paths":["missing/path"]
 	}`))
@@ -163,6 +211,23 @@ func TestPostChat_WhenSourcePathsExcludeMatches_ExpectInsufficientData(t *testin
 	body := resp.Recorder().Body.String()
 	assert.Contains(t, body, `"sources": []`)
 	assert.Contains(t, body, "Недостаточно данных")
+}
+
+func TestPostChat_WhenRAGModeWithoutContext_ExpectKnowledgeBaseFallback(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := setupTestHandlerWithIndex(t)
+	sessionID := createChatSessionID(t, handler)
+
+	resp := apitest.HandlePOST(t, handler, "/api/chat", strings.NewReader(`{
+		"session_id":"`+sessionID+`",
+		"message":"Что есть в базе про RAG?"
+	}`))
+
+	resp.IsOK()
+	body := resp.Recorder().Body.String()
+	assert.Contains(t, body, `"sources": []`)
+	assert.Contains(t, body, "В базе знаний не найдено релевантной информации по запросу.")
 }
 
 func TestPostSearch_WhenSuccess_ExpectResults(t *testing.T) {
@@ -218,6 +283,31 @@ func TestPostSearch_WhenIndexUnavailable_Expect503(t *testing.T) {
 	resp := apitest.HandlePOST(t, handler, "/api/search", strings.NewReader(`{"query":"sqlite"}`))
 
 	resp.HasCode(503)
+}
+
+func TestChatsCRUD_WhenValidFlow_ExpectSuccess(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := setupTestHandlerWithIndex(t)
+	sessionID := createChatSessionID(t, handler)
+
+	listResp := apitest.HandleGET(t, handler, "/api/chats")
+	listResp.IsOK()
+	assert.Contains(t, listResp.Recorder().Body.String(), sessionID)
+
+	getResp := apitest.HandleGET(t, handler, "/api/chats/"+sessionID)
+	getResp.IsOK()
+	assert.Contains(t, getResp.Recorder().Body.String(), sessionID)
+
+	patchResp := apitest.HandlePATCH(t, handler, "/api/chats/"+sessionID, strings.NewReader(`{"title":"Renamed"}`))
+	patchResp.IsOK()
+	assert.Contains(t, patchResp.Recorder().Body.String(), "Renamed")
+
+	deleteResp := apitest.HandleDELETE(t, handler, "/api/chats/"+sessionID)
+	deleteResp.IsOK()
+
+	getMissing := apitest.HandleGET(t, handler, "/api/chats/"+sessionID)
+	getMissing.HasCode(404)
 }
 
 func seedSearchIndex(t *testing.T, store *index.IndexStore) {

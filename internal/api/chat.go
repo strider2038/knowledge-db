@@ -2,11 +2,14 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
@@ -21,6 +24,20 @@ import (
 
 const ragContextTokenBudget = 4000
 const searchRewriteTimeout = 2 * time.Second
+const (
+	chatMinRelevantScore      = 0.08
+	chatScoreGapCutoff        = 0.18
+	chatMinSourcesBeforeGap   = 3
+	chatMaxRelevantSourceRank = 5
+)
+
+type chatMode string
+
+const (
+	chatModeMemory chatMode = "chat_memory"
+	chatModeRAG    chatMode = "rag_kb"
+	chatModeHybrid chatMode = "hybrid"
+)
 
 var searchRewriteVocabularyOptions = index.SearchVocabularyOptions{
 	Limit:                     150,
@@ -30,9 +47,56 @@ var searchRewriteVocabularyOptions = index.SearchVocabularyOptions{
 	MaxWords:                  5,
 }
 
+var chatRetrievalStopWords = map[string]struct{}{
+	"about":      {},
+	"base":       {},
+	"documents":  {},
+	"find":       {},
+	"materials":  {},
+	"knowledge":  {},
+	"kb":         {},
+	"show":       {},
+	"source":     {},
+	"sources":    {},
+	"what":       {},
+	"база":       {},
+	"базе":       {},
+	"базу":       {},
+	"базы":       {},
+	"в":          {},
+	"во":         {},
+	"документам": {},
+	"документах": {},
+	"документы":  {},
+	"есть":       {},
+	"знание":     {},
+	"знания":     {},
+	"знаний":     {},
+	"из":         {},
+	"источникам": {},
+	"источниках": {},
+	"какая":      {},
+	"какие":      {},
+	"какой":      {},
+	"какое":      {},
+	"материал":   {},
+	"материалы":  {},
+	"найди":      {},
+	"на":         {},
+	"по":         {},
+	"покажи":     {},
+	"про":        {},
+	"расскажи":   {},
+	"статей":     {},
+	"статьи":     {},
+	"статья":     {},
+	"что":        {},
+}
+
 // ChatRequest — запрос к чатботу.
 type ChatRequest struct {
 	Message     string   `json:"message"`
+	SessionID   string   `json:"session_id"`   //nolint:tagliatelle // REST API snake_case
 	SourcePaths []string `json:"source_paths"` //nolint:tagliatelle // REST API snake_case
 }
 
@@ -152,7 +216,7 @@ func newOpenAIChatClient(apiURL, apiKey string) *openaiChatClient {
 
 // PostChat обрабатывает POST /api/chat — RAG-чатбот с SSE streaming.
 func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
-	if h.indexStore == nil || h.embeddingProvider == nil {
+	if h.indexStore == nil || h.embeddingProvider == nil || h.chatStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "embedding service unavailable")
 
 		return
@@ -171,13 +235,61 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session_id is required")
+		return
+	}
+	if err := h.chatStore.EnsureSession(ctx, sessionID); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "chat not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "chat store failed")
+		return
+	}
+	if err := h.chatStore.AddMessage(ctx, sessionID, "user", req.Message, false); err != nil {
+		clog.Errorf(ctx, "chat: save user message: %w", err)
+		writeError(w, http.StatusInternalServerError, "chat store failed")
+		return
+	}
+	_ = h.chatStore.SummarizeAndTrim(ctx, sessionID)
+	mode := detectChatMode(req.Message)
+
+	if mode == chatModeMemory {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache, no-transform")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+
+		flusher, canFlush := w.(http.Flusher)
+		fmt.Fprintf(w, "data: {\"sources\": []}\n\n")
+		if canFlush {
+			flusher.Flush()
+		}
+
+		assistantReply, err := h.streamLLMResponse(ctx, w, sessionID, req.Message, "", canFlush, flusher)
+		if err != nil {
+			clog.Errorf(ctx, "chat(memory): stream LLM response: %w", err)
+			return
+		}
+		_ = h.chatStore.AddMessage(ctx, sessionID, "assistant", assistantReply, false)
+		_ = h.chatStore.SummarizeAndTrim(ctx, sessionID)
+
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		if canFlush {
+			flusher.Flush()
+		}
+		return
+	}
 
 	service := index.NewRetrievalService(h.indexStore, h.embeddingProvider)
+	retrievalQuery := h.chatRetrievalQuery(ctx, req.Message)
 	results, err := service.Retrieve(ctx, index.RetrievalOptions{
-		Query:       req.Message,
+		Query:       retrievalQuery,
 		Mode:        index.RetrievalModeChat,
-		Limit:       5,
-		TopK:        10,
+		Limit:       chatMaxRelevantSourceRank,
+		TopK:        max(chatMaxRelevantSourceRank*2, 10),
 		SourcePaths: req.SourcePaths,
 	})
 	if err != nil {
@@ -186,6 +298,7 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	results = filterRelevantResults(retrievalQuery, results)
 
 	sources := buildChatSources(results)
 	contextText := h.buildHybridContextText(results)
@@ -203,12 +316,19 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	if strings.TrimSpace(contextText) == "" {
+	if strings.TrimSpace(contextText) == "" && mode == chatModeRAG {
+		h.writeChatToken(w, "В базе знаний не найдено релевантной информации по запросу.", canFlush, flusher)
+		_ = h.chatStore.AddMessage(ctx, sessionID, "assistant", "В базе знаний не найдено релевантной информации по запросу.", false)
+	} else if strings.TrimSpace(contextText) == "" {
 		h.writeChatToken(w, "Недостаточно данных в базе знаний для ответа.", canFlush, flusher)
-	} else if err := h.streamLLMResponse(ctx, w, req.Message, contextText, canFlush, flusher); err != nil {
+		_ = h.chatStore.AddMessage(ctx, sessionID, "assistant", "Недостаточно данных в базе знаний для ответа.", false)
+	} else if assistantReply, err := h.streamLLMResponse(ctx, w, sessionID, req.Message, contextText, canFlush, flusher); err != nil {
 		clog.Errorf(ctx, "chat: stream LLM response: %w", err)
 
 		return
+	} else {
+		_ = h.chatStore.AddMessage(ctx, sessionID, "assistant", assistantReply, false)
+		_ = h.chatStore.SummarizeAndTrim(ctx, sessionID)
 	}
 
 	fmt.Fprint(w, "data: [DONE]\n\n")
@@ -492,7 +612,7 @@ func (h *Handler) buildHybridContextText(results []index.HybridSearchResult) str
 		if len(result.Fragments) > 0 {
 			continue
 		}
-		piece := fmt.Sprintf("--- %s ---\n%s\n\n", result.Path, result.Annotation)
+		piece := formatHybridNodeContextPiece(result)
 		pieceTokens := estimateContextTokens(piece)
 		if usedTokens+pieceTokens > ragContextTokenBudget {
 			return buf.String()
@@ -500,6 +620,29 @@ func (h *Handler) buildHybridContextText(results []index.HybridSearchResult) str
 		buf.WriteString(piece)
 		usedTokens += pieceTokens
 	}
+
+	return buf.String()
+}
+
+func formatHybridNodeContextPiece(result index.HybridSearchResult) string {
+	var buf strings.Builder
+	buf.WriteString(fmt.Sprintf("--- %s ---\n", result.Path))
+	if strings.TrimSpace(result.Title) != "" {
+		buf.WriteString("Title: ")
+		buf.WriteString(result.Title)
+		buf.WriteString("\n")
+	}
+	if len(result.Keywords) > 0 {
+		buf.WriteString("Keywords: ")
+		buf.WriteString(strings.Join(result.Keywords, ", "))
+		buf.WriteString("\n")
+	}
+	if strings.TrimSpace(result.Annotation) != "" {
+		buf.WriteString("Annotation: ")
+		buf.WriteString(result.Annotation)
+		buf.WriteString("\n")
+	}
+	buf.WriteString("\n")
 
 	return buf.String()
 }
@@ -595,33 +738,52 @@ func (h *Handler) getNodeForContext(path string) (*kb.Node, error) {
 	return kb.GetNode(context.Background(), h.dataPath, path)
 }
 
-func (h *Handler) streamLLMResponse(ctx context.Context, w http.ResponseWriter, message, contextText string, canFlush bool, flusher http.Flusher) error {
+func (h *Handler) streamLLMResponse(ctx context.Context, w http.ResponseWriter, sessionID, message, contextText string, canFlush bool, flusher http.Flusher) (string, error) {
 	chatModel := h.embeddingConfig.ChatModel
 	if chatModel == "" {
 		chatModel = "gpt-4o"
 	}
 
 	instructions := "You are a helpful assistant that answers questions based on the provided knowledge base context. " +
-		"If the context is empty or doesn't contain relevant information, say that you couldn't find relevant information in the knowledge base. " +
+		"If the context is empty and user asks about previous conversation, answer from conversation history only. " +
+		"If the context is empty or not relevant for a knowledge-base question, explicitly say that relevant information was not found in the knowledge base. " +
+		"When context is present, provide the best possible answer from it and clearly note any uncertainty. " +
 		"Answer in the same language as the user's question."
 
+	promptMessages, err := h.chatStore.BuildPromptMessages(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(promptMessages)+2)
+	messages = append(messages, openai.SystemMessage(instructions))
+	for _, m := range promptMessages {
+		switch m["role"] {
+		case "assistant":
+			messages = append(messages, openai.AssistantMessage(m["content"]))
+		case "system":
+			messages = append(messages, openai.SystemMessage(m["content"]))
+		default:
+			messages = append(messages, openai.UserMessage(m["content"]))
+		}
+	}
+	messages = append(messages, openai.UserMessage("Context:\n"+contextText+"\n\nQuestion: "+message))
+
 	params := openai.ChatCompletionNewParams{
-		Model: shared.ChatModel(chatModel),
-		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(instructions),
-			openai.UserMessage("Context:\n" + contextText + "\n\nQuestion: " + message),
-		},
+		Model:    shared.ChatModel(chatModel),
+		Messages: messages,
 	}
 
 	stream := h.chatClient.NewChatStreaming(ctx, params)
 	defer stream.Close()
 
+	var full strings.Builder
 	for stream.Next() {
 		chunk := stream.Current()
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content == "" {
 				continue
 			}
+			full.WriteString(choice.Delta.Content)
 			tokenJSON, _ := json.Marshal(map[string]string{"token": choice.Delta.Content})
 			fmt.Fprintf(w, "data: %s\n\n", tokenJSON)
 			if canFlush {
@@ -630,7 +792,10 @@ func (h *Handler) streamLLMResponse(ctx context.Context, w http.ResponseWriter, 
 		}
 	}
 
-	return stream.Err()
+	if err := stream.Err(); err != nil {
+		return "", err
+	}
+	return full.String(), nil
 }
 
 func (h *Handler) writeChatToken(w http.ResponseWriter, token string, canFlush bool, flusher http.Flusher) {
@@ -639,4 +804,153 @@ func (h *Handler) writeChatToken(w http.ResponseWriter, token string, canFlush b
 	if canFlush {
 		flusher.Flush()
 	}
+}
+
+func (h *Handler) chatRetrievalQuery(ctx context.Context, message string) string {
+	rewritten := h.rewriteSearchQuery(ctx, message)
+	if compact := compactKnowledgeBaseQuery(rewritten); compact != "" {
+		return compact
+	}
+	if compact := compactKnowledgeBaseQuery(message); compact != "" {
+		return compact
+	}
+
+	return strings.TrimSpace(message)
+}
+
+func compactKnowledgeBaseQuery(text string) string {
+	fields := strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	terms := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		normalized := strings.ToLower(field)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := chatRetrievalStopWords[normalized]; ok {
+			continue
+		}
+		if len([]rune(normalized)) < 2 {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		terms = append(terms, field)
+	}
+
+	return strings.Join(terms, " ")
+}
+
+func detectChatMode(query string) chatMode {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return chatModeHybrid
+	}
+	memoryHints := []string{
+		"резюме чата", "краткое резюме", "подведи итог", "подведи итоги", "что мы обсудили",
+		"суммируй чат", "сделай резюме", "что ты уже сказал", "предыдущ",
+	}
+	for _, hint := range memoryHints {
+		if strings.Contains(q, hint) {
+			return chatModeMemory
+		}
+	}
+	ragHints := []string{
+		"в базе", "по базе", "из базы", "в kb", "по документам", "по источникам", "найди в базе",
+	}
+	for _, hint := range ragHints {
+		if strings.Contains(q, hint) {
+			return chatModeRAG
+		}
+	}
+	return chatModeHybrid
+}
+
+func filterRelevantResults(query string, results []index.HybridSearchResult) []index.HybridSearchResult {
+	if len(results) == 0 {
+		return results
+	}
+	sorted := append([]index.HybridSearchResult(nil), results...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Score > sorted[j].Score })
+	queryTerms := significantTerms(query)
+	filtered := make([]index.HybridSearchResult, 0, len(sorted))
+	for _, r := range sorted {
+		hasOverlap := len(queryTerms) == 0 || hasTermOverlap(queryTerms, r)
+		if isLexicalResult(r) {
+			if hasOverlap {
+				filtered = append(filtered, r)
+			}
+
+			continue
+		}
+		if r.Score < chatMinRelevantScore || !hasOverlap {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	if len(filtered) <= 1 {
+		return filtered
+	}
+	cutIdx := len(filtered)
+	for i := chatMinSourcesBeforeGap; i < len(filtered); i++ {
+		gap := filtered[i-1].Score - filtered[i].Score
+		if gap >= chatScoreGapCutoff {
+			cutIdx = i
+			break
+		}
+	}
+	return filtered[:cutIdx]
+}
+
+func significantTerms(text string) []string {
+	compact := compactKnowledgeBaseQuery(text)
+	if compact != "" {
+		text = compact
+	}
+	text = strings.ToLower(text)
+	parts := strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+	terms := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if len([]rune(p)) < 2 {
+			continue
+		}
+		if _, ok := chatRetrievalStopWords[p]; ok {
+			continue
+		}
+		terms = append(terms, p)
+	}
+	return terms
+}
+
+func isLexicalResult(result index.HybridSearchResult) bool {
+	for _, kind := range result.SourceKinds {
+		if kind == "exact" || kind == "keyword" || kind == "keyword_chunk" {
+			return true
+		}
+	}
+	for _, reason := range result.MatchReasons {
+		if strings.Contains(reason, "exact") || strings.Contains(reason, "keyword") || strings.Contains(reason, "chunk:") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasTermOverlap(queryTerms []string, result index.HybridSearchResult) bool {
+	bag := strings.ToLower(result.Path + " " + result.Title + " " + result.Annotation + " " + strings.Join(result.Keywords, " "))
+	for _, f := range result.Fragments {
+		bag += " " + strings.ToLower(f.Heading) + " " + strings.ToLower(f.Snippet) + " " + strings.ToLower(f.Content)
+	}
+	for _, t := range queryTerms {
+		if strings.Contains(bag, t) {
+			return true
+		}
+	}
+	return false
 }

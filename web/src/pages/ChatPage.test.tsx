@@ -9,17 +9,34 @@ import { ChatPage } from './ChatPage'
 
 type StreamChat = typeof import('@/services/api')['streamChat']
 
-const { streamChat } = vi.hoisted(() => ({
+const {
+  streamChat,
+  listChats,
+  createChat,
+  getChat,
+  renameChat,
+  deleteChat,
+} = vi.hoisted(() => ({
   streamChat: vi.fn<StreamChat>(() => new AbortController()),
+  listChats: vi.fn(async () => [{ id: 's1', title: 'Chat 1', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]),
+  createChat: vi.fn(async () => ({ id: 's2', title: 'New', created_at: new Date().toISOString(), updated_at: new Date().toISOString() })),
+  getChat: vi.fn(async () => ({ session: { id: 's1', title: 'Chat 1', created_at: '', updated_at: '' }, messages: [] })),
+  renameChat: vi.fn(async () => {}),
+  deleteChat: vi.fn(async () => {}),
 }))
 
 vi.mock('@/services/api', () => ({
   streamChat,
+  listChats,
+  createChat,
+  getChat,
+  renameChat,
+  deleteChat,
 }))
 
-function renderChatPage(state?: { query?: string; sourcePaths?: string[] }) {
+function renderChatPage() {
   return render(
-    <MemoryRouter initialEntries={[{ pathname: '/chat', state }]}>
+    <MemoryRouter initialEntries={[{ pathname: '/chat' }]}>
       <TooltipProvider>
         <Routes>
           <Route path="/chat" element={<ChatPage />} />
@@ -34,14 +51,19 @@ describe('ChatPage', () => {
     vi.clearAllMocks()
   })
 
-  it('uses initial message and source paths from route state', () => {
-    renderChatPage({ query: 'sqlite', sourcePaths: ['articles/sqlite'] })
+  it('sends message with active session id', async () => {
+    renderChatPage()
+    await screen.findAllByText('Chat 1')
 
+    fireEvent.change(screen.getByPlaceholderText('Спросите что-нибудь...'), {
+      target: { value: 'sqlite' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Отправить' }))
 
     expect(streamChat).toHaveBeenCalledWith(
+      's1',
       'sqlite',
-      { sourcePaths: ['articles/sqlite'] },
+      { sourcePaths: [] },
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),
@@ -49,8 +71,8 @@ describe('ChatPage', () => {
     )
   })
 
-  it('renders sources with fragments', () => {
-    streamChat.mockImplementation((_message, _options, onSources, onToken, onDone) => {
+  it('renders assistant output and sources', async () => {
+    streamChat.mockImplementation((_sid, _msg, _options, onSources, onToken, onDone) => {
       onSources([
         {
           path: 'articles/sqlite',
@@ -63,49 +85,41 @@ describe('ChatPage', () => {
       onDone()
       return new AbortController()
     })
-    renderChatPage({ query: 'sqlite' })
 
+    renderChatPage()
+    await screen.findAllByText('Chat 1')
+
+    fireEvent.change(screen.getByPlaceholderText('Спросите что-нибудь...'), {
+      target: { value: 'sqlite' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Отправить' }))
 
     expect(screen.getByText('SQLite answer')).toBeInTheDocument()
     expect(screen.getByText('SQLite')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Найденный контекст'))
-    expect(screen.getByText('sqlite snippet')).toBeInTheDocument()
   })
 
-  it('renders user and assistant messages as chat bubbles', () => {
-    streamChat.mockImplementation((_message, _options, _onSources, onToken, onDone) => {
-      onToken('Ответ из базы')
-      onDone()
-      return new AbortController()
-    })
+  it('has accessible labels for chat rename and delete actions', async () => {
     renderChatPage()
+    await screen.findAllByText('Chat 1')
 
-    fireEvent.change(screen.getByPlaceholderText('Спросите что-нибудь...'), {
-      target: { value: 'Что есть про sqlite?' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Отправить' }))
-
-    expect(screen.getByText('Что есть про sqlite?')).toBeInTheDocument()
-    expect(screen.getByText('Ответ из базы')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Переименовать чат: Chat 1' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Удалить чат: Chat 1' })
+    ).toBeInTheDocument()
   })
 
-  it('resets selected search sources', () => {
-    renderChatPage({ query: 'sqlite', sourcePaths: ['articles/sqlite'] })
+  it('handles null messages payload when opening session', async () => {
+    getChat.mockResolvedValueOnce({
+      session: { id: 's1', title: 'Chat 1', created_at: '', updated_at: '' },
+      messages: null,
+    } as never)
 
-    expect(screen.getByText(/Используются выбранные источники из поиска/)).toBeInTheDocument()
+    renderChatPage()
+    const sessionButtons = await screen.findAllByRole('button', { name: /Chat 1/ })
+    fireEvent.click(sessionButtons[0])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Сбросить ограничение источников' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Отправить' }))
-
-    expect(screen.queryByText(/Используются выбранные источники из поиска/)).not.toBeInTheDocument()
-    expect(streamChat).toHaveBeenCalledWith(
-      'sqlite',
-      { sourcePaths: [] },
-      expect.any(Function),
-      expect.any(Function),
-      expect.any(Function),
-      expect.any(Function)
-    )
+    expect(await screen.findByText('Чат с базой знаний')).toBeInTheDocument()
   })
 })

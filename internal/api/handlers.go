@@ -12,6 +12,7 @@ import (
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
+	"github.com/strider2038/knowledge-db/internal/chat"
 	"github.com/strider2038/knowledge-db/internal/import/session"
 	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
@@ -37,11 +38,17 @@ type Handler struct {
 	embeddingProvider index.EmbeddingProvider
 	embeddingConfig   config.Embedding
 	chatClient        chatClient
+	chatStore         *chat.Store
 }
 
 // NewHandler создаёт Handler.
 func NewHandler(dataPath string, ingester ingestion.Ingester) *Handler {
 	return &Handler{dataPath: dataPath, ingester: ingester}
+}
+
+// SetChatStore устанавливает sqlite-хранилище чат-сессий.
+func (h *Handler) SetChatStore(store *chat.Store) {
+	h.chatStore = store
 }
 
 // NewHandlerWithUploads создаёт Handler с поддержкой импорта (KB_UPLOADS_DIR).
@@ -197,6 +204,10 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
+	}
+	if h.syncWorker != nil {
+		h.syncWorker.Send(index.SingleNodeEvent{Path: nodePath})
+		h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
 	}
 	writeJSON(w, node)
 }

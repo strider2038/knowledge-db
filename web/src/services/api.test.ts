@@ -237,10 +237,11 @@ describe('streamChat', () => {
     const onToken = vi.fn()
     const onDone = vi.fn()
 
-    streamChat('sqlite', { sourcePaths: ['a/b'] }, onSources, onToken, onDone, vi.fn())
+    streamChat('session-1', 'sqlite', { sourcePaths: ['a/b'] }, onSources, onToken, onDone, vi.fn())
     await vi.waitFor(() => expect(onDone).toHaveBeenCalled())
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      session_id: 'session-1',
       message: 'sqlite',
       source_paths: ['a/b'],
     })

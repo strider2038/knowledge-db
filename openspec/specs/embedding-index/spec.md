@@ -88,6 +88,12 @@ TBD - created by archiving change add-rag-semantic-search. Update Purpose after 
 - **WHEN** API handler создаёт ноду через kb.Store
 - **THEN** SyncWorker получает событие SingleNode и индексирует ноду
 
+#### Scenario: Триггер после перемещения ноды
+
+- **WHEN** API handler успешно перемещает ноду из `old/path` в `new/path`
+- **THEN** SyncWorker MUST получить событие SingleNode для старого пути `old/path` и удалить устаревшую запись из индекса
+- **AND** SyncWorker MUST получить событие SingleNode для нового пути `new/path` и проиндексировать ноду по новому пути
+
 #### Scenario: Триггер после git sync
 
 - **WHEN** GitSyncRunner завершает pull

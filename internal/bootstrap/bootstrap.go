@@ -15,6 +15,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/auth"
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
+	"github.com/strider2038/knowledge-db/internal/chat"
 	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
@@ -75,6 +76,11 @@ func Run() error {
 	}
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
+	chatStore := buildChatStore(cfg)
+	if chatStore != nil {
+		defer func() { _ = chatStore.Close() }()
+		apiHandler.SetChatStore(chatStore)
+	}
 
 	commitMsgGen := igit.NewCommitMessageGenerator(cfg.LLM.APIKey, cfg.LLM.APIURL, cfg.LLM.Model)
 	if !cfg.LLM.IsConfigured() {
@@ -216,4 +222,19 @@ func buildIndexComponents(cfg *config.Config) (*index.IndexStore, *index.SyncWor
 	worker := index.NewSyncWorker(store, provider, cfg.DataPath, cfg.Embedding.Model, cfg.Embedding.RateLimit)
 
 	return store, worker, provider
+}
+
+func buildChatStore(cfg *config.Config) *chat.Store {
+	kbDir := filepath.Join(cfg.DataPath, ".kb")
+	if err := os.MkdirAll(kbDir, 0o755); err != nil {
+		slog.Error("failed to create .kb directory for chat store", "error", err)
+		return nil
+	}
+	dbPath := filepath.Join(kbDir, "chat.db")
+	store, err := chat.NewStore(dbPath)
+	if err != nil {
+		slog.Error("failed to open chat database", "error", err)
+		return nil
+	}
+	return store
 }

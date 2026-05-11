@@ -486,7 +486,75 @@ export interface ChatSource {
   fragments?: SearchFragment[];
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export async function listChats(): Promise<ChatSession[]> {
+  const res = await apiFetch(`${API_URL}/api/chats`);
+  if (!res.ok) throw new Error('Failed to load chats');
+  const data = await res.json();
+  return data.sessions || [];
+}
+
+export async function createChat(title?: string): Promise<ChatSession> {
+  const res = await apiFetch(`${API_URL}/api/chats`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to create chat');
+  }
+  return res.json();
+}
+
+export async function getChat(id: string): Promise<{ session: ChatSession; messages: ChatMessage[] }> {
+  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to load chat');
+  }
+  const data = await res.json() as { session: ChatSession; messages?: ChatMessage[] | null };
+  return {
+    session: data.session,
+    messages: Array.isArray(data.messages) ? data.messages : [],
+  };
+}
+
+export async function renameChat(id: string, title: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to rename chat');
+  }
+}
+
+export async function deleteChat(id: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to delete chat');
+  }
+}
+
 export function streamChat(
+  sessionId: string,
   message: string,
   options: { sourcePaths?: string[] } | undefined,
   onSources: (sources: ChatSource[]) => void,
@@ -502,6 +570,7 @@ export function streamChat(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          session_id: sessionId,
           message,
           source_paths: options?.sourcePaths,
         }),
