@@ -20,7 +20,7 @@ func TestStore_SummarizeAndTrim(t *testing.T) {
 	_, err = store.CreateSession(ctx, "s1", "Chat")
 	require.NoError(t, err)
 
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		require.NoError(t, store.AddMessage(ctx, "s1", "user", "message", false))
 	}
 
@@ -98,5 +98,5 @@ func TestStore_GetSessionEmptyMessagesIsNotNilSlice(t *testing.T) {
 	details, err := store.GetSession(ctx, "s1")
 	require.NoError(t, err)
 	assert.NotNil(t, details.Messages)
-	assert.Len(t, details.Messages, 0)
+	assert.Empty(t, details.Messages)
 }

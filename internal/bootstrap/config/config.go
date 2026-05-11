@@ -137,10 +137,11 @@ func (e Embedding) IsConfigured() bool {
 }
 
 // ChatAPIConfig возвращает URL и key для чата. Если ChatAPIURL задан — используется он, иначе APIURL.
-func (e Embedding) ChatAPIConfig() (url, key string) {
+func (e Embedding) ChatAPIConfig() (string, string) {
 	if e.ChatAPIURL != "" {
 		return e.ChatAPIURL, e.ChatAPIKey
 	}
+
 	return e.APIURL, e.APIKey
 }
 
@@ -168,6 +169,7 @@ func ValidateLogLevel(level string) error {
 	if !validLogLevels[level] {
 		return errors.New("log: invalid LOG_LEVEL — must be one of: debug, info, warn, error")
 	}
+
 	return nil
 }
 

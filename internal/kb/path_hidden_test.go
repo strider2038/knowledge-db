@@ -1,4 +1,4 @@
-package kb //nolint:testpackage // pathHasHiddenSegment is internal; white-box tests
+package kb
 
 import (
 	"strconv"

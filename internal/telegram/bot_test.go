@@ -1,4 +1,4 @@
-package telegram //nolint:testpackage // internal methods handleUpdate and buildConfirmation require package-level access
+package telegram
 
 import (
 	"context"

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -207,7 +208,7 @@ func TestPostChat_WhenMemoryMode_ExpectNoSourcesAndLLMAnswer(t *testing.T) {
 	})
 	h.chatClient = &rewriteMockClient{chatTokens: []string{"Краткое резюме"}}
 
-	req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"session_id":"s1","message":"Сделай краткое резюме чата"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"session_id":"s1","message":"Сделай краткое резюме чата"}`))
 	rec := httptest.NewRecorder()
 
 	h.PostChat(rec, req)

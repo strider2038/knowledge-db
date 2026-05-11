@@ -14,6 +14,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	keywordIndexModeFTS5 = "fts5"
+	keywordIndexModeScan = "scan"
+)
+
 // IndexedNode — запись о проиндексированной ноде.
 type IndexedNode struct {
 	Path            string
@@ -115,7 +120,8 @@ func (s *IndexStore) Close() error {
 }
 
 func (s *IndexStore) migrate() error {
-	_, err := s.db.Exec("PRAGMA journal_mode=WAL")
+	ctx := context.Background()
+	_, err := s.db.ExecContext(ctx, "PRAGMA journal_mode=WAL")
 	if err != nil {
 		return errors.Errorf("set WAL mode: %w", err)
 	}
@@ -169,7 +175,7 @@ func (s *IndexStore) migrate() error {
 		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
 	);`
 
-	if _, err := s.db.Exec(schema); err != nil {
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return errors.Errorf("create schema: %w", err)
 	}
 
@@ -181,8 +187,9 @@ func (s *IndexStore) migrate() error {
 }
 
 func (s *IndexStore) migrateFTS() error {
-	if !s.detectFTS5() {
-		s.keywordIndexMode = "scan"
+	ctx := context.Background()
+	if !s.detectFTS5(ctx) {
+		s.keywordIndexMode = keywordIndexModeScan
 
 		return nil
 	}
@@ -206,17 +213,17 @@ func (s *IndexStore) migrateFTS() error {
 		content,
 		searchable_text
 	);`
-	if _, err := s.db.Exec(schema); err != nil {
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return errors.Errorf("create fts schema: %w", err)
 	}
 
-	s.keywordIndexMode = "fts5"
+	s.keywordIndexMode = keywordIndexModeFTS5
 
 	return nil
 }
 
-func (s *IndexStore) detectFTS5() bool {
-	_, err := s.db.Exec(`
+func (s *IndexStore) detectFTS5(ctx context.Context) bool {
+	_, err := s.db.ExecContext(ctx, `
 		CREATE VIRTUAL TABLE IF NOT EXISTS __kb_fts5_probe USING fts5(value);
 		DROP TABLE IF EXISTS __kb_fts5_probe;`)
 
@@ -226,7 +233,7 @@ func (s *IndexStore) detectFTS5() bool {
 // KeywordIndexMode returns keyword search capability mode: fts5 or scan.
 func (s *IndexStore) KeywordIndexMode() string {
 	if s.keywordIndexMode == "" {
-		return "scan"
+		return keywordIndexModeScan
 	}
 
 	return s.keywordIndexMode
@@ -274,7 +281,7 @@ func (s *IndexStore) GetAllEmbeddings(ctx context.Context) ([]EmbeddingRecord, e
 
 // DeleteEmbedding удаляет эмбеддинг по ID.
 func (s *IndexStore) DeleteEmbedding(ctx context.Context, id int64) error {
-	_, err := s.execContext(ctx, `DELETE FROM embeddings WHERE id = ?`, id)
+	err := s.execContext(ctx, `DELETE FROM embeddings WHERE id = ?`, id)
 	if err != nil {
 		return errors.Errorf("delete embedding: %w", err)
 	}
@@ -284,7 +291,7 @@ func (s *IndexStore) DeleteEmbedding(ctx context.Context, id int64) error {
 
 // UpsertNode вставляет или обновляет ноду в индексе.
 func (s *IndexStore) UpsertNode(ctx context.Context, path, contentHash, bodyHash string, nodeEmbeddingID int64) error {
-	_, err := s.execContext(ctx, `
+	err := s.execContext(ctx, `
 		INSERT INTO indexed_nodes (path, content_hash, body_hash, indexed_at, node_embedding_id)
 		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
 		ON CONFLICT(path) DO UPDATE SET
@@ -313,7 +320,7 @@ func (s *IndexStore) UpsertNodeSearch(ctx context.Context, doc NodeSearchDocumen
 		manualProcessed = 1
 	}
 
-	_, err := s.execContext(ctx, `
+	err := s.execContext(ctx, `
 		INSERT INTO node_search (
 			path, title, type, aliases, annotation, keywords, source_url, manual_processed, body, searchable_text
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -333,11 +340,11 @@ func (s *IndexStore) UpsertNodeSearch(ctx context.Context, doc NodeSearchDocumen
 		return errors.Errorf("upsert node search: %w", err)
 	}
 
-	if s.KeywordIndexMode() == "fts5" {
-		if _, err := s.execContext(ctx, `DELETE FROM node_search_fts WHERE path = ?`, doc.Path); err != nil {
+	if s.KeywordIndexMode() == keywordIndexModeFTS5 {
+		if err := s.execContext(ctx, `DELETE FROM node_search_fts WHERE path = ?`, doc.Path); err != nil {
 			return errors.Errorf("delete node search fts: %w", err)
 		}
-		_, err := s.execContext(ctx, `
+		err := s.execContext(ctx, `
 			INSERT INTO node_search_fts (
 				path, title, type, aliases, annotation, keywords, source_url, body, searchable_text
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -356,16 +363,16 @@ func (s *IndexStore) DeleteNode(ctx context.Context, path string) error {
 	if err := s.DeleteChunks(ctx, path); err != nil {
 		return err
 	}
-	if _, err := s.execContext(ctx, `DELETE FROM node_search WHERE path = ?`, path); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM node_search WHERE path = ?`, path); err != nil {
 		return errors.Errorf("delete node search: %w", err)
 	}
-	if s.KeywordIndexMode() == "fts5" {
-		if _, err := s.execContext(ctx, `DELETE FROM node_search_fts WHERE path = ?`, path); err != nil {
+	if s.KeywordIndexMode() == keywordIndexModeFTS5 {
+		if err := s.execContext(ctx, `DELETE FROM node_search_fts WHERE path = ?`, path); err != nil {
 			return errors.Errorf("delete node search fts: %w", err)
 		}
 	}
 
-	_, err := s.execContext(ctx, `DELETE FROM indexed_nodes WHERE path = ?`, path)
+	err := s.execContext(ctx, `DELETE FROM indexed_nodes WHERE path = ?`, path)
 	if err != nil {
 		return errors.Errorf("delete node: %w", err)
 	}
@@ -416,7 +423,7 @@ func (s *IndexStore) UpsertChunks(ctx context.Context, nodePath string, chunks [
 	}
 
 	for _, c := range chunks {
-		_, err := s.execContext(ctx, `
+		err := s.execContext(ctx, `
 			INSERT INTO chunks (node_path, chunk_index, heading, content, embedding_id)
 			VALUES (?, ?, ?, ?, ?)`,
 			nodePath, c.ChunkIndex, c.Heading, c.Content, c.EmbeddingID,
@@ -441,7 +448,7 @@ func (s *IndexStore) UpsertChunks(ctx context.Context, nodePath string, chunks [
 // UpsertChunkSearch stores searchable text for chunk-level keyword search.
 func (s *IndexStore) UpsertChunkSearch(ctx context.Context, doc ChunkSearchDocument) error {
 	searchableText := joinSearchText(doc.NodePath, doc.Heading, doc.Content)
-	_, err := s.execContext(ctx, `
+	err := s.execContext(ctx, `
 		INSERT INTO chunk_search (node_path, chunk_index, heading, content, searchable_text)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(node_path, chunk_index) DO UPDATE SET
@@ -454,11 +461,11 @@ func (s *IndexStore) UpsertChunkSearch(ctx context.Context, doc ChunkSearchDocum
 		return errors.Errorf("upsert chunk search: %w", err)
 	}
 
-	if s.KeywordIndexMode() == "fts5" {
-		if _, err := s.execContext(ctx, `DELETE FROM chunk_search_fts WHERE node_path = ? AND chunk_index = ?`, doc.NodePath, doc.ChunkIndex); err != nil {
+	if s.KeywordIndexMode() == keywordIndexModeFTS5 {
+		if err := s.execContext(ctx, `DELETE FROM chunk_search_fts WHERE node_path = ? AND chunk_index = ?`, doc.NodePath, doc.ChunkIndex); err != nil {
 			return errors.Errorf("delete chunk search fts: %w", err)
 		}
-		_, err := s.execContext(ctx, `
+		err := s.execContext(ctx, `
 			INSERT INTO chunk_search_fts (node_path, chunk_index, heading, content, searchable_text)
 			VALUES (?, ?, ?, ?, ?)`,
 			doc.NodePath, doc.ChunkIndex, doc.Heading, doc.Content, searchableText,
@@ -473,16 +480,16 @@ func (s *IndexStore) UpsertChunkSearch(ctx context.Context, doc ChunkSearchDocum
 
 // DeleteChunks удаляет все чанки ноды.
 func (s *IndexStore) DeleteChunks(ctx context.Context, nodePath string) error {
-	if _, err := s.execContext(ctx, `DELETE FROM chunk_search WHERE node_path = ?`, nodePath); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM chunk_search WHERE node_path = ?`, nodePath); err != nil {
 		return errors.Errorf("delete chunk search: %w", err)
 	}
-	if s.KeywordIndexMode() == "fts5" {
-		if _, err := s.execContext(ctx, `DELETE FROM chunk_search_fts WHERE node_path = ?`, nodePath); err != nil {
+	if s.KeywordIndexMode() == keywordIndexModeFTS5 {
+		if err := s.execContext(ctx, `DELETE FROM chunk_search_fts WHERE node_path = ?`, nodePath); err != nil {
 			return errors.Errorf("delete chunk search fts: %w", err)
 		}
 	}
 
-	_, err := s.execContext(ctx, `DELETE FROM chunks WHERE node_path = ?`, nodePath)
+	err := s.execContext(ctx, `DELETE FROM chunks WHERE node_path = ?`, nodePath)
 	if err != nil {
 		return errors.Errorf("delete chunks: %w", err)
 	}
@@ -591,40 +598,39 @@ func (s *IndexStore) GetStatus(ctx context.Context, model string) (*IndexStatus,
 
 // ClearAll удаляет все данные из индекса.
 func (s *IndexStore) ClearAll(ctx context.Context) error {
-	if _, err := s.execContext(ctx, `DELETE FROM chunk_search`); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM chunk_search`); err != nil {
 		return errors.Errorf("clear chunk search: %w", err)
 	}
-	if _, err := s.execContext(ctx, `DELETE FROM node_search`); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM node_search`); err != nil {
 		return errors.Errorf("clear node search: %w", err)
 	}
-	if s.KeywordIndexMode() == "fts5" {
-		if _, err := s.execContext(ctx, `DELETE FROM chunk_search_fts`); err != nil {
+	if s.KeywordIndexMode() == keywordIndexModeFTS5 {
+		if err := s.execContext(ctx, `DELETE FROM chunk_search_fts`); err != nil {
 			return errors.Errorf("clear chunk search fts: %w", err)
 		}
-		if _, err := s.execContext(ctx, `DELETE FROM node_search_fts`); err != nil {
+		if err := s.execContext(ctx, `DELETE FROM node_search_fts`); err != nil {
 			return errors.Errorf("clear node search fts: %w", err)
 		}
 	}
-	if _, err := s.execContext(ctx, `DELETE FROM chunks`); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM chunks`); err != nil {
 		return errors.Errorf("clear chunks: %w", err)
 	}
-	if _, err := s.execContext(ctx, `DELETE FROM indexed_nodes`); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM indexed_nodes`); err != nil {
 		return errors.Errorf("clear nodes: %w", err)
 	}
-	if _, err := s.execContext(ctx, `DELETE FROM embeddings`); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM embeddings`); err != nil {
 		return errors.Errorf("clear embeddings: %w", err)
 	}
 
 	return nil
 }
 
-func (s *IndexStore) execContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	result, err := s.db.ExecContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", query, err)
+func (s *IndexStore) execContext(ctx context.Context, query string, args ...any) error {
+	if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("%s: %w", query, err)
 	}
 
-	return result, nil
+	return nil
 }
 
 func (s *IndexStore) queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {

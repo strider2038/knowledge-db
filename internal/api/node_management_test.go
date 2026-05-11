@@ -120,6 +120,7 @@ Content here`
 
 	require.Eventually(t, func() bool {
 		_, err := store.GetNodeByPath(context.Background(), "topic/my-node")
+
 		return err == nil
 	}, time.Second, 10*time.Millisecond)
 
@@ -141,6 +142,7 @@ Content here`
 	require.Eventually(t, func() bool {
 		_, oldErr := store.GetNodeByPath(context.Background(), "topic/my-node")
 		newNode, newErr := store.GetNodeByPath(context.Background(), "new-topic/my-node")
+
 		return errors.Is(oldErr, sql.ErrNoRows) && newErr == nil && newNode.Path == "new-topic/my-node"
 	}, time.Second, 10*time.Millisecond)
 }

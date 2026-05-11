@@ -1,4 +1,4 @@
-package urlutil //nolint:testpackage // need access to stripTrackingParams
+package urlutil
 
 import (
 	"context"

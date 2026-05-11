@@ -1,4 +1,3 @@
-//nolint:testpackage // need access to AuthHandler test hooks; external tests use api package only
 package api
 
 import (

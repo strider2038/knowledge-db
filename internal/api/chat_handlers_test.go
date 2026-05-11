@@ -88,6 +88,7 @@ func createChatSessionID(t *testing.T, handler http.Handler) string {
 	}
 	require.NoError(t, json.Unmarshal(resp.Recorder().Body.Bytes(), &data))
 	require.NotEmpty(t, data.ID)
+
 	return data.ID
 }
 

@@ -20,11 +20,11 @@ func TestAPIProvider_Embed_WhenSingleText_ExpectSingleVector(t *testing.T) {
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 		var req embeddingRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req)) //nolint:testifylint // httptest handler
 		assert.Equal(t, "text-embedding-3-small", req.Model)
-		inputs, ok := req.Input.([]interface{})
-		require.True(t, ok)
-		require.Len(t, inputs, 1)
+		inputs, ok := req.Input.([]any)
+		require.True(t, ok) //nolint:testifylint // httptest handler
+		require.Len(t, inputs, 1) //nolint:testifylint // httptest handler
 		assert.Equal(t, "hello world", inputs[0])
 
 		resp := embeddingResponse{
@@ -36,7 +36,7 @@ func TestAPIProvider_Embed_WhenSingleText_ExpectSingleVector(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
+		require.NoError(t, json.NewEncoder(w).Encode(resp)) //nolint:testifylint // httptest handler
 	}))
 	defer server.Close()
 
@@ -62,7 +62,7 @@ func TestAPIProvider_Embed_WhenMultipleTexts_ExpectMultipleVectors(t *testing.T)
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
+		require.NoError(t, json.NewEncoder(w).Encode(resp)) //nolint:testifylint // httptest handler
 	}))
 	defer server.Close()
 
@@ -82,7 +82,7 @@ func TestAPIProvider_Embed_WhenAPIError_ExpectError(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 		resp := apiError{}
 		resp.Error.Message = "invalid api key"
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
+		require.NoError(t, json.NewEncoder(w).Encode(resp)) //nolint:testifylint // httptest handler
 	}))
 	defer server.Close()
 
@@ -107,7 +107,7 @@ func TestAPIProvider_Embed_WhenCountMismatch_ExpectError(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
+		require.NoError(t, json.NewEncoder(w).Encode(resp)) //nolint:testifylint // httptest handler
 	}))
 	defer server.Close()
 

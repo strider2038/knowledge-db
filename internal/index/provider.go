@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 
@@ -30,8 +29,8 @@ func NewAPIProvider(apiURL, apiKey, model string) *APIProvider {
 }
 
 type embeddingRequest struct {
-	Input interface{} `json:"input"`
-	Model string      `json:"model"`
+	Input any    `json:"input"`
+	Model string `json:"model"`
 }
 
 type embeddingResponse struct {
@@ -41,7 +40,7 @@ type embeddingResponse struct {
 	} `json:"data"`
 	Model string `json:"model"`
 	Usage struct {
-		TotalTokens int `json:"total_tokens"`
+		TotalTokens int `json:"total_tokens"` //nolint:tagliatelle // OpenAI embeddings usage JSON
 	} `json:"usage"`
 }
 
@@ -102,7 +101,7 @@ func (p *APIProvider) Embed(ctx context.Context, texts []string) ([][]float32, e
 	embeddings := make([][]float32, len(texts))
 	for i, d := range result.Data {
 		if d.Index != i {
-			return nil, fmt.Errorf("embedding API returned out-of-order result: index %d at position %d", d.Index, i)
+			return nil, errors.Errorf("embedding API returned out-of-order result: index %d at position %d", d.Index, i)
 		}
 		embeddings[i] = d.Embedding
 	}

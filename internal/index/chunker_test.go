@@ -33,7 +33,7 @@ func TestChunkText_WhenArticleNoHeadings_ExpectSingleChunk(t *testing.T) {
 	chunks := ChunkText(body)
 
 	require.Len(t, chunks, 1)
-	assert.Equal(t, "", chunks[0].Heading)
+	assert.Empty(t, chunks[0].Heading)
 	assert.Contains(t, chunks[0].Content, "Some content")
 }
 
@@ -58,7 +58,7 @@ func TestChunkText_WhenLongSection_ExpectSplitByParagraphs(t *testing.T) {
 	body := "## Long Section\n" + paragraph + "\n\n" + paragraph + "\n\n" + paragraph
 	chunks := ChunkText(body)
 
-	assert.True(t, len(chunks) > 1, "expected multiple chunks for long section")
+	assert.Greater(t, len(chunks), 1, "expected multiple chunks for long section")
 	for _, c := range chunks {
 		assert.Equal(t, "Long Section", c.Heading)
 	}
@@ -86,7 +86,7 @@ func TestChunkText_WhenMultipleShortSections_ExpectMergedCumulatively(t *testing
 		"## D\n" + strings.Repeat("d ", 30)
 	chunks := ChunkText(body)
 
-	assert.True(t, len(chunks) < 4, "expected some merging of short sections")
+	assert.Less(t, len(chunks), 4, "expected some merging of short sections")
 }
 
 func TestEstimateTokens(t *testing.T) {
@@ -94,5 +94,5 @@ func TestEstimateTokens(t *testing.T) {
 
 	assert.Equal(t, 0, estimateTokens(""))
 	assert.Equal(t, 1, estimateTokens("hello"))
-	assert.True(t, estimateTokens(strings.Repeat("word ", 100)) > 100)
+	assert.Greater(t, estimateTokens(strings.Repeat("word ", 100)), 100)
 }

@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-// Chunk представляет фрагмент тела статьи.
+// TextChunk — фрагмент тела статьи (заголовок секции и текст).
 type TextChunk struct {
 	Heading string
 	Content string
@@ -20,7 +20,7 @@ func ChunkText(body string) []TextChunk {
 	sections := splitByH2(body)
 	var chunks []TextChunk
 
-	for i := 0; i < len(sections); i++ {
+	for i := range sections {
 		sec := sections[i]
 		tokenCount := estimateTokens(sec.content)
 
@@ -45,8 +45,8 @@ func ChunkText(body string) []TextChunk {
 }
 
 type section struct {
-	heading  string
-	content  string
+	heading string
+	content string
 }
 
 func splitByH2(body string) []section {
@@ -60,10 +60,8 @@ func splitByH2(body string) []section {
 				sections = append(sections, current)
 			}
 			current = section{heading: strings.TrimPrefix(line, "## ")}
-		} else {
-			if current.content != "" || strings.TrimSpace(line) != "" {
-				current.content += line + "\n"
-			}
+		} else if current.content != "" || strings.TrimSpace(line) != "" {
+			current.content += line + "\n"
 		}
 	}
 
@@ -105,7 +103,7 @@ func splitByParagraphs(content string) []string {
 	var paragraphs []string
 	var buf strings.Builder
 
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if strings.TrimSpace(line) == "" {
 			if buf.Len() > 0 {
 				paragraphs = append(paragraphs, strings.TrimSpace(buf.String()))

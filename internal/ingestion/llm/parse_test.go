@@ -1,4 +1,4 @@
-package llm //nolint:testpackage // tests internal parseCreateNodeArgs
+package llm
 
 import (
 	"testing"

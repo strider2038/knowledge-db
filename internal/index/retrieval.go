@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"sort"
 	"strings"
 
@@ -397,13 +398,7 @@ func sortedKeys(values map[string]struct{}) []string {
 }
 
 func containsString(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(values, value)
 }
 
 func metadataStringSlice(value any) []string {

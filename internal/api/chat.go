@@ -238,19 +238,23 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 	sessionID := strings.TrimSpace(req.SessionID)
 	if sessionID == "" {
 		writeError(w, http.StatusBadRequest, "session_id is required")
+
 		return
 	}
 	if err := h.chatStore.EnsureSession(ctx, sessionID); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "chat not found")
+
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "chat store failed")
+
 		return
 	}
 	if err := h.chatStore.AddMessage(ctx, sessionID, "user", req.Message, false); err != nil {
 		clog.Errorf(ctx, "chat: save user message: %w", err)
 		writeError(w, http.StatusInternalServerError, "chat store failed")
+
 		return
 	}
 	_ = h.chatStore.SummarizeAndTrim(ctx, sessionID)
@@ -271,6 +275,7 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		assistantReply, err := h.streamLLMResponse(ctx, w, sessionID, req.Message, "", canFlush, flusher)
 		if err != nil {
 			clog.Errorf(ctx, "chat(memory): stream LLM response: %w", err)
+
 			return
 		}
 		_ = h.chatStore.AddMessage(ctx, sessionID, "assistant", assistantReply, false)
@@ -280,6 +285,7 @@ func (h *Handler) PostChat(w http.ResponseWriter, r *http.Request) {
 		if canFlush {
 			flusher.Flush()
 		}
+
 		return
 	}
 
@@ -424,7 +430,7 @@ func (h *Handler) rewriteSearchQuery(ctx context.Context, query string) string {
 	defer cancel()
 
 	params := responses.ResponseNewParams{
-		Model: shared.ResponsesModel(chatModel),
+		Model: shared.ResponsesModel(chatModel), //nolint:unconvert // shared.ResponsesModel is distinct from string
 		Instructions: openai.String(
 			"Rewrite the user's knowledge-base search question into a compact search query. " +
 				"Keep important exact terms, product names, acronyms, and domain terms. " +
@@ -512,20 +518,6 @@ func (h *Handler) GetIndexStatus(w http.ResponseWriter, r *http.Request) {
 		"last_indexed_at": status.LastIndexedAt,
 		"status":          status.Status,
 	})
-}
-
-func (h *Handler) searchContext(ctx context.Context, query string) ([]index.SearchResult, []index.ChunkSearchResult, error) {
-	nodeResults, err := index.VectorSearch(ctx, h.indexStore, h.embeddingProvider, query, 5)
-	if err != nil {
-		return nil, nil, errors.Errorf("vector search: %w", err)
-	}
-
-	chunkResults, err := index.ChunkSearch(ctx, h.indexStore, h.embeddingProvider, query, 5)
-	if err != nil {
-		return nil, nil, errors.Errorf("chunk search: %w", err)
-	}
-
-	return nodeResults, chunkResults, nil
 }
 
 func (h *Handler) buildSources(nodeResults []index.SearchResult, chunkResults []index.ChunkSearchResult) []ChatSource {
@@ -626,7 +618,7 @@ func (h *Handler) buildHybridContextText(results []index.HybridSearchResult) str
 
 func formatHybridNodeContextPiece(result index.HybridSearchResult) string {
 	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("--- %s ---\n", result.Path))
+	fmt.Fprintf(&buf, "--- %s ---\n", result.Path)
 	if strings.TrimSpace(result.Title) != "" {
 		buf.WriteString("Title: ")
 		buf.WriteString(result.Title)
@@ -649,9 +641,9 @@ func formatHybridNodeContextPiece(result index.HybridSearchResult) string {
 
 func formatHybridFragmentContextPiece(result index.HybridSearchResult, fragment index.HybridFragment) string {
 	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("--- Fragment from %s ---\n", result.Path))
+	fmt.Fprintf(&buf, "--- Fragment from %s ---\n", result.Path)
 	if fragment.Heading != "" {
-		buf.WriteString(fmt.Sprintf("## %s\n", fragment.Heading))
+		fmt.Fprintf(&buf, "## %s\n", fragment.Heading)
 	}
 	if fragment.Snippet != "" {
 		buf.WriteString("Snippet: ")
@@ -668,9 +660,9 @@ func formatHybridFragmentContextPiece(result index.HybridSearchResult, fragment 
 
 func formatChunkContextPiece(cr index.ChunkSearchResult) string {
 	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("--- Fragment from %s ---\n", cr.NodePath))
+	fmt.Fprintf(&buf, "--- Fragment from %s ---\n", cr.NodePath)
 	if cr.Heading != "" {
-		buf.WriteString(fmt.Sprintf("## %s\n", cr.Heading))
+		fmt.Fprintf(&buf, "## %s\n", cr.Heading)
 	}
 	buf.WriteString(cr.Content)
 	buf.WriteString("\n\n")
@@ -769,7 +761,7 @@ func (h *Handler) streamLLMResponse(ctx context.Context, w http.ResponseWriter, 
 	messages = append(messages, openai.UserMessage("Context:\n"+contextText+"\n\nQuestion: "+message))
 
 	params := openai.ChatCompletionNewParams{
-		Model:    shared.ChatModel(chatModel),
+		Model:    shared.ChatModel(chatModel), //nolint:unconvert // shared.ChatModel is distinct from string
 		Messages: messages,
 	}
 
@@ -795,6 +787,7 @@ func (h *Handler) streamLLMResponse(ctx context.Context, w http.ResponseWriter, 
 	if err := stream.Err(); err != nil {
 		return "", err
 	}
+
 	return full.String(), nil
 }
 
@@ -868,6 +861,7 @@ func detectChatMode(query string) chatMode {
 			return chatModeRAG
 		}
 	}
+
 	return chatModeHybrid
 }
 
@@ -901,9 +895,11 @@ func filterRelevantResults(query string, results []index.HybridSearchResult) []i
 		gap := filtered[i-1].Score - filtered[i].Score
 		if gap >= chatScoreGapCutoff {
 			cutIdx = i
+
 			break
 		}
 	}
+
 	return filtered[:cutIdx]
 }
 
@@ -924,6 +920,7 @@ func significantTerms(text string) []string {
 		}
 		terms = append(terms, p)
 	}
+
 	return terms
 }
 
@@ -944,13 +941,16 @@ func isLexicalResult(result index.HybridSearchResult) bool {
 
 func hasTermOverlap(queryTerms []string, result index.HybridSearchResult) bool {
 	bag := strings.ToLower(result.Path + " " + result.Title + " " + result.Annotation + " " + strings.Join(result.Keywords, " "))
+	var bagSb947 strings.Builder
 	for _, f := range result.Fragments {
-		bag += " " + strings.ToLower(f.Heading) + " " + strings.ToLower(f.Snippet) + " " + strings.ToLower(f.Content)
+		bagSb947.WriteString(" " + strings.ToLower(f.Heading) + " " + strings.ToLower(f.Snippet) + " " + strings.ToLower(f.Content))
 	}
+	bag += bagSb947.String()
 	for _, t := range queryTerms {
 		if strings.Contains(bag, t) {
 			return true
 		}
 	}
+
 	return false
 }

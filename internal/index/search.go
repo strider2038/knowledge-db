@@ -142,7 +142,7 @@ func KeywordSearchNodes(ctx context.Context, store *IndexStore, query string, to
 		return nil, nil
 	}
 
-	if store.KeywordIndexMode() == "fts5" {
+	if store.KeywordIndexMode() == keywordIndexModeFTS5 {
 		return fallbackKeywordSearchNodes(ctx, store, query, tokens, topK, keywordSearchNodesFTS)
 	}
 
@@ -159,7 +159,7 @@ func KeywordSearchChunks(ctx context.Context, store *IndexStore, query string, t
 		return nil, nil
 	}
 
-	if store.KeywordIndexMode() == "fts5" {
+	if store.KeywordIndexMode() == keywordIndexModeFTS5 {
 		return fallbackKeywordSearchChunks(ctx, store, query, tokens, topK, keywordSearchChunksFTS)
 	}
 

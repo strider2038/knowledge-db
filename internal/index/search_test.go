@@ -55,7 +55,7 @@ func TestCosineSimilarity_WhenDifferentLengths_Expect0(t *testing.T) {
 
 	a := []float32{1, 0}
 	b := []float32{1, 0, 0}
-	assert.Equal(t, float32(0), cosineSimilarity(a, b))
+	assert.InDelta(t, float32(0), cosineSimilarity(a, b), 1e-6)
 }
 
 func TestCosineSimilarity_WhenZeroVector_Expect0(t *testing.T) {
@@ -63,7 +63,7 @@ func TestCosineSimilarity_WhenZeroVector_Expect0(t *testing.T) {
 
 	a := []float32{0, 0, 0}
 	b := []float32{1, 0, 0}
-	assert.Equal(t, float32(0), cosineSimilarity(a, b))
+	assert.InDelta(t, float32(0), cosineSimilarity(a, b), 1e-6)
 }
 
 func TestVectorSearch_WhenMatch_ExpectSorted(t *testing.T) {
@@ -88,8 +88,8 @@ func TestVectorSearch_WhenMatch_ExpectSorted(t *testing.T) {
 
 	assert.Equal(t, "a/b", results[0].Path)
 	assert.Equal(t, "a/b", results[0].Title)
-	assert.Equal(t, "", results[0].Annotation)
-	assert.True(t, results[0].Score > results[1].Score)
+	assert.Empty(t, results[0].Annotation)
+	assert.Greater(t, results[0].Score, results[1].Score)
 }
 
 func TestVectorSearch_WhenEmpty_ExpectNil(t *testing.T) {
@@ -146,7 +146,7 @@ func TestChunkSearch_WhenMatch_ExpectSorted(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 	assert.Equal(t, "Section 1", results[0].Heading)
-	assert.True(t, results[0].Score > results[1].Score)
+	assert.Greater(t, results[0].Score, results[1].Score)
 }
 
 func TestChunkSearch_WhenEmpty_ExpectNil(t *testing.T) {
@@ -240,7 +240,7 @@ func TestExactTokenBoost_WhenRussianSuffixDiffers_ExpectTitleBoost(t *testing.T)
 		Title: "Context Mode: использование токенов контекста",
 	})
 
-	assert.Equal(t, 6.0, boost)
+	assert.InDelta(t, 6.0, boost, 1e-9)
 }
 
 func TestKeywordSearchNodes_WhenQuestionHasStopWords_ExpectCleanKeywordMatch(t *testing.T) {
@@ -318,7 +318,7 @@ func TestKeywordSearch_WhenScanFallback_ExpectHits(t *testing.T) {
 	t.Parallel()
 
 	store := setupKeywordStore(t)
-	store.keywordIndexMode = "scan"
+	store.keywordIndexMode = keywordIndexModeScan
 	ctx := context.Background()
 
 	nodes, chunks, err := KeywordSearch(ctx, store, "local index", 5)

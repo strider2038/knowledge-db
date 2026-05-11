@@ -273,6 +273,7 @@ func (w *SyncWorker) fullReconcile(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			logger.Warn("sync: full reconcile cancelled by context")
+
 			return
 		default:
 		}
@@ -287,6 +288,7 @@ func (w *SyncWorker) fullReconcile(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			logger.Warn("sync: full reconcile cancelled by context (stale deletion phase)")
+
 			return
 		default:
 		}
@@ -420,7 +422,7 @@ func extractStringList(meta map[string]any, key string) []string {
 	switch v := raw.(type) {
 	case []string:
 		return v
-	case []interface{}:
+	case []any:
 		result := make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok {

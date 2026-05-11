@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,8 @@ const (
 	defaultMaxMessages     = 40
 	defaultMaxContextRunes = 24000
 )
+
+var errChatTitleRequired = errors.New("chat: title is required")
 
 type Store struct {
 	db              *sql.DB
@@ -47,11 +50,13 @@ func NewStore(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;`); err != nil {
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;`); err != nil {
 		_ = db.Close()
+
 		return nil, fmt.Errorf("sqlite pragmas: %w", err)
 	}
-	if _, err := db.Exec(`
+	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS chat_sessions (
 	id TEXT PRIMARY KEY,
 	title TEXT NOT NULL,
@@ -73,6 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_sessions_expires ON chat_sessions(expires_at
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id);
 `); err != nil {
 		_ = db.Close()
+
 		return nil, fmt.Errorf("sqlite schema: %w", err)
 	}
 
@@ -92,6 +98,7 @@ func (s *Store) CreateSession(ctx context.Context, id, title string) (Session, e
 	if err != nil {
 		return Session{}, err
 	}
+
 	return Session{ID: id, Title: title, CreatedAt: now, UpdatedAt: now}, nil
 }
 
@@ -112,6 +119,7 @@ func (s *Store) ListSessions(ctx context.Context) ([]Session, error) {
 		i.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 		items = append(items, i)
 	}
+
 	return items, rows.Err()
 }
 
@@ -141,13 +149,14 @@ func (s *Store) GetSession(ctx context.Context, id string) (SessionDetails, erro
 		m.CreatedAt, _ = time.Parse(time.RFC3339Nano, ts)
 		out.Messages = append(out.Messages, m)
 	}
+
 	return out, rows.Err()
 }
 
 func (s *Store) RenameSession(ctx context.Context, id, title string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return fmt.Errorf("title is required")
+		return errChatTitleRequired
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, time.Now().UTC().Format(time.RFC3339Nano), id)
 	if err != nil {
@@ -156,6 +165,7 @@ func (s *Store) RenameSession(ctx context.Context, id, title string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return sql.ErrNoRows
 	}
+
 	return nil
 }
 
@@ -167,11 +177,13 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return sql.ErrNoRows
 	}
+
 	return nil
 }
 
 func (s *Store) EnsureSession(ctx context.Context, id string) error {
 	_, err := s.GetSession(ctx, id)
+
 	return err
 }
 
@@ -194,6 +206,7 @@ func (s *Store) AddMessage(ctx context.Context, sessionID, role, content string,
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -219,6 +232,7 @@ WHERE id = ?
 		return err
 	}
 	_, _ = res.RowsAffected()
+
 	return nil
 }
 
@@ -232,6 +246,7 @@ func deriveTitleFromMessage(content string) string {
 	if len(r) > 60 {
 		title = strings.TrimSpace(string(r[:60])) + "…"
 	}
+
 	return title
 }
 
@@ -250,6 +265,7 @@ func (s *Store) BuildPromptMessages(ctx context.Context, sessionID string) ([]ma
 		}
 		if isSummary == 1 {
 			items = append(items, map[string]string{"role": "system", "content": "Summary of previous dialog: " + content})
+
 			continue
 		}
 		items = append(items, map[string]string{"role": role, "content": content})
@@ -257,6 +273,7 @@ func (s *Store) BuildPromptMessages(ctx context.Context, sessionID string) ([]ma
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
 	return s.compactPrompt(items), nil
 }
 
@@ -265,6 +282,7 @@ func (s *Store) compactPrompt(items []map[string]string) []map[string]string {
 		return compactByRunes(items, s.maxContextRunes)
 	}
 	start := len(items) - s.maxMessages
+
 	return compactByRunes(items[start:], s.maxContextRunes)
 }
 
@@ -279,9 +297,11 @@ func compactByRunes(items []map[string]string, budget int) []map[string]string {
 			if i+1 < len(items) {
 				return items[i+1:]
 			}
+
 			break
 		}
 	}
+
 	return items
 }
 
@@ -298,6 +318,9 @@ func (s *Store) SummarizeAndTrim(ctx context.Context, sessionID string) error {
 			return err
 		}
 		messages = append(messages, r)
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	trimCount := s.summaryTrimCount(messages)
 	if trimCount == 0 {
@@ -336,6 +359,7 @@ func (s *Store) SummarizeAndTrim(ctx context.Context, sessionID string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -387,20 +411,15 @@ func (s *Store) CleanupExpired(ctx context.Context) error {
 		return err
 	}
 	_, _ = s.db.ExecContext(ctx, `VACUUM`)
+
 	return nil
 }
 
-func truncateRunes(v string, max int) string {
+func truncateRunes(v string, limit int) string {
 	r := []rune(v)
-	if len(r) <= max {
+	if len(r) <= limit {
 		return v
 	}
-	return string(r[:max])
-}
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	return string(r[:limit])
 }

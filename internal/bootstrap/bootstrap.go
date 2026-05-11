@@ -228,13 +228,16 @@ func buildChatStore(cfg *config.Config) *chat.Store {
 	kbDir := filepath.Join(cfg.DataPath, ".kb")
 	if err := os.MkdirAll(kbDir, 0o755); err != nil {
 		slog.Error("failed to create .kb directory for chat store", "error", err)
+
 		return nil
 	}
 	dbPath := filepath.Join(kbDir, "chat.db")
 	store, err := chat.NewStore(dbPath)
 	if err != nil {
 		slog.Error("failed to open chat database", "error", err)
+
 		return nil
 	}
+
 	return store
 }
