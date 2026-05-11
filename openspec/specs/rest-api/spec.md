@@ -283,3 +283,108 @@ API MUST предоставлять эндпоинт `POST /api/git/commit` дл
 - **WHEN** POST /api/git/commit и нет незакоммиченных изменений
 - **THEN** возвращается `{ "committed": false, "message": "no changes to commit" }`
 
+### Requirement: API управления чат-сессиями
+
+Система SHALL предоставлять REST API для создания, получения списка, чтения, продолжения, удаления и переименования чат-сессий.
+
+#### Scenario: Получение списка чатов
+
+- **WHEN** клиент запрашивает список чат-сессий
+- **THEN** система MUST вернуть упорядоченный список сессий с id, title, updatedAt и краткими метаданными
+
+#### Scenario: Открытие чата
+
+- **WHEN** клиент запрашивает конкретную сессию по id
+- **THEN** система SHALL вернуть сообщения сессии в пользовательском представлении без служебных summary-сегментов
+
+#### Scenario: Удаление чата
+
+- **WHEN** клиент удаляет чат-сессию по id
+- **THEN** система MUST удалить сессию и связанные данные из SQLite и вернуть успешный статус операции
+
+#### Scenario: Переименование чата
+
+- **WHEN** клиент отправляет новое название чата
+- **THEN** система MUST обновить title сессии и вернуть обновлённые метаданные
+
+### Requirement: API отправки сообщения в сессию
+
+Система MUST принимать новое сообщение в выбранную сессию и возвращать ответ ассистента, сформированный с учётом истории и ограничений контекста.
+
+#### Scenario: Сообщение в существующий чат
+
+- **WHEN** клиент отправляет сообщение в существующую сессию
+- **THEN** система SHALL сохранить сообщение, выполнить генерацию ответа и вернуть обновлённое состояние чата
+
+#### Scenario: Ошибка неизвестной сессии
+
+- **WHEN** клиент отправляет сообщение в несуществующую сессию
+- **THEN** система MUST вернуть 404 с диагностируемой ошибкой
+
+### Requirement: Endpoint чатбота POST /api/chat
+
+API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` для RAG-чатбота с поддержкой чат-сессий. Запрос MUST содержать `message` (string) и `session_id` активной сессии. Создание новой сессии выполняется через `POST /api/chats`. Запрос MAY содержать `source_paths` для ограничения ответа выбранными источниками. Ответ MUST быть streaming (SSE) и MUST использовать гибридный retrieval pipeline для поиска контекста (кроме режима `chat_memory`, см. capability rag-chat). Генерация LLM ответа SHOULD использовать OpenAI-compatible Chat Completions streaming. SSE response MUST не сжиматься gzip middleware. При `KB_EMBEDDING_ENABLED=false` MUST возвращать 503. При пустом `message` или отсутствии `session_id` MUST возвращать 400.
+
+#### Scenario: Успешный запрос
+
+- **WHEN** `POST /api/chat` с `{ "session_id": "...", "message": "..." }`
+- **THEN** выполняется гибридный retrieval (в соответствующем режиме), возвращается SSE stream с источниками и токенами ответа
+
+#### Scenario: Запрос по выбранным источникам
+
+- **WHEN** `POST /api/chat` содержит `source_paths`
+- **THEN** контекст ответа ограничивается указанными источниками
+
+#### Scenario: SSE не сжимается
+
+- **WHEN** клиент запрашивает `/api/chat` с `Accept-Encoding: gzip`
+- **THEN** response не содержит `Content-Encoding: gzip`, имеет `Content-Type: text/event-stream` и может отдавать токены без gzip buffering
+
+#### Scenario: Сервис недоступен
+
+- **WHEN** `POST /api/chat` при `KB_EMBEDDING_ENABLED=false`
+- **THEN** возвращается 503
+
+### Requirement: Управление индексом
+
+API ДОЛЖЕН (SHALL) предоставлять endpoints для управления индексом: `POST /api/index/rebuild` — полная перестройка индекса (запускает SyncWorker ManualRebuild); `GET /api/index/status` — состояние индекса (total_nodes, total_chunks, embedding_model, keyword_index, last_indexed_at, status). Оба endpoint MUST возвращать 503 при `KB_EMBEDDING_ENABLED=false`.
+
+#### Scenario: Запуск перестройки индекса
+
+- **WHEN** `POST /api/index/rebuild`
+- **THEN** запускается полная переиндексация, возвращается 202 Accepted
+
+#### Scenario: Проверка статуса индекса
+
+- **WHEN** `GET /api/index/status`
+- **THEN** возвращается JSON с метриками индекса, включая режим keyword_index
+
+### Requirement: Endpoint гибридного поиска POST /api/search
+
+API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/search` для гибридного поиска по базе знаний. Запрос MUST содержать `query` (string). Запрос MAY содержать `type`, `path`, `recursive`, `manual_processed`, `limit`, `offset` и `mode`. Ответ MUST содержать `results`, `total`, `query`, `mode` и метаданные retrieval. Метаданные MUST содержать `keyword_index` и MAY содержать `query_rewrite`, если поиск использовал LLM-normalized query. Endpoint MUST возвращать 503, если индекс недоступен для гибридного поиска.
+
+#### Scenario: Успешный гибридный поиск
+
+- **WHEN** клиент отправляет `POST /api/search` с `{ "query": "sqlite vector search" }`
+- **THEN** API возвращает JSON со списком ранжированных карточек нод и релевантных фрагментов
+
+#### Scenario: Пустой запрос
+
+- **WHEN** клиент отправляет `POST /api/search` с пустым `query`
+- **THEN** API возвращает 400 с ошибкой валидации
+
+#### Scenario: Фильтр по типу
+
+- **WHEN** клиент отправляет `POST /api/search` с `type=["article"]`
+- **THEN** API возвращает только article-ноды
+
+#### Scenario: Индекс недоступен
+
+- **WHEN** `KB_EMBEDDING_ENABLED=false` или индекс не инициализирован
+- **THEN** `POST /api/search` возвращает 503
+
+#### Scenario: Ответ содержит query rewrite metadata
+
+- **WHEN** поиск использует LLM rewrite исходного запроса
+- **THEN** JSON response содержит `meta.query_rewrite` с фактически использованным rewrite query
+

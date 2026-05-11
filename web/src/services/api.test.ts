@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getNodesWithParams } from './api'
+import { getNodesWithParams, searchKnowledgeBase, streamChat } from './api'
 
 describe('getNodesWithParams', () => {
   let fetchMock: ReturnType<typeof vi.fn>
@@ -156,5 +156,103 @@ describe('ingestText', () => {
     })
     const { ingestText } = await import('./api')
     await expect(ingestText('text')).rejects.toThrow('ingestion not implemented')
+  })
+})
+
+describe('searchKnowledgeBase', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('posts search request and returns response', async () => {
+    const response = {
+      results: [],
+      total: 0,
+      query: 'sqlite',
+      mode: 'search',
+      meta: { keyword_index: 'fts5' },
+    }
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => response,
+    })
+
+    const result = await searchKnowledgeBase({
+      query: 'sqlite',
+      type: ['article'],
+      source_paths: ['articles/sqlite'],
+    })
+
+    expect(result).toEqual(response)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/search'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          query: 'sqlite',
+          type: ['article'],
+          source_paths: ['articles/sqlite'],
+        }),
+      })
+    )
+  })
+})
+
+describe('streamChat', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sends source_paths and parses sources with fragments', async () => {
+    const chunks = [
+      'data: {"sources":[{"path":"a/b","title":"A","type":"article","fragments":[{"heading":"H","snippet":"S","score":1,"match_type":"keyword"}]}]}\n\n',
+      'data: {"token":"ok"}\n\n',
+      'data: [DONE]\n\n',
+    ]
+    const encoder = new TextEncoder()
+    fetchMock.mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+          controller.close()
+        },
+      }),
+    })
+    const onSources = vi.fn()
+    const onToken = vi.fn()
+    const onDone = vi.fn()
+
+    streamChat('session-1', 'sqlite', { sourcePaths: ['a/b'] }, onSources, onToken, onDone, vi.fn())
+    await vi.waitFor(() => expect(onDone).toHaveBeenCalled())
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      session_id: 'session-1',
+      message: 'sqlite',
+      source_paths: ['a/b'],
+    })
+    expect(onSources).toHaveBeenCalledWith([
+      {
+        path: 'a/b',
+        title: 'A',
+        type: 'article',
+        fragments: [{ heading: 'H', snippet: 'S', score: 1, match_type: 'keyword' }],
+      },
+    ])
+    expect(onToken).toHaveBeenCalledWith('ok')
   })
 })

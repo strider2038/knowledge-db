@@ -399,3 +399,222 @@ export async function postGitCommit(message?: string): Promise<GitCommitResponse
   }
   return res.json();
 }
+
+export interface IndexStatusResponse {
+  total_nodes: number;
+  total_chunks: number;
+  embedding_model: string;
+  keyword_index: 'fts5' | 'scan' | 'disabled';
+  last_indexed_at: string;
+  status: string;
+}
+
+export async function getIndexStatus(): Promise<IndexStatusResponse> {
+  const res = await apiFetch(`${API_URL}/api/index/status`);
+  if (!res.ok) throw new Error('Embedding service unavailable');
+  return res.json();
+}
+
+export async function postIndexRebuild(): Promise<{ status: string }> {
+  const res = await apiFetch(`${API_URL}/api/index/rebuild`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to trigger rebuild');
+  return res.json();
+}
+
+export interface SearchFragment {
+  heading?: string;
+  snippet?: string;
+  content?: string;
+  score: number;
+  match_type: string;
+}
+
+export interface SearchResult {
+  path: string;
+  title: string;
+  type: string;
+  annotation: string;
+  keywords: string[];
+  source_url?: string;
+  score: number;
+  rank: number;
+  match_reasons: string[];
+  source_kinds: string[];
+  fragments?: SearchFragment[];
+}
+
+export interface SearchRequest {
+  query: string;
+  type?: string[];
+  path?: string;
+  recursive?: boolean;
+  manual_processed?: boolean;
+  limit?: number;
+  offset?: number;
+  mode?: 'search' | 'chat';
+  source_paths?: string[];
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  query: string;
+  mode: 'search' | 'chat';
+  meta: {
+    keyword_index: 'fts5' | 'scan' | 'disabled';
+    query_rewrite?: string;
+  };
+}
+
+export async function searchKnowledgeBase(req: SearchRequest): Promise<SearchResponse> {
+  const res = await apiFetch(`${API_URL}/api/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Search failed');
+  }
+  return res.json();
+}
+
+export interface ChatSource {
+  path: string;
+  title?: string;
+  type?: string;
+  fragments?: SearchFragment[];
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export async function listChats(): Promise<ChatSession[]> {
+  const res = await apiFetch(`${API_URL}/api/chats`);
+  if (!res.ok) throw new Error('Failed to load chats');
+  const data = await res.json();
+  return data.sessions || [];
+}
+
+export async function createChat(title?: string): Promise<ChatSession> {
+  const res = await apiFetch(`${API_URL}/api/chats`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to create chat');
+  }
+  return res.json();
+}
+
+export async function getChat(id: string): Promise<{ session: ChatSession; messages: ChatMessage[] }> {
+  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to load chat');
+  }
+  const data = await res.json() as { session: ChatSession; messages?: ChatMessage[] | null };
+  return {
+    session: data.session,
+    messages: Array.isArray(data.messages) ? data.messages : [],
+  };
+}
+
+export async function renameChat(id: string, title: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to rename chat');
+  }
+}
+
+export async function deleteChat(id: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to delete chat');
+  }
+}
+
+export function streamChat(
+  sessionId: string,
+  message: string,
+  options: { sourcePaths?: string[] } | undefined,
+  onSources: (sources: ChatSource[]) => void,
+  onToken: (token: string) => void,
+  onDone: () => void,
+  onError: (error: Error) => void,
+): AbortController {
+  const controller = new AbortController();
+  const fetchChat = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/chat`, {
+        ...fetchOptions,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          message,
+          source_paths: options?.sourcePaths,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || 'Chat failed');
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') {
+            onDone();
+            return;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.sources !== undefined) {
+              onSources(parsed.sources as ChatSource[]);
+            } else if (parsed.token) {
+              onToken(parsed.token as string);
+            }
+          } catch {
+            // skip malformed
+          }
+        }
+      }
+      onDone();
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        onError(err instanceof Error ? err : new Error('Chat failed'));
+      }
+    }
+  };
+  void fetchChat();
+  return controller;
+}

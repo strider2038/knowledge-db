@@ -85,3 +85,29 @@ func TestGzip_WhenRangeHeader_PassesThrough(t *testing.T) {
 		t.Errorf("expected no Content-Encoding for Range request, got %q", rec.Header().Get("Content-Encoding"))
 	}
 }
+
+func TestGzip_WhenChatSSE_PassesThrough(t *testing.T) {
+	t.Parallel()
+
+	body := "data: ok\n\n"
+	handler := api.Gzip(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(body))
+	}))
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Header().Get("Content-Encoding") != "" {
+		t.Errorf("expected no Content-Encoding for SSE, got %q", rec.Header().Get("Content-Encoding"))
+	}
+	if rec.Body.String() != body {
+		t.Errorf("expected uncompressed SSE body, got %q", rec.Body.String())
+	}
+}

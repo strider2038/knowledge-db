@@ -13,6 +13,9 @@ import (
 const gitignoreContent = `**/.local/
 **/.local/**
 
+# Embedding index (SQLite)
+.kb/
+
 # Obsidian
 .obsidian/workspace.json
 .obsidian/app.json

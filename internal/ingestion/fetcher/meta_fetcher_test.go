@@ -1,4 +1,3 @@
-//nolint:testpackage // tests need access to unexported test hooks.
 package fetcher
 
 import (

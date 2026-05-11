@@ -1,12 +1,12 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
-import { logout, postGitCommit } from '@/services/api'
+import { logout, postGitCommit, getIndexStatus } from '@/services/api'
 import { useGitStatus } from '@/hooks/useGitStatus'
 import { toast } from '@/hooks/use-toast'
 import { ModeToggle } from './mode-toggle'
 import { Button } from './ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const GIT_DISABLED_HINT =
   'На сервере отключён git (например KB_GIT_DISABLED=true). Сохранение в репозиторий через интерфейс недоступно — используйте git вручную в каталоге базы.'
@@ -16,6 +16,20 @@ export function Navbar() {
   const { authenticated, authEnabled, refresh } = useAuth()
   const { status: gitStatus, refresh: refreshGit } = useGitStatus()
   const [committing, setCommitting] = useState(false)
+  const [chatAvailable, setChatAvailable] = useState(false)
+  const [searchAvailable, setSearchAvailable] = useState(false)
+
+  useEffect(() => {
+    getIndexStatus()
+      .then((status) => {
+        setChatAvailable(true)
+        setSearchAvailable(status.keyword_index === 'fts5' || status.keyword_index === 'scan')
+      })
+      .catch(() => {
+        setChatAvailable(false)
+        setSearchAvailable(false)
+      })
+  }, [])
 
   const handleLogout = async () => {
     try {
@@ -88,6 +102,30 @@ export function Navbar() {
       >
         Добавить
       </Link>
+      {searchAvailable && (
+        <Link
+          to="/search"
+          className={
+            location.pathname === '/search'
+              ? 'font-semibold text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }
+        >
+          Поиск
+        </Link>
+      )}
+      {chatAvailable && (
+        <Link
+          to="/chat"
+          className={
+            location.pathname === '/chat'
+              ? 'font-semibold text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }
+        >
+          Чат
+        </Link>
+      )}
       <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
         {showSaveArea && !saveActive && (
           <Tooltip>

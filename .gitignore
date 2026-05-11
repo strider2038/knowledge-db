@@ -1,6 +1,7 @@
 /kb-cli
 /kb-server
 /tmp
+/.playwright-mcp
 
 .env
 .env.local

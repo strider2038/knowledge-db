@@ -11,7 +11,10 @@ import (
 
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
+	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
+	"github.com/strider2038/knowledge-db/internal/chat"
 	"github.com/strider2038/knowledge-db/internal/import/session"
+	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
@@ -22,19 +25,30 @@ import (
 
 // Handler — HTTP handlers для API.
 type Handler struct {
-	dataPath             string
-	uploadsDir           string
-	ingester             ingestion.Ingester
-	sessionStore         session.SessionStore
-	translationQueue     *translationqueue.Queue
-	gitCommitter         igit.GitCommitter
-	commitMsgGen         *igit.CommitMessageGenerator
-	gitDisabled          bool
+	dataPath          string
+	uploadsDir        string
+	ingester          ingestion.Ingester
+	sessionStore      session.SessionStore
+	translationQueue  *translationqueue.Queue
+	gitCommitter      igit.GitCommitter
+	commitMsgGen      *igit.CommitMessageGenerator
+	gitDisabled       bool
+	indexStore        *index.IndexStore
+	syncWorker        *index.SyncWorker
+	embeddingProvider index.EmbeddingProvider
+	embeddingConfig   config.Embedding
+	chatClient        chatClient
+	chatStore         *chat.Store
 }
 
 // NewHandler создаёт Handler.
 func NewHandler(dataPath string, ingester ingestion.Ingester) *Handler {
 	return &Handler{dataPath: dataPath, ingester: ingester}
+}
+
+// SetChatStore устанавливает sqlite-хранилище чат-сессий.
+func (h *Handler) SetChatStore(store *chat.Store) {
+	h.chatStore = store
 }
 
 // NewHandlerWithUploads создаёт Handler с поддержкой импорта (KB_UPLOADS_DIR).
@@ -57,6 +71,19 @@ func (h *Handler) SetGitCommitter(committer igit.GitCommitter, msgGen *igit.Comm
 	h.gitCommitter = committer
 	h.commitMsgGen = msgGen
 	h.gitDisabled = gitDisabled
+}
+
+// SetIndexComponents устанавливает компоненты индекса для RAG.
+// При nil store все embedding endpoints возвращают 503.
+func (h *Handler) SetIndexComponents(store *index.IndexStore, worker *index.SyncWorker, provider index.EmbeddingProvider, cfg config.Embedding) {
+	h.indexStore = store
+	h.syncWorker = worker
+	h.embeddingProvider = provider
+	h.embeddingConfig = cfg
+	if cfg.IsConfigured() {
+		chatURL, chatKey := cfg.ChatAPIConfig()
+		h.chatClient = newOpenAIChatClient(chatURL, chatKey)
+	}
 }
 
 // PostArticleTranslate обрабатывает POST /api/articles/translate/{path...}.
@@ -177,6 +204,10 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
+	}
+	if h.syncWorker != nil {
+		h.syncWorker.Send(index.SingleNodeEvent{Path: nodePath})
+		h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
 	}
 	writeJSON(w, node)
 }
@@ -602,7 +633,7 @@ func NewSPAHandler() (http.Handler, error) {
 func isSPAClientRoute(path string) bool {
 	path = strings.TrimPrefix(path, "/")
 
-	return path == "add" || path == "search"
+	return path == "add" || path == "search" || path == "chat"
 }
 
 // serveIndexHTML отдаёт index.html без FileServer, чтобы избежать редиректов.

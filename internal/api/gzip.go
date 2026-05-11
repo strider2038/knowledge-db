@@ -10,6 +10,11 @@ import (
 // Не сжимает при Range-запросах (частичная загрузка несовместима с gzip).
 func Gzip(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/chat" {
+			next.ServeHTTP(w, r)
+
+			return
+		}
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next.ServeHTTP(w, r)
 

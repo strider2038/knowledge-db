@@ -1,4 +1,4 @@
-package translation //nolint:testpackage // testing unexported chunking functions
+package translation
 
 import (
 	"strings"

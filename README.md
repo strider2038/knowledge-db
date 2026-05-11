@@ -94,7 +94,16 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **KB_PUBLIC_WEB_BASE_URL**                                       | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); **обязателен в режиме Google OAuth** (редирект после входа в SPA), в ответе бота — ссылка «Открыть на сайте» |
 | **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL**                  | LLM для ingestion (OpenAI-совместимый API)                                                                                                                                                      |
 | **JINA_API_KEY**                                                 | Ключ Jina для эмбеддингов (опционально)                                                                                                                                                         |
-| **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                             |
+| **KB_EMBEDDING_ENABLED**                                         | Включить RAG и чат-бота (true/false, по умолчанию false)                                                                                                                                        |
+| **KB_EMBEDDING_API_URL**                                         | URL API для эмбеддингов (Ollama: http://localhost:11434)                                                                                                                                        |
+| **KB_EMBEDDING_API_KEY**                                         | API key для эмбеддингов (Ollama: пустой)                                                                                                                                                        |
+| **KB_EMBEDDING_MODEL**                                           | Модель для эмбеддингов (по умолчанию text-embedding-3-small)                                                                                                                                    |
+| **KB_CHAT_MODEL**                                                | Модель для чат-бота (например llama3, mistral)                                                                                                                                                 |
+| **KB_CHAT_API_URL**                                              | URL API для чата (если отличается от KB_EMBEDDING_API_URL)                                                                                                                                      |
+| **KB_CHAT_API_KEY**                                              | API key для чата                                                                                                                                                                               |
+| **KB_EMBEDDING_RATE_LIMIT**                                     | Rate limit между запросами к API эмбеддингов (по умолчанию 1s)                                                                                                                                |
+| **LOG_LEVEL**                                                    | Уровень логирования: debug, info, warn, error (по умолчанию info)                                                                                                                             |
+| **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                           |
 | **VITE_API_URL**                                                 | URL API для web (по умолчанию [http://localhost:8080](http://localhost:8080))                                                                                                                   |
 | **ALLOWED_CORS_ORIGIN**                                          | CORS origin для dev (например [http://localhost:5173](http://localhost:5173))                                                                                                                   |
 
@@ -137,6 +146,88 @@ UI и API должны согласовываться по CORS: для producti
 При публичном доступе (вне localhost) рекомендуется использовать TLS: cookie `Secure` требует HTTPS. Настройте reverse proxy (nginx, Caddy) с TLS и корректные заголовки `X-Forwarded-Proto`, `X-Forwarded-For`.
 
 При включённой авторизации для production задайте `ALLOWED_CORS_ORIGIN` (origin вашего web UI) — это усиливает проверку Origin/Referer для state-changing auth-запросов.
+
+## RAG и чат-бот
+
+Сервер поддерживает семантический поиск и чат-бот на основе RAG (Retrieval Augmented Generation). Работает с локальными LLM через Ollama и LM Studio.
+
+**Полезные переменные окружения:**
+
+- `LOG_LEVEL=debug` — подробное логирование синхронизации индекса
+- `KB_EMBEDDING_RATE_LIMIT=500ms` — rate limit между запросами (по умолчанию 1s)
+
+### Быстрый старт с локальными моделями
+
+**1. Запустите Ollama** (для эмбеддингов):
+
+```bash
+ollama serve
+ollama pull bge-m3
+```
+
+**2. Запустите LM Studio** (для чата):
+
+- Скачайте LM Studio с https://lmstudio.ai
+- Загрузите модель (llama3, mistral и т.п.)
+- Запустите локальный сервер (кнопка в левом нижнем углу)
+- По умолчанию: http://localhost:1234/v1
+
+**3. Запустите kb-server**:
+
+```bash
+export KB_DATA_PATH=/path/to/data
+export KB_EMBEDDING_ENABLED=true
+export KB_EMBEDDING_API_URL=http://localhost:11434
+export KB_EMBEDDING_API_KEY=""
+export KB_EMBEDDING_MODEL=bge-m3
+export KB_CHAT_MODEL=openai/gpt-oss-20b
+export KB_CHAT_API_URL=http://localhost:1234/v1
+export KB_CHAT_API_KEY="-"
+
+./kb-server
+```
+
+### API эндпоинты
+
+- `GET /api/chats` — список чат-сессий
+- `POST /api/chats` — создать чат-сессию (`{ "title": "..." }`, title опционален)
+- `GET /api/chats/{id}` — получить чат и сообщения
+- `PATCH /api/chats/{id}` — переименовать чат (`{ "title": "..." }`)
+- `DELETE /api/chats/{id}` — удалить чат
+- `POST /api/chat` — отправить сообщение в чат-сессию (SSE stream)
+  - body: `{ "session_id": "...", "message": "...", "source_paths": ["optional/path"] }`
+  - summary-сообщения служебные и не возвращаются в пользовательской ленте
+- `GET /api/search?q=запрос` — семантический поиск
+- `GET /api/index/status` — статус индекса
+
+### Web UI (чат)
+
+- Чаты работают как список сессий: создать, выбрать, переименовать, удалить.
+- На мобильных устройствах список чатов открывается через выезжающий сайдбар.
+- Источники в ответах чата кликабельны и открываются в новой вкладке.
+
+### Переиндексация
+
+При старте сервера автоматически выполняется полная синхронизация индекса с файловой системой. После добавления новых записей можно запустить переиндексацию вручную:
+
+```bash
+curl -X POST http://localhost:8080/api/index/rebuild
+```
+
+### Логирование синхронизации индекса
+
+При уровне `LOG_LEVEL=debug` логируются все операции синхронизации:
+
+- `sync: performing initial full reconcile` — начальный reconcile при старте
+- `sync: event queued` — событие поставлено в очередь
+- `sync: event received` — событие получено на обработку
+- `sync: processing node` — обработка ноды
+- `sync: node deleted from index` — нода удалена из индекса
+- `sync: node unchanged, skipping` — хеши совпали, нода пропущена
+- `sync: node indexed` — нода успешно проиндексирована
+- `sync: embedding article chunks` — чанкинг article
+- `sync: article chunks indexed` — чанки проиндексированы
+- `sync: full reconcile complete` — финальная статистика (total_nodes, stale_deleted, duration_ms)
 
 ## Docker
 
