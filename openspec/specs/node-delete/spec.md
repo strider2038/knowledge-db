@@ -1,7 +1,8 @@
 # node-delete Specification
 
 ## Purpose
-TBD - created by archiving change node-management-ui. Update Purpose after archive.
+
+Удаление узла через REST API и UI: API-эндпоинт DELETE, модалка подтверждения в веб-интерфейсе, удаление .md файла и директории вложений.
 ## Requirements
 ### Requirement: API удаления узла
 

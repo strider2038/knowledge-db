@@ -1,7 +1,8 @@
 # hybrid-search Specification
 
 ## Purpose
-TBD - created by archiving change add-hybrid-search-rag-ui. Update Purpose after archive.
+
+Единый гибридный retrieval pipeline для поиска и RAG-чата: объединение keyword/FTS, точных совпадений и semantic vector search с Reciprocal Rank Fusion, query rewrite и релевантными порогами.
 ## Requirements
 ### Requirement: Единый гибридный retrieval pipeline
 

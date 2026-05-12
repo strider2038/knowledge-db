@@ -1,7 +1,8 @@
 # git-commit-ui Specification
 
 ## Purpose
-TBD - created by archiving change node-management-ui. Update Purpose after archive.
+
+Интеграция git-коммитов в UI: кнопка «Сохранить» в Navbar с периодическим опросом git-статуса, LLM-генерация commit message, toast-уведомления о результате.
 ## Requirements
 ### Requirement: API проверки git-статуса
 
