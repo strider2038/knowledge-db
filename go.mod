@@ -8,17 +8,19 @@ require (
 	github.com/adrg/frontmatter v0.2.0
 	github.com/caarlos0/env/v10 v10.0.0
 	github.com/gofrs/uuid/v5 v5.3.2
+	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/muonsoft/api-testing v0.11.0
 	github.com/muonsoft/clog v0.1.0
 	github.com/muonsoft/errors v0.5.0
-	github.com/openai/openai-go v1.12.0
+	github.com/openai/openai-go/v3 v3.35.0
 	github.com/pior/runnable v1.0.0
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/net v0.51.0
 	gopkg.in/yaml.v2 v2.4.0
+	modernc.org/sqlite v1.50.0
 )
 
 tool github.com/air-verse/air
@@ -42,7 +44,6 @@ require (
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/gohugoio/hugo v0.149.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.3 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -57,7 +58,7 @@ require (
 	github.com/spf13/cast v1.9.2 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tdewolff/parse/v2 v2.8.3 // indirect
-	github.com/tidwall/gjson v1.14.4 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
@@ -69,5 +70,4 @@ require (
 	modernc.org/libc v1.72.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.50.0 // indirect
 )

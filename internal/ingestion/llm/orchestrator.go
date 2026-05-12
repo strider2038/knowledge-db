@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	openai "github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
+	openai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
@@ -206,7 +206,7 @@ func (o *OpenAIOrchestrator) processResponse(
 
 		switch item.Name {
 		case "create_node":
-			result, err := parseCreateNodeArgs(item.Arguments)
+			result, err := parseCreateNodeArgs(item.Arguments.OfString)
 			if err != nil {
 				return nil, nil, errors.Errorf("parse create_node args: %w", err)
 			}
@@ -216,8 +216,6 @@ func (o *OpenAIOrchestrator) processResponse(
 				"type", result.Type,
 				"llm_source_url", result.SourceURL)
 
-			// Если есть кешированный контент для source_url — используем его напрямую,
-			// не полагаясь на то что LLM воспроизвёл контент без усечения.
 			if result.SourceURL != "" {
 				if cached, ok := fetchCache[result.SourceURL]; ok && cached.Content != "" {
 					clog.Info(ctx, "ingest: using cached fetch content", "url", result.SourceURL, "content_len", len(cached.Content))
@@ -239,11 +237,11 @@ func (o *OpenAIOrchestrator) processResponse(
 			return result, nil, nil
 
 		case "fetch_url_content":
-			url := extractURLFromArgs(item.Arguments)
+			url := extractURLFromArgs(item.Arguments.OfString)
 			clog.Info(ctx, "ingest: llm call fetch_url_content", "url", url)
 			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
 			fetchStart := time.Now()
-			output, fetchResult := o.executeFetchURLContent(ctx, item.Arguments)
+			output, fetchResult := o.executeFetchURLContent(ctx, item.Arguments.OfString)
 			if fetchResult != nil && url != "" {
 				fetchCache[url] = fetchResult
 			}
@@ -251,11 +249,11 @@ func (o *OpenAIOrchestrator) processResponse(
 			clog.Info(ctx, "ingest: llm fetch_url_content done", "url", url, "duration_ms", time.Since(fetchStart).Milliseconds())
 
 		case "fetch_url_meta":
-			url := extractURLFromArgs(item.Arguments)
+			url := extractURLFromArgs(item.Arguments.OfString)
 			clog.Info(ctx, "ingest: llm call fetch_url_meta", "url", url)
 			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
 			metaStart := time.Now()
-			output := o.executeFetchURLMeta(ctx, item.Arguments)
+			output := o.executeFetchURLMeta(ctx, item.Arguments.OfString)
 			toolOutputs = append(toolOutputs, functionCallOutputAsInputItem(item.CallID, output))
 			clog.Info(ctx, "ingest: llm fetch_url_meta done", "url", url, "duration_ms", time.Since(metaStart).Milliseconds())
 		}
@@ -529,8 +527,10 @@ func replayFunctionCallAsInputItem(item responses.ResponseOutputItemUnion) respo
 func functionCallOutputAsInputItem(callID, output string) responses.ResponseInputItemUnionParam {
 	o := responses.ResponseInputItemFunctionCallOutputParam{
 		CallID: callID,
-		Output: output,
-		ID:     param.NewOpt("fc_output_" + callID),
+		Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+			OfString: openai.String(output),
+		},
+		ID: param.NewOpt("fc_output_" + callID),
 	}
 
 	return responses.ResponseInputItemUnionParam{OfFunctionCallOutput: &o}

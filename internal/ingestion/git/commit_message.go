@@ -4,9 +4,10 @@ import (
 	"context"
 	"strings"
 
-	openai "github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/responses"
+	openai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/muonsoft/clog"
 )
@@ -60,7 +61,7 @@ func (g *CommitMessageGenerator) Generate(ctx context.Context, diffStat string) 
 	input := "git diff --stat:\n\n" + diffStat
 
 	params := responses.ResponseNewParams{
-		Model:        g.model,
+		Model:        shared.ResponsesModel(g.model), //nolint:unconvert // required: type ResponsesModel string ≠ string
 		Instructions: openai.String(instructions),
 		Input: responses.ResponseNewParamsInputUnion{
 			OfInputItemList: responses.ResponseInputParam{
