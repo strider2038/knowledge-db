@@ -33,6 +33,26 @@ func (m *mockIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) 
 	return m.node, m.err
 }
 
+type mockRefreshIngester struct {
+	node *kb.Node
+	err  error
+	path string
+}
+
+func (m *mockRefreshIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*kb.Node, error) {
+	return nil, ingestion.ErrNotImplemented
+}
+
+func (m *mockRefreshIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
+	return nil, ingestion.ErrNotImplemented
+}
+
+func (m *mockRefreshIngester) RefreshDescription(_ context.Context, path string) (*kb.Node, error) {
+	m.path = path
+
+	return m.node, m.err
+}
+
 func setupTestHandlerWithIngester(t *testing.T, ingester ingestion.Ingester) http.Handler {
 	t.Helper()
 	tmp := t.TempDir()
@@ -488,6 +508,70 @@ func TestIngest_WhenIngesterError_Expect500(t *testing.T) {
 		apitest.WithContentType("application/json"))
 
 	resp.HasCode(http.StatusInternalServerError)
+}
+
+func TestRefreshDescription_WhenSuccess_ExpectUpdatedNodeAndPathPassed(t *testing.T) {
+	t.Parallel()
+	ingester := &mockRefreshIngester{
+		node: &kb.Node{
+			Path:       "go/pkg/runnable",
+			Annotation: "Updated repository profile",
+			Content:    "## Назначение\n\nRunnable manager digest.",
+			Metadata: map[string]any{
+				"title":           "Runnable",
+				"type":            "link",
+				"source_url":      "https://github.com/pior/runnable",
+				"source_kind":     "repository",
+				"content_profile": "repository_profile",
+				"keywords":        []string{"go"},
+			},
+		},
+	}
+	handler := setupTestHandlerWithIngester(t, ingester)
+
+	resp := apitest.HandlePOST(t, handler, "/api/nodes/go/pkg/runnable/refresh-description", nil)
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("path").IsString().EqualTo("go/pkg/runnable")
+		json.Node("metadata", "source_kind").IsString().EqualTo("repository")
+		json.Node("metadata", "content_profile").IsString().EqualTo("repository_profile")
+		json.Node("content").IsString().EqualTo("## Назначение\n\nRunnable manager digest.")
+	})
+	require.Equal(t, "go/pkg/runnable", ingester.path)
+}
+
+func TestRefreshDescription_WhenMissingSourceURL_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerWithIngester(t, &mockRefreshIngester{
+		err: ingestion.ErrSourceURLRequired,
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/nodes/go/pkg/runnable/refresh-description", nil)
+
+	resp.HasCode(http.StatusBadRequest)
+}
+
+func TestRefreshDescription_WhenUnknownPath_Expect404(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerWithIngester(t, &mockRefreshIngester{
+		err: kb.ErrNodeNotFound,
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/nodes/missing/refresh-description", nil)
+
+	resp.IsNotFound()
+}
+
+func TestRefreshDescription_WhenFetchOrLLMFailure_Expect502(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerWithIngester(t, &mockRefreshIngester{
+		err: errors.New("fetch failed"),
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/nodes/go/pkg/runnable/refresh-description", nil)
+
+	resp.HasCode(http.StatusBadGateway)
 }
 
 func TestSPA_WhenRoot_ExpectIndexHTML(t *testing.T) {

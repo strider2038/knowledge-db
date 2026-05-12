@@ -187,6 +187,18 @@ export async function patchNodeManualProcessed(
   return res.json();
 }
 
+export async function refreshNodeDescription(path: string): Promise<Node> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/refresh-description`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to refresh description');
+  }
+  return res.json();
+}
+
 export interface TranslateStatus {
   status: 'none' | 'pending' | 'in_progress' | 'done' | 'failed';
   error?: string;

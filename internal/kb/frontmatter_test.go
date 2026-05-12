@@ -72,13 +72,82 @@ func TestValidateFrontmatter_WhenManualProcessedNotBool_ExpectError(t *testing.T
 	t.Parallel()
 
 	matter := map[string]any{
-		"keywords":          []any{"a"},
-		"created":           "2024-01-01T00:00:00Z",
-		"updated":           "2024-01-01T00:00:00Z",
-		"manual_processed":  "yes",
+		"keywords":         []any{"a"},
+		"created":          "2024-01-01T00:00:00Z",
+		"updated":          "2024-01-01T00:00:00Z",
+		"manual_processed": "yes",
 	}
 
 	result := kb.ValidateFrontmatter(matter)
 
 	assert.Equal(t, "frontmatter: manual_processed must be a boolean", result)
+}
+
+func TestValidateFrontmatter_WhenOldLinkNodeWithoutProfile_ExpectEmpty(t *testing.T) {
+	matter := map[string]any{
+		"keywords": []any{"link"},
+		"created":  "2024-01-01T00:00:00Z",
+		"updated":  "2024-01-01T00:00:00Z",
+		"type":     "link",
+	}
+
+	result := kb.ValidateFrontmatter(matter)
+
+	assert.Empty(t, result)
+}
+
+func TestValidateFrontmatter_WhenRepositoryProfileLink_ExpectEmpty(t *testing.T) {
+	matter := map[string]any{
+		"keywords":        []any{"go"},
+		"created":         "2024-01-01T00:00:00Z",
+		"updated":         "2024-01-01T00:00:00Z",
+		"type":            "link",
+		"source_kind":     "repository",
+		"content_profile": "repository_profile",
+	}
+
+	result := kb.ValidateFrontmatter(matter)
+
+	assert.Empty(t, result)
+}
+
+func TestValidateFrontmatter_WhenConceptualDigestNote_ExpectEmpty(t *testing.T) {
+	matter := map[string]any{
+		"keywords":        []any{"архитектура"},
+		"created":         "2024-01-01T00:00:00Z",
+		"updated":         "2024-01-01T00:00:00Z",
+		"type":            "note",
+		"source_kind":     "article",
+		"content_profile": "conceptual_digest",
+	}
+
+	result := kb.ValidateFrontmatter(matter)
+
+	assert.Empty(t, result)
+}
+
+func TestValidateFrontmatter_WhenInvalidSourceKind_ExpectError(t *testing.T) {
+	matter := map[string]any{
+		"keywords":    []any{"x"},
+		"created":     "2024-01-01T00:00:00Z",
+		"updated":     "2024-01-01T00:00:00Z",
+		"source_kind": "repo",
+	}
+
+	result := kb.ValidateFrontmatter(matter)
+
+	assert.Equal(t, "frontmatter: source_kind has invalid value", result)
+}
+
+func TestValidateFrontmatter_WhenInvalidContentProfile_ExpectError(t *testing.T) {
+	matter := map[string]any{
+		"keywords":        []any{"x"},
+		"created":         "2024-01-01T00:00:00Z",
+		"updated":         "2024-01-01T00:00:00Z",
+		"content_profile": "full_copy",
+	}
+
+	result := kb.ValidateFrontmatter(matter)
+
+	assert.Equal(t, "frontmatter: content_profile has invalid value", result)
 }

@@ -50,7 +50,7 @@ func ParseNodeFile(nodePath string) (map[string]any, string, string, error) {
 }
 
 // FormatFrontmatter сериализует метаданные в YAML frontmatter block (---\n...\n---\n).
-// Поля keywords, created, updated обязательны; type, source_url, source_date, source_author — опциональны.
+// Поля keywords, created, updated обязательны; остальные поля профиля и источника опциональны.
 func FormatFrontmatter(matter map[string]any) ([]byte, error) {
 	data, err := yaml.Marshal(matter)
 	if err != nil {
@@ -82,6 +82,9 @@ func ValidateFrontmatter(matter map[string]any) string {
 	if msg := validateManualProcessedType(matter); msg != "" {
 		return msg
 	}
+	if msg := validateSourceProfile(matter); msg != "" {
+		return msg
+	}
 
 	return ""
 }
@@ -96,6 +99,26 @@ func validateManualProcessedType(matter map[string]any) string {
 	}
 	if _, ok := v.(bool); !ok {
 		return "frontmatter: manual_processed must be a boolean"
+	}
+
+	return ""
+}
+
+func validateSourceProfile(matter map[string]any) string {
+	if matter == nil {
+		return ""
+	}
+	if v, ok := matter["source_kind"]; ok && v != nil && v != "" {
+		s, ok := v.(string)
+		if !ok || !IsValidSourceKind(s) {
+			return "frontmatter: source_kind has invalid value"
+		}
+	}
+	if v, ok := matter["content_profile"]; ok && v != nil && v != "" {
+		s, ok := v.(string)
+		if !ok || !IsValidContentProfile(s) {
+			return "frontmatter: content_profile has invalid value"
+		}
 	}
 
 	return ""

@@ -54,14 +54,20 @@ func TestChainURLMetaFetcher_WhenPrimaryUnsupported_ExpectFallbackResult(t *test
 func TestGitHubMetaFetcher_WhenRepoURL_ExpectAPIDataInDescription(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/repos/acme/antfly", r.URL.Path)
-		_, _ = w.Write([]byte(`{
-			"full_name":"acme/antfly",
-			"description":"Distributed search engine",
-			"homepage":"https://antfly.dev",
-			"language":"Go",
-			"topics":["search","vector","rag"]
-		}`))
+		switch r.URL.Path {
+		case "/repos/acme/antfly":
+			_, _ = w.Write([]byte(`{
+				"full_name":"acme/antfly",
+				"description":"Distributed search engine",
+				"homepage":"https://antfly.dev",
+				"language":"Go",
+				"topics":["search","vector","rag"]
+			}`))
+		case "/repos/acme/antfly/readme":
+			_, _ = w.Write([]byte(`{"content":"IyBBbnRmbHkKCkNvbmNlcHR1YWwgUkVBRE1FIGJvZHku","encoding":"base64"}`))
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer server.Close()
 
@@ -75,4 +81,5 @@ func TestGitHubMetaFetcher_WhenRepoURL_ExpectAPIDataInDescription(t *testing.T) 
 	assert.Contains(t, meta.Description, "Distributed search engine")
 	assert.Contains(t, meta.Description, "Основной язык: Go")
 	assert.Contains(t, meta.Description, "Темы: search, vector, rag")
+	assert.Contains(t, meta.ContentPreview, "Conceptual README body.")
 }

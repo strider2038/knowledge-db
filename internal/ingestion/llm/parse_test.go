@@ -29,3 +29,14 @@ func TestParseCreateNodeArgs_WhenSourceAuthor_ExpectParsed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Иван Петров", result.SourceAuthor)
 }
+
+func TestParseCreateNodeArgs_WhenSourceProfile_ExpectParsed(t *testing.T) {
+	t.Parallel()
+
+	args := `{"keywords":["go"],"annotation":"test","theme_path":"go","slug":"test","type":"link","title":"Test","source_kind":"repository","content_profile":"repository_profile"}`
+	result, err := parseCreateNodeArgs(args)
+
+	require.NoError(t, err)
+	assert.Equal(t, "repository", result.SourceKind)
+	assert.Equal(t, "repository_profile", result.ContentProfile)
+}

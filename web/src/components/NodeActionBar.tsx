@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Check, Languages, Move, Trash2 } from 'lucide-react'
-import { type Node, getTranslateStatus, postTranslate } from '@/services/api'
+import { Check, Languages, Move, RefreshCw, Trash2 } from 'lucide-react'
+import { type Node, getTranslateStatus, postTranslate, refreshNodeDescription } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { DeleteNodeDialog } from '@/components/DeleteNodeDialog'
@@ -45,12 +45,16 @@ export function NodeActionBar({
 }: NodeActionBarProps) {
   const [translating, setTranslating] = useState(false)
   const [translateError, setTranslateError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+  const [refreshSuccess, setRefreshSuccess] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
 
   const meta = node.metadata ?? {}
   const nodeType = (meta.type as string) ?? 'note'
   const canTranslate = nodeType === 'article' && !hasTranslations && !isTranslation
+  const canRefreshDescription = !isTranslation && typeof meta.source_url === 'string' && meta.source_url.length > 0
   const showManualProcessed = !isTranslation
   const showTranslate = canTranslate
 
@@ -107,7 +111,23 @@ export function NodeActionBar({
     onNavigate(`/node/${newPath}`)
   }
 
-  const showPrimaryGroup = showManualProcessed || showTranslate || hasTranslations
+  const handleRefreshDescription = () => {
+    setRefreshing(true)
+    setRefreshError(null)
+    setRefreshSuccess(false)
+    refreshNodeDescription(basePath)
+      .then((updated) => {
+        setRefreshing(false)
+        setRefreshSuccess(true)
+        onNodeChanged(updated)
+      })
+      .catch((err) => {
+        setRefreshing(false)
+        setRefreshError(err instanceof Error ? err.message : 'Не удалось обновить описание')
+      })
+  }
+
+  const showPrimaryGroup = showManualProcessed || showTranslate || hasTranslations || canRefreshDescription
 
   return (
     <>
@@ -169,6 +189,19 @@ export function NodeActionBar({
             </div>
           )}
 
+          {canRefreshDescription && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={handleRefreshDescription}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn('mr-1 size-4', refreshing && 'animate-spin')} />
+              {refreshing ? 'Обновление...' : 'Обновить описание из источника'}
+            </Button>
+          )}
+
           {showPrimaryGroup && <div className="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true" />}
 
           <Button
@@ -193,6 +226,12 @@ export function NodeActionBar({
 
           {translateError && (
             <span className="text-xs text-destructive">{translateError}</span>
+          )}
+          {refreshError && (
+            <span className="text-xs text-destructive">{refreshError}</span>
+          )}
+          {refreshSuccess && (
+            <span className="text-xs text-green-600 dark:text-green-400">Описание обновлено</span>
           )}
         </div>
       </div>

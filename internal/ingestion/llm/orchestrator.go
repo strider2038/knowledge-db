@@ -30,22 +30,27 @@ type ProcessInput struct {
 	SourceURL        string
 	SourceAuthor     string
 	TypeHint         string // auto, article, link, note
+	SourceKind       string
+	ContentProfile   string
+	RecommendedType  string
 	ExistingThemes   []string
 	ExistingKeywords []string
 }
 
 // ProcessResult — результат обработки.
 type ProcessResult struct {
-	Keywords     []string
-	Annotation   string
-	ThemePath    string
-	Slug         string
-	Type         string
-	SourceURL    string
-	SourceAuthor string
-	SourceDate   *time.Time
-	Content      string
-	Title        string
+	Keywords       []string
+	Annotation     string
+	ThemePath      string
+	Slug           string
+	Type           string
+	SourceKind     string
+	ContentProfile string
+	SourceURL      string
+	SourceAuthor   string
+	SourceDate     *time.Time
+	Content        string
+	Title          string
 }
 
 // responsesClient — внутренний интерфейс для тестирования.
@@ -121,7 +126,7 @@ func newOpenAIOrchestratorWithClientAndMetaFetcher(
 func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*ProcessResult, error) {
 	clog.Info(ctx, "ingest: llm process start", "text_len", len(input.Text), "themes", len(input.ExistingThemes), "keywords", len(input.ExistingKeywords))
 
-	instructions := buildSystemPrompt(input.ExistingThemes, input.ExistingKeywords, input.TypeHint)
+	instructions := buildSystemPrompt(input.ExistingThemes, input.ExistingKeywords, input.TypeHint, input.SourceKind, input.ContentProfile, input.RecommendedType)
 	tools := buildTools()
 
 	inputItems := responses.ResponseInputParam{
@@ -218,7 +223,7 @@ func (o *OpenAIOrchestrator) processResponse(
 
 			// Если есть кешированный контент для source_url — используем его напрямую,
 			// не полагаясь на то что LLM воспроизвёл контент без усечения.
-			if result.SourceURL != "" {
+			if result.SourceURL != "" && result.Type == "article" {
 				if cached, ok := fetchCache[result.SourceURL]; ok && cached.Content != "" {
 					clog.Info(ctx, "ingest: using cached fetch content", "url", result.SourceURL, "content_len", len(cached.Content))
 					result.Content = cached.Content
@@ -233,6 +238,7 @@ func (o *OpenAIOrchestrator) processResponse(
 					}
 				}
 			}
+			applyProfileFallback(input, result)
 
 			applyCanonicalSourceURL(ctx, input, result)
 
@@ -337,8 +343,11 @@ func (o *OpenAIOrchestrator) executeFetchURLMeta(ctx context.Context, argsJSON s
 		Description: meta.Description,
 		Source:      source,
 	}
+	if meta.ContentPreview != "" {
+		output.ContentPreview = buildContentPreview(meta.ContentPreview, 4000)
+	}
 
-	if isLowQualityMeta(meta) && o.contentFetcher != nil {
+	if output.ContentPreview == "" && isLowQualityMeta(meta) && o.contentFetcher != nil {
 		result, fetchErr := o.contentFetcher.Fetch(ctx, args.URL)
 		if fetchErr == nil {
 			const previewLen = 2000
@@ -381,31 +390,35 @@ func (o *OpenAIOrchestrator) fetchURLMeta(ctx context.Context, rawURL string) (*
 func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
 	//nolint:tagliatelle // snake_case required: these are LLM function call arguments defined in the system prompt
 	var args struct {
-		Keywords     []string `json:"keywords"`
-		Annotation   string   `json:"annotation"`
-		ThemePath    string   `json:"theme_path"`
-		Slug         string   `json:"slug"`
-		Type         string   `json:"type"`
-		SourceURL    string   `json:"source_url"`
-		SourceDate   string   `json:"source_date"`
-		SourceAuthor string   `json:"source_author"`
-		Content      string   `json:"content"`
-		Title        string   `json:"title"`
+		Keywords       []string `json:"keywords"`
+		Annotation     string   `json:"annotation"`
+		ThemePath      string   `json:"theme_path"`
+		Slug           string   `json:"slug"`
+		Type           string   `json:"type"`
+		SourceKind     string   `json:"source_kind"`
+		ContentProfile string   `json:"content_profile"`
+		SourceURL      string   `json:"source_url"`
+		SourceDate     string   `json:"source_date"`
+		SourceAuthor   string   `json:"source_author"`
+		Content        string   `json:"content"`
+		Title          string   `json:"title"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return nil, errors.Errorf("unmarshal: %w", err)
 	}
 
 	result := &ProcessResult{
-		Keywords:     args.Keywords,
-		Annotation:   args.Annotation,
-		ThemePath:    args.ThemePath,
-		Slug:         args.Slug,
-		Type:         args.Type,
-		SourceURL:    args.SourceURL,
-		SourceAuthor: args.SourceAuthor,
-		Content:      unescapeNewlines(args.Content),
-		Title:        args.Title,
+		Keywords:       args.Keywords,
+		Annotation:     args.Annotation,
+		ThemePath:      args.ThemePath,
+		Slug:           args.Slug,
+		Type:           args.Type,
+		SourceKind:     args.SourceKind,
+		ContentProfile: args.ContentProfile,
+		SourceURL:      args.SourceURL,
+		SourceAuthor:   args.SourceAuthor,
+		Content:        unescapeNewlines(args.Content),
+		Title:          args.Title,
 	}
 
 	if args.SourceDate != "" {
@@ -419,6 +432,21 @@ func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
 	}
 
 	return result, nil
+}
+
+func applyProfileFallback(input ProcessInput, result *ProcessResult) {
+	if result == nil {
+		return
+	}
+	if result.SourceKind == "" {
+		result.SourceKind = input.SourceKind
+	}
+	if result.ContentProfile == "" {
+		result.ContentProfile = input.ContentProfile
+	}
+	if result.Type == "" && input.RecommendedType != "" {
+		result.Type = input.RecommendedType
+	}
 }
 
 // applyCanonicalSourceURL подставляет source_url из входного контекста (импорт по URL или явный
@@ -441,6 +469,12 @@ func applyCanonicalSourceURL(ctx context.Context, input ProcessInput, result *Pr
 			clog.Info(ctx, "ingest: source_url canonicalized for note from source metadata",
 				"type", result.Type,
 				"input_source_url", src,
+				"llm_source_url", original,
+				"final_source_url", result.SourceURL)
+		} else if u := pickResourceURLFromMessageText(ctx, input.Text); u != "" {
+			result.SourceURL = u
+			clog.Info(ctx, "ingest: source_url canonicalized for note from message text",
+				"type", result.Type,
 				"llm_source_url", original,
 				"final_source_url", result.SourceURL)
 		} else {

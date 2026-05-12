@@ -160,6 +160,11 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	if strings.HasSuffix(path, "/refresh-description") {
+		h.RefreshDescription(w, r)
+
+		return
+	}
 	// Extract actual node path: expected pattern is "{nodePath}/move"
 	nodePath, _ := strings.CutSuffix(path, "/move")
 	if nodePath == "" {
@@ -209,6 +214,45 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 		h.syncWorker.Send(index.SingleNodeEvent{Path: nodePath})
 		h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
 	}
+	writeJSON(w, node)
+}
+
+// RefreshDescription обрабатывает POST /api/nodes/{path...}/refresh-description.
+func (h *Handler) RefreshDescription(w http.ResponseWriter, r *http.Request) {
+	path := r.PathValue("path")
+	path, _ = strings.CutSuffix(path, "/refresh-description")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	refresher, ok := h.ingester.(ingestion.DescriptionRefresher)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "description refresh unavailable")
+
+		return
+	}
+
+	node, err := refresher.RefreshDescription(r.Context(), path)
+	if err != nil {
+		switch {
+		case errors.Is(err, kb.ErrNodeNotFound):
+			clog.Debug(r.Context(), "refresh description: node not found", "path", path)
+			writeError(w, http.StatusNotFound, "node not found")
+		case errors.Is(err, ingestion.ErrSourceURLRequired):
+			clog.Debug(r.Context(), "refresh description: source_url missing", "path", path)
+			writeError(w, http.StatusBadRequest, "source_url required")
+		default:
+			clog.Errorf(r.Context(), "refresh description: %w", err)
+			writeError(w, http.StatusBadGateway, err.Error())
+		}
+
+		return
+	}
+	if h.syncWorker != nil {
+		h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
+	}
+
 	writeJSON(w, node)
 }
 

@@ -47,6 +47,8 @@ type NodeSearchDocument struct {
 	Annotation      string
 	Keywords        []string
 	SourceURL       string
+	SourceKind      string
+	ContentProfile  string
 	ManualProcessed bool
 	Body            string
 }
@@ -313,7 +315,7 @@ func (s *IndexStore) UpsertNodeSearch(ctx context.Context, doc NodeSearchDocumen
 	aliases := strings.Join(doc.Aliases, " ")
 	keywords := strings.Join(doc.Keywords, " ")
 	searchableText := joinSearchText(
-		doc.Path, doc.Title, doc.Type, aliases, doc.Annotation, keywords, doc.SourceURL, doc.Body,
+		doc.Path, doc.Title, doc.Type, aliases, doc.Annotation, keywords, doc.SourceURL, doc.SourceKind, doc.ContentProfile, doc.Body,
 	)
 	manualProcessed := 0
 	if doc.ManualProcessed {

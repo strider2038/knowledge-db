@@ -72,7 +72,8 @@ func NewPipelineIngester(
 func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*kb.Node, error) {
 	clog.Info(ctx, "ingest text: start", "text_len", len(req.Text))
 
-	processInput, err := p.buildProcessInput(ctx, req.Text, req.SourceURL, req.SourceAuthor, req.TypeHint)
+	profile := ClassifySource(req.SourceURL, "", req.Text, req.TypeHint)
+	processInput, err := p.buildProcessInput(ctx, req.Text, req.SourceURL, req.SourceAuthor, req.TypeHint, profile)
 	if err != nil {
 		return nil, errors.Errorf("ingest text: build context: %w", err)
 	}
@@ -83,6 +84,7 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	if err != nil {
 		return nil, errors.Errorf("ingest text: orchestrate: %w", err)
 	}
+	applyProfileToResult(result, profile)
 	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
 
 	node, err := p.saveNode(ctx, result)
@@ -124,7 +126,14 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 		text = url
 	}
 
-	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor, "")
+	title := ""
+	content := ""
+	if fetchResult != nil {
+		title = fetchResult.Title
+		content = fetchResult.Content
+	}
+	profile := ClassifySource(url, title, content, "")
+	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor, "", profile)
 	if err != nil {
 		return nil, errors.Errorf("ingest url: build context: %w", err)
 	}
@@ -135,6 +144,7 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	if err != nil {
 		return nil, errors.Errorf("ingest url: orchestrate: %w", err)
 	}
+	applyProfileToResult(result, profile)
 	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
 
 	node, err := p.saveNode(ctx, result)
@@ -149,7 +159,68 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	return node, nil
 }
 
-func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor, typeHint string) (llm.ProcessInput, error) {
+func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) (*kb.Node, error) {
+	clog.Info(ctx, "refresh description: start", "path", path)
+
+	current, err := p.store.GetNodeFile(ctx, p.basePath, path)
+	if err != nil {
+		return nil, errors.Errorf("refresh description: get node: %w", err)
+	}
+	sourceURL, _ := current.Frontmatter["source_url"].(string)
+	sourceURL = strings.TrimSpace(sourceURL)
+	if sourceURL == "" {
+		return nil, errors.Errorf("refresh description: %w", ErrSourceURLRequired)
+	}
+
+	fetchResult, err := p.contentFetcher.Fetch(ctx, sourceURL)
+	if err != nil {
+		return nil, errors.Errorf("refresh description: fetch source: %w", err)
+	}
+
+	text := fmt.Sprintf("URL: %s\nTitle: %s\n\n%s", sourceURL, fetchResult.Title, fetchResult.Content)
+	profile := ClassifySource(sourceURL, fetchResult.Title, fetchResult.Content, "")
+	processInput, err := p.buildProcessInput(ctx, text, sourceURL, fetchResult.Author, "", profile)
+	if err != nil {
+		return nil, errors.Errorf("refresh description: build context: %w", err)
+	}
+
+	result, err := p.orchestrator.Process(ctx, processInput)
+	if err != nil {
+		return nil, errors.Errorf("refresh description: orchestrate: %w", err)
+	}
+	applyProfileToResult(result, profile)
+	if result.SourceURL == "" {
+		result.SourceURL = sourceURL
+	}
+	if result.SourceAuthor == "" {
+		if existing, ok := current.Frontmatter["source_author"].(string); ok {
+			result.SourceAuthor = existing
+		}
+	}
+	if result.SourceDate == nil {
+		if existing, ok := current.Frontmatter["source_date"].(string); ok && existing != "" {
+			if parsed, parseErr := time.Parse("2006-01-02", existing); parseErr == nil {
+				result.SourceDate = &parsed
+			}
+		}
+	}
+
+	frontmatter := cloneFrontmatter(current.Frontmatter)
+	p.applyResultToExistingFrontmatter(ctx, frontmatter, result)
+	node, err := p.store.UpdateNode(ctx, p.basePath, path, kb.UpdateNodeParams{
+		Frontmatter: frontmatter,
+		Content:     result.Content,
+	})
+	if err != nil {
+		return nil, errors.Errorf("refresh description: update node: %w", err)
+	}
+
+	clog.Info(ctx, "refresh description: complete", "path", path)
+
+	return node, nil
+}
+
+func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor, typeHint string, profile SourceProfile) (llm.ProcessInput, error) {
 	tree, err := p.store.ReadTree(ctx, p.basePath)
 	if err != nil {
 		return llm.ProcessInput{}, errors.Errorf("read tree: %w", err)
@@ -172,12 +243,18 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 		}
 		text = sourcePrefix + "\n\n" + text
 	}
+	if profile.HasProfile() {
+		text = fmt.Sprintf("Профиль источника: source_kind=%s, content_profile=%s, recommended_type=%s\n\n%s", profile.SourceKind, profile.ContentProfile, profile.RecommendedType, text)
+	}
 
 	return llm.ProcessInput{
 		Text:             text,
 		SourceURL:        sourceURL,
 		SourceAuthor:     sourceAuthor,
 		TypeHint:         typeHint,
+		SourceKind:       string(profile.SourceKind),
+		ContentProfile:   string(profile.ContentProfile),
+		RecommendedType:  profile.RecommendedType,
 		ExistingThemes:   themes,
 		ExistingKeywords: keywords,
 	}, nil
@@ -230,6 +307,7 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	if result.Type != "" {
 		frontmatter["type"] = result.Type
 	}
+	applyProfileToFrontmatter(frontmatter, result.SourceKind, result.ContentProfile)
 	if result.SourceURL != "" {
 		sourceURL := result.SourceURL
 		sourceURL = urlutil.StripTrackingParamsFromURL(sourceURL)
@@ -267,6 +345,70 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	}
 
 	return node, nil
+}
+
+func (p *PipelineIngester) applyResultToExistingFrontmatter(ctx context.Context, frontmatter map[string]any, result *llm.ProcessResult) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	frontmatter["updated"] = now
+	frontmatter["keywords"] = result.Keywords
+	frontmatter["annotation"] = result.Annotation
+	if result.Title != "" {
+		title := stripMarkdownFromTitle(result.Title)
+		frontmatter["title"] = title
+		frontmatter["aliases"] = []string{title}
+	}
+	if result.Type != "" {
+		frontmatter["type"] = result.Type
+	}
+	applyProfileToFrontmatter(frontmatter, result.SourceKind, result.ContentProfile)
+	if result.SourceURL != "" {
+		frontmatter["source_url"] = urlutil.StripTrackingParamsFromURL(result.SourceURL)
+	}
+	if result.SourceDate != nil {
+		frontmatter["source_date"] = result.SourceDate.Format("2006-01-02")
+	}
+	if result.SourceAuthor != "" {
+		frontmatter["source_author"] = result.SourceAuthor
+	}
+	if p.expandURLs {
+		result.Content = p.expandMarkdownURLs(ctx, result.Content)
+		if ann, ok := frontmatter["annotation"].(string); ok && ann != "" {
+			frontmatter["annotation"] = p.expandMarkdownURLs(ctx, ann)
+		}
+	}
+}
+
+func applyProfileToResult(result *llm.ProcessResult, profile SourceProfile) {
+	if result == nil || !profile.HasProfile() {
+		return
+	}
+	if result.SourceKind == "" {
+		result.SourceKind = string(profile.SourceKind)
+	}
+	if result.ContentProfile == "" {
+		result.ContentProfile = string(profile.ContentProfile)
+	}
+	if result.Type == "" {
+		result.Type = profile.RecommendedType
+	}
+}
+
+func applyProfileToFrontmatter(frontmatter map[string]any, sourceKind, contentProfile string) {
+	if sourceKind != "" && kb.IsValidSourceKind(sourceKind) {
+		frontmatter["source_kind"] = sourceKind
+	}
+	if contentProfile != "" && kb.IsValidContentProfile(contentProfile) {
+		frontmatter["content_profile"] = contentProfile
+	}
+}
+
+func cloneFrontmatter(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+
+	return dst
 }
 
 func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *llm.ProcessResult, node *kb.Node) error {
@@ -341,6 +483,7 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 	if result.SourceAuthor != "" {
 		translationFrontmatter["source_author"] = result.SourceAuthor
 	}
+	applyProfileToFrontmatter(translationFrontmatter, result.SourceKind, result.ContentProfile)
 
 	contentWithLink := translated
 	if !strings.HasSuffix(contentWithLink, fmt.Sprintf("[[%s|Original]]", result.Slug)) {
