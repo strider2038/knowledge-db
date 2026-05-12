@@ -1,7 +1,8 @@
 # node-move Specification
 
 ## Purpose
-TBD - created by archiving change node-management-ui. Update Purpose after archive.
+
+Перемещение узла через REST API и UI: API-эндпоинт POST …/move, модалка с текстовым полем полного пути и деревом тем, рекурсивное создание промежуточных директорий.
 ## Requirements
 ### Requirement: API перемещения узла
 

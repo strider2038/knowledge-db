@@ -71,7 +71,7 @@ API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` д
 
 ### Requirement: LLM для генерации ответов
 
-Система ДОЛЖНА (SHALL) использовать LLM (OpenAI-совместимое API) для генерации ответов чатбота. Система MUST использовать тот же API-конфиг что и embedding provider (KB_EMBEDDING_API_KEY, KB_EMBEDDING_API_URL), но с chat-моделью из `KB_CHAT_MODEL` (default: значение из существующего KB_LLM_MODEL). System prompt SHALL инструктировать LLM отвечать на основе предоставленного контекста базы знаний.
+Система ДОЛЖНА (SHALL) использовать LLM (OpenAI-совместимое API) для генерации ответов чатбота. Система MUST использовать тот же API-конфиг что и embedding provider (KB_EMBEDDING_API_KEY, KB_EMBEDDING_API_URL), но с chat-моделью из `KB_CHAT_MODEL` (default: `gpt-4o` при пустом значении). При необходимости можно задать отдельные `KB_CHAT_API_URL` и `KB_CHAT_API_KEY` для использования другого API endpoint'а для чата. System prompt SHALL инструктировать LLM отвечать на основе предоставленного контекста базы знаний.
 
 #### Scenario: Генерация ответа с контекстом
 

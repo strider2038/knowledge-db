@@ -1,7 +1,8 @@
 # node-action-panel Specification
 
 ## Purpose
-TBD - created by archiving change node-management-ui. Update Purpose after archive.
+
+Панель действий на странице узла (Action Bar): toggle «Проверено», кнопка «Перевести», переключатель языков, «Переместить», «Удалить» с визуальным разделением групп.
 ## Requirements
 ### Requirement: Панель действий на странице узла
 

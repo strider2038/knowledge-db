@@ -1,7 +1,8 @@
 # embedding-index Specification
 
 ## Purpose
-TBD - created by archiving change add-rag-semantic-search. Update Purpose after archive.
+
+Embedding-индекс на SQLite: генерация векторных представлений, markdown-aware chunking, SyncWorker для синхронизации с git-репозиторием, keyword/FTS поиск, feature toggle для отключаемости.
 ## Requirements
 ### Requirement: EmbeddingProvider — интерфейс генерации эмбеддингов
 
