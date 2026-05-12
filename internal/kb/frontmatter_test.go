@@ -84,6 +84,8 @@ func TestValidateFrontmatter_WhenManualProcessedNotBool_ExpectError(t *testing.T
 }
 
 func TestValidateFrontmatter_WhenOldLinkNodeWithoutProfile_ExpectEmpty(t *testing.T) {
+	t.Parallel()
+
 	matter := map[string]any{
 		"keywords": []any{"link"},
 		"created":  "2024-01-01T00:00:00Z",
@@ -97,6 +99,8 @@ func TestValidateFrontmatter_WhenOldLinkNodeWithoutProfile_ExpectEmpty(t *testin
 }
 
 func TestValidateFrontmatter_WhenRepositoryProfileLink_ExpectEmpty(t *testing.T) {
+	t.Parallel()
+
 	matter := map[string]any{
 		"keywords":        []any{"go"},
 		"created":         "2024-01-01T00:00:00Z",
@@ -112,6 +116,8 @@ func TestValidateFrontmatter_WhenRepositoryProfileLink_ExpectEmpty(t *testing.T)
 }
 
 func TestValidateFrontmatter_WhenConceptualDigestNote_ExpectEmpty(t *testing.T) {
+	t.Parallel()
+
 	matter := map[string]any{
 		"keywords":        []any{"архитектура"},
 		"created":         "2024-01-01T00:00:00Z",
@@ -127,6 +133,8 @@ func TestValidateFrontmatter_WhenConceptualDigestNote_ExpectEmpty(t *testing.T) 
 }
 
 func TestValidateFrontmatter_WhenInvalidSourceKind_ExpectError(t *testing.T) {
+	t.Parallel()
+
 	matter := map[string]any{
 		"keywords":    []any{"x"},
 		"created":     "2024-01-01T00:00:00Z",
@@ -140,6 +148,8 @@ func TestValidateFrontmatter_WhenInvalidSourceKind_ExpectError(t *testing.T) {
 }
 
 func TestValidateFrontmatter_WhenInvalidContentProfile_ExpectError(t *testing.T) {
+	t.Parallel()
+
 	matter := map[string]any{
 		"keywords":        []any{"x"},
 		"created":         "2024-01-01T00:00:00Z",

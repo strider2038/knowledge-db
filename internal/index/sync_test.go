@@ -45,7 +45,7 @@ func TestComputeContentHash_WhenDifferentProfile_ExpectDifferentHash(t *testing.
 
 	n1 := testNode("title", "ann", nil, "link", "body")
 	n1.Metadata["source_kind"] = "repository"
-	n1.Metadata["content_profile"] = "repository_profile"
+	n1.Metadata["content_profile"] = string(kb.ContentProfileRepository)
 	n2 := testNode("title", "ann", nil, "link", "body")
 	n2.Metadata["source_kind"] = "documentation"
 	n2.Metadata["content_profile"] = "documentation_profile"
@@ -99,7 +99,7 @@ func TestBuildNodeEmbeddingText_WhenProfileLink_ExpectBodyIncluded(t *testing.T)
 	t.Parallel()
 
 	node := testNode("Title", "Annotation", nil, "link", "Digest-only term")
-	node.Metadata["content_profile"] = "repository_profile"
+	node.Metadata["content_profile"] = string(kb.ContentProfileRepository)
 
 	text := buildNodeEmbeddingText(node, "link")
 
@@ -140,12 +140,12 @@ func TestBuildNodeSearchDocument_WhenProfileLink_ExpectBodyAndProfileIncluded(t 
 
 	node := testNode("Title", "Annotation", nil, "link", "Digest body")
 	node.Metadata["source_kind"] = "repository"
-	node.Metadata["content_profile"] = "repository_profile"
+	node.Metadata["content_profile"] = string(kb.ContentProfileRepository)
 
 	doc := buildNodeSearchDocument(node, "link")
 
 	assert.Equal(t, "repository", doc.SourceKind)
-	assert.Equal(t, "repository_profile", doc.ContentProfile)
+	assert.Equal(t, string(kb.ContentProfileRepository), doc.ContentProfile)
 	assert.Equal(t, "Digest body", doc.Body)
 }
 
@@ -164,7 +164,8 @@ annotation: "Repository profile"
 type: link
 source_url: "https://github.com/pior/runnable"
 source_kind: repository
-content_profile: repository_profile
+content_profile: `+string(kb.ContentProfileRepository)+`
+
 ---
 
 ## Назначение
@@ -178,13 +179,13 @@ content_profile: repository_profile
 	worker.processSingleNode(ctx, "go/packages/runnable")
 
 	nodeHits, err := KeywordSearchNodes(ctx, store, "digestonlyterm", 5)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, nodeHits)
 	chunkHits, err := KeywordSearchChunks(ctx, store, "digestonlyterm", 5)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, chunkHits)
 	chunkResults, err := ChunkSearch(ctx, store, &mockProvider{vectors: [][]float32{{1, 0}}}, "digestonlyterm", 5)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, chunkResults)
 }
 
