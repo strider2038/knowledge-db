@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/v3/responses"
 )
 
 func buildSystemPrompt(existingThemes, existingKeywords []string, typeHint string) string {
