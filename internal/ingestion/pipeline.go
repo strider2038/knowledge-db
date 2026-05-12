@@ -3,6 +3,7 @@ package ingestion
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -404,9 +405,7 @@ func applyProfileToFrontmatter(frontmatter map[string]any, sourceKind, contentPr
 
 func cloneFrontmatter(src map[string]any) map[string]any {
 	dst := make(map[string]any, len(src))
-	for key, value := range src {
-		dst[key] = value
-	}
+	maps.Copy(dst, src)
 
 	return dst
 }

@@ -68,6 +68,7 @@ func reindexLinksCmd() *cobra.Command {
 				if err != nil {
 					failed++
 					fmt.Fprintf(os.Stderr, "[fail] %s: load node: %v\n", nodePath, err)
+
 					continue
 				}
 
@@ -75,24 +76,28 @@ func reindexLinksCmd() *cobra.Command {
 				if strings.TrimSpace(sourceURL) == "" {
 					skipped++
 					fmt.Printf("[skip] %s: source_url is empty\n", nodePath)
+
 					continue
 				}
 
 				if !all && !shouldRefreshLegacyLink(node) {
 					skipped++
 					fmt.Printf("[skip] %s: already profiled (use --all to force)\n", nodePath)
+
 					continue
 				}
 
 				if dryRun {
 					processed++
 					fmt.Printf("[dry-run] %s\n", nodePath)
+
 					continue
 				}
 
 				if err := refreshNodeDescription(ctx, client, baseURL, nodePath); err != nil {
 					failed++
 					fmt.Fprintf(os.Stderr, "[fail] %s: refresh: %v\n", nodePath, err)
+
 					continue
 				}
 
