@@ -73,11 +73,8 @@ tasks:
       - go build -o kb-cli ./cmd/kb-cli
 
   server:dev:
-    desc: Запустить kb-server с hot reload (air)
-    deps: [web:build]
+    desc: Запустить kb-server с hot reload (air) без пересборки embedded UI
     cmds:
-      - mkdir -p {{.UI_STATIC}}
-      - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
       - air
 
   server:dev:install:
