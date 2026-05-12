@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -33,6 +33,12 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed } = vi.hoisted
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
     })),
+    refreshNodeDescription: vi.fn().mockResolvedValue({
+      ...mockNode,
+      annotation: 'Updated annotation',
+      content: 'Updated content',
+      metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
+    }),
   }
 })
 
@@ -47,6 +53,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 vi.mock('../services/api', () => ({
   getNode,
   patchNodeManualProcessed,
+  refreshNodeDescription,
   getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
 }))
 
@@ -76,6 +83,12 @@ describe('NodePage', () => {
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
     }))
+    refreshNodeDescription.mockResolvedValue({
+      ...mockNode,
+      annotation: 'Updated annotation',
+      content: 'Updated content',
+      metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
+    })
   })
 
   it('marks manual processed via Проверено button', async () => {
@@ -178,5 +191,34 @@ describe('NodePage', () => {
     expect(sourceLink).toHaveAttribute('target', '_blank')
     expect(screen.getByText(/UI components collection/)).toBeInTheDocument()
     expect(screen.queryByText('Содержание')).not.toBeInTheDocument()
+  })
+
+  it('refreshes description from source and updates current node', async () => {
+    renderNodePage()
+
+    const btn = await screen.findByRole('button', { name: 'Обновить описание из источника' })
+    fireEvent.click(btn)
+
+    await waitFor(() => {
+      expect(refreshNodeDescription).toHaveBeenCalledWith('programming/scaling/load-balancing')
+    })
+    expect(await screen.findByRole('heading', { level: 1, name: 'Updated title' })).toBeInTheDocument()
+    expect(screen.getByText(/Updated annotation/)).toBeInTheDocument()
+    expect(screen.getByText('Описание обновлено')).toBeInTheDocument()
+  })
+
+  it('hides refresh description action when source_url is absent', async () => {
+    getNode.mockResolvedValue({
+      ...mockNode,
+      metadata: {
+        ...mockNode.metadata,
+        source_url: undefined,
+      },
+    })
+
+    renderNodePage()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Обновить описание из источника' })).not.toBeInTheDocument()
   })
 })

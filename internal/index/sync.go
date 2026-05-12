@@ -188,14 +188,18 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 
 	logger.Info("sync: node indexed", "path", path, "type", nodeType)
 
-	if nodeType == "article" && strings.TrimSpace(node.Content) != "" {
-		clog.Debug(ctx, "sync: processing article chunks", "path", path)
+	if shouldChunkBody(node, nodeType) {
+		clog.Debug(ctx, "sync: processing body chunks", "path", path)
 		w.processChunks(ctx, path, node.Content)
 	} else if err := w.store.DeleteChunks(ctx, path); err != nil {
 		clog.Errorf(ctx, "sync: delete chunks for %s: %w", path, err)
 	}
 
 	w.rateLimitWait(ctx)
+}
+
+func shouldChunkBody(node *kb.Node, nodeType string) bool {
+	return (nodeType == "article" || shouldIndexBody(node, nodeType)) && strings.TrimSpace(node.Content) != ""
 }
 
 func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
@@ -359,8 +363,10 @@ func computeContentHash(node *kb.Node) string {
 	annotation, _ := node.Metadata["annotation"].(string)
 	keywords := extractKeywords(node.Metadata)
 	nodeType, _ := node.Metadata["type"].(string)
+	sourceKind, _ := node.Metadata["source_kind"].(string)
+	contentProfile, _ := node.Metadata["content_profile"].(string)
 
-	data := fmt.Sprintf("%s|%s|%s|%s", title, annotation, strings.Join(keywords, ","), nodeType)
+	data := fmt.Sprintf("%s|%s|%s|%s|%s|%s", title, annotation, strings.Join(keywords, ","), nodeType, sourceKind, contentProfile)
 	hash := sha256.Sum256([]byte(data))
 
 	return hex.EncodeToString(hash[:])
@@ -380,7 +386,7 @@ func buildNodeEmbeddingText(node *kb.Node, nodeType string) string {
 	parts := []string{title, annotation}
 	parts = append(parts, keywords...)
 
-	if nodeType == "note" && strings.TrimSpace(node.Content) != "" {
+	if shouldIndexBody(node, nodeType) {
 		parts = append(parts, node.Content)
 	}
 
@@ -391,8 +397,10 @@ func buildNodeSearchDocument(node *kb.Node, nodeType string) NodeSearchDocument 
 	title, _ := node.Metadata["title"].(string)
 	annotation, _ := node.Metadata["annotation"].(string)
 	sourceURL, _ := node.Metadata["source_url"].(string)
+	sourceKind, _ := node.Metadata["source_kind"].(string)
+	contentProfile, _ := node.Metadata["content_profile"].(string)
 	body := ""
-	if nodeType == "note" {
+	if shouldIndexBody(node, nodeType) {
 		body = node.Content
 	}
 
@@ -404,9 +412,26 @@ func buildNodeSearchDocument(node *kb.Node, nodeType string) NodeSearchDocument 
 		Annotation:      annotation,
 		Keywords:        extractKeywords(node.Metadata),
 		SourceURL:       sourceURL,
+		SourceKind:      sourceKind,
+		ContentProfile:  contentProfile,
 		ManualProcessed: kb.ManualProcessedEffective(node.Metadata),
 		Body:            body,
 	}
+}
+
+func shouldIndexBody(node *kb.Node, nodeType string) bool {
+	if strings.TrimSpace(node.Content) == "" {
+		return false
+	}
+	if nodeType == "note" {
+		return true
+	}
+	if nodeType != "link" {
+		return false
+	}
+	contentProfile, _ := node.Metadata["content_profile"].(string)
+
+	return contentProfile != "" && contentProfile != string(kb.ContentProfileLinkBookmark)
 }
 
 func extractKeywords(meta map[string]any) []string {

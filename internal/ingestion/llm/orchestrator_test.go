@@ -146,6 +146,54 @@ func TestOpenAIOrchestrator_WhenArticleInput_ExpectFetchThenCreateNode(t *testin
 	assert.Equal(t, 2, callCount)
 }
 
+func TestOpenAIOrchestrator_WhenDigestNoteAfterFetch_ExpectGeneratedContentPreserved(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	fetchArgs := `{"url":"https://example.com/blog/designing-go-libraries"}`
+	firstResp := buildFunctionCallResponse(t, "resp1", "call1", "fetch_url_content", fetchArgs)
+	createNodeArgs := map[string]any{
+		"keywords":        []any{"go"},
+		"annotation":      "Conceptual digest",
+		"theme_path":      "go/design",
+		"slug":            "designing-go-libraries",
+		"type":            "note",
+		"source_kind":     "article",
+		"content_profile": "conceptual_digest",
+		"content":         "## Главная идея\n\nСжатая выжимка.",
+		"title":           "Designing Go Libraries",
+		"source_url":      "https://example.com/blog/designing-go-libraries",
+	}
+	secondResp := buildCreateNodeResponse(t, "resp2", "call2", createNodeArgs)
+
+	callCount := 0
+	mockFetcher := &mockContentFetcher{
+		result: &fetcher.FetchResult{
+			Title:   "Designing Go Libraries",
+			Content: "# Full Article\n\nFull source content that must not be stored for digest.",
+		},
+	}
+	var seqClient sequenceMockClient
+	seqClient.responses = []*responses.Response{firstResp, secondResp}
+	seqClient.idx = &callCount
+	orch := llm.NewTestOrchestrator(&seqClient, "gpt-4o", mockFetcher)
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text:            "https://example.com/blog/designing-go-libraries",
+		SourceURL:       "https://example.com/blog/designing-go-libraries",
+		SourceKind:      "article",
+		ContentProfile:  "conceptual_digest",
+		RecommendedType: "note",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "note", result.Type)
+	assert.Equal(t, "article", result.SourceKind)
+	assert.Equal(t, "conceptual_digest", result.ContentProfile)
+	assert.Equal(t, "## Главная идея\n\nСжатая выжимка.", result.Content)
+	assert.NotContains(t, result.Content, "Full source content")
+}
+
 func TestOpenAIOrchestrator_WhenArticleAndWrongLLMSourceURL_ExpectCanonicalFromInput(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

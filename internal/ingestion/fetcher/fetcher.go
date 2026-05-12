@@ -20,6 +20,7 @@ type FetchResult struct {
 
 // URLMeta — лёгкие метаданные страницы (title + description из <meta>).
 type URLMeta struct {
-	Title       string
-	Description string
+	Title          string
+	Description    string
+	ContentPreview string
 }

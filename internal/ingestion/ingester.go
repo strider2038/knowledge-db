@@ -19,3 +19,7 @@ type Ingester interface {
 	IngestText(ctx context.Context, req IngestRequest) (*kb.Node, error)
 	IngestURL(ctx context.Context, url string) (*kb.Node, error)
 }
+
+type DescriptionRefresher interface {
+	RefreshDescription(ctx context.Context, path string) (*kb.Node, error)
+}

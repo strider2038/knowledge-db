@@ -7,7 +7,10 @@ import (
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
-var ErrNotImplemented = errors.New("ingestion not implemented")
+var (
+	ErrNotImplemented    = errors.New("ingestion not implemented")
+	ErrSourceURLRequired = errors.New("source_url required")
+)
 
 // StubIngester — заглушка, возвращает ErrNotImplemented.
 type StubIngester struct{}
@@ -19,5 +22,9 @@ func (s *StubIngester) IngestText(ctx context.Context, req IngestRequest) (*kb.N
 
 // IngestURL возвращает ErrNotImplemented.
 func (s *StubIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
+	return nil, ErrNotImplemented
+}
+
+func (s *StubIngester) RefreshDescription(ctx context.Context, path string) (*kb.Node, error) {
 	return nil, ErrNotImplemented
 }

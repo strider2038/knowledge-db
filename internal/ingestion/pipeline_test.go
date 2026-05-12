@@ -23,9 +23,12 @@ import (
 type mockOrchestrator struct {
 	result *llm.ProcessResult
 	err    error
+	input  llm.ProcessInput
 }
 
-func (m *mockOrchestrator) Process(_ context.Context, _ llm.ProcessInput) (*llm.ProcessResult, error) {
+func (m *mockOrchestrator) Process(_ context.Context, input llm.ProcessInput) (*llm.ProcessResult, error) {
+	m.input = input
+
 	return m.result, m.err
 }
 
@@ -370,4 +373,223 @@ func TestPipelineIngester_IngestText_WhenArticleAndRussian_ExpectNoTranslation(t
 	translationPath := filepath.Join(base, "go", "russian-article.ru.md")
 	_, err = fs.Stat(translationPath)
 	assert.Error(t, err, "translation file should not exist")
+}
+
+func TestPipelineIngester_IngestURL_WhenRepositoryProfile_ExpectProfilePersistedAndDigestContent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"go", "runnable"},
+			Annotation: "Repository profile",
+			ThemePath:  "go/packages",
+			Slug:       "runnable",
+			Type:       "link",
+			Content:    "## Назначение\n\nПрофиль репозитория.",
+			Title:      "Runnable",
+		},
+	}
+	fetch := &mockFetcher{result: &fetcher.FetchResult{
+		Title:   "GitHub - pior/runnable",
+		Content: "# Runnable\n\nLibrary README with architecture.",
+	}}
+	pipeline := ingestion.NewPipelineIngester(store, orc, fetch, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.IngestURL(ctx, "https://github.com/pior/runnable")
+
+	require.NoError(t, err)
+	assert.Equal(t, "link", node.Metadata["type"])
+	assert.Equal(t, "repository", node.Metadata["source_kind"])
+	assert.Equal(t, "repository_profile", node.Metadata["content_profile"])
+	assert.Equal(t, "## Назначение\n\nПрофиль репозитория.", node.Content)
+	assert.Equal(t, "repository", orc.input.SourceKind)
+	assert.Equal(t, "repository_profile", orc.input.ContentProfile)
+	assert.Equal(t, "link", orc.input.RecommendedType)
+}
+
+func TestPipelineIngester_IngestText_WhenArticleURLDigest_ExpectConceptualNote(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"go"},
+			Annotation: "Conceptual digest",
+			ThemePath:  "go/design",
+			Slug:       "designing-go-libraries",
+			Content:    "## Главная идея\n\nКонцептуальная выжимка.",
+			Title:      "Designing Go Libraries",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:      "https://example.com/blog/designing-go-libraries сохрани концептуальное описание",
+		SourceURL: "https://example.com/blog/designing-go-libraries",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "note", node.Metadata["type"])
+	assert.Equal(t, "article", node.Metadata["source_kind"])
+	assert.Equal(t, "conceptual_digest", node.Metadata["content_profile"])
+	assert.Equal(t, "## Главная идея\n\nКонцептуальная выжимка.", node.Content)
+}
+
+func TestPipelineIngester_RefreshDescription_WhenRepository_ExpectStableFieldsPreserved(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "go/packages"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "go/packages/runnable.md"), []byte(`---
+title: Old Runnable
+aliases: [Old Runnable]
+keywords: [old]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-02T00:00:00Z"
+annotation: "Old annotation"
+type: link
+source_url: "https://github.com/pior/runnable"
+manual_processed: true
+source_author: "Existing Author"
+---
+
+Old body
+`), 0o644))
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:       []string{"go", "runnable"},
+			Annotation:     "Updated annotation",
+			ThemePath:      "ignored",
+			Slug:           "ignored",
+			Type:           "link",
+			SourceKind:     "repository",
+			ContentProfile: "repository_profile",
+			Content:        "## Назначение\n\nUpdated digest.",
+			Title:          "Runnable",
+		},
+	}
+	fetch := &mockFetcher{result: &fetcher.FetchResult{
+		Title:   "GitHub - pior/runnable",
+		Content: "# Runnable\n\nREADME.",
+	}}
+	pipeline := ingestion.NewPipelineIngester(store, orc, fetch, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.RefreshDescription(ctx, "go/packages/runnable")
+
+	require.NoError(t, err)
+	assert.Equal(t, "2024-01-01T00:00:00Z", node.Metadata["created"])
+	assert.Equal(t, true, node.Metadata["manual_processed"])
+	assert.Equal(t, "https://github.com/pior/runnable", node.Metadata["source_url"])
+	assert.Equal(t, "Existing Author", node.Metadata["source_author"])
+	assert.Equal(t, "Updated annotation", node.Annotation)
+	assert.Equal(t, "repository", node.Metadata["source_kind"])
+	assert.Equal(t, "repository_profile", node.Metadata["content_profile"])
+	assert.Equal(t, "## Назначение\n\nUpdated digest.", node.Content)
+}
+
+func TestPipelineIngester_RefreshDescription_WhenMissingSourceURL_ExpectError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "notes"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "notes/local.md"), []byte(`---
+keywords: [local]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Local"
+---
+`), 0o644))
+	store := kb.NewStore(fs)
+	pipeline := ingestion.NewPipelineIngester(store, &mockOrchestrator{}, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	_, err := pipeline.RefreshDescription(ctx, "notes/local")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ingestion.ErrSourceURLRequired)
+}
+
+func TestPipelineIngester_RefreshDescription_WhenFetchFails_ExpectFileNotMutated(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	nodePath := filepath.Join(base, "news/release.md")
+	require.NoError(t, fs.MkdirAll(filepath.Dir(nodePath), 0o755))
+	original := `---
+title: Old Release
+keywords: [old]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Old"
+type: link
+source_url: "https://techcrunch.com/release"
+---
+
+Old body
+`
+	require.NoError(t, afero.WriteFile(fs, nodePath, []byte(original), 0o644))
+	store := kb.NewStore(fs)
+	pipeline := ingestion.NewPipelineIngester(store, &mockOrchestrator{}, &mockFetcher{err: ingestion.ErrNotImplemented}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	_, err := pipeline.RefreshDescription(ctx, "news/release")
+
+	require.Error(t, err)
+	data, readErr := afero.ReadFile(fs, nodePath)
+	require.NoError(t, readErr)
+	assert.Equal(t, original, string(data))
+}
+
+func TestPipelineIngester_RefreshDescription_WhenNewsLink_ExpectTypeCorrectedToBriefNote(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "news"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "news/release.md"), []byte(`---
+title: Old Release
+keywords: [old]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Old"
+type: link
+source_url: "https://techcrunch.com/release"
+---
+
+Old body
+`), 0o644))
+	store := kb.NewStore(fs)
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:       []string{"ai", "релиз"},
+			Annotation:     "Brief release digest",
+			Type:           "note",
+			SourceKind:     "news",
+			ContentProfile: "brief_digest",
+			Content:        "## Суть новости\n\nКраткая выжимка.",
+			Title:          "Release",
+		},
+	}
+	fetch := &mockFetcher{result: &fetcher.FetchResult{Title: "Release", Content: "Product released today."}}
+	pipeline := ingestion.NewPipelineIngester(store, orc, fetch, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.RefreshDescription(ctx, "news/release")
+
+	require.NoError(t, err)
+	assert.Equal(t, "note", node.Metadata["type"])
+	assert.Equal(t, "news", node.Metadata["source_kind"])
+	assert.Equal(t, "brief_digest", node.Metadata["content_profile"])
+	assert.Equal(t, "## Суть новости\n\nКраткая выжимка.", node.Content)
 }

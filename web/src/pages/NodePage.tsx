@@ -108,6 +108,15 @@ export function NodePage() {
     }
   }
 
+  const handleNodeUpdated = (updated: Node) => {
+    setNode(updated)
+    void refreshGitStatus().catch(() => {})
+    if (!path) return
+    if (basePath && isTranslation) {
+      getNode(basePath).then(setOriginalNode)
+    }
+  }
+
   const translations =
     (node?.metadata?.translations as string[] | undefined) ??
     (originalNode?.metadata?.translations as string[] | undefined) ??
@@ -182,8 +191,7 @@ export function NodePage() {
     return { name: seg, path }
   })
 
-  const hasOutline =
-    nodeType !== 'link' && extractHeadings(node.content || '').length > 0
+  const hasOutline = extractHeadings(node.content || '').length > 0
 
   return (
     <>
@@ -227,7 +235,13 @@ export function NodePage() {
           manualProcessed={!!(node.metadata?.manual_processed)}
           manualSaving={manualSaving}
           onManualProcessedToggle={handleManualProcessedToggle}
-          onNodeChanged={handleNodeChanged}
+          onNodeChanged={(updated) => {
+            if (updated === node) {
+              handleNodeChanged()
+            } else {
+              handleNodeUpdated(updated)
+            }
+          }}
           onNavigate={(p) => navigate(p)}
           onNavigateHome={() => navigate('/')}
         />
@@ -320,7 +334,7 @@ export function NodePage() {
           <MarkdownContent content={node.annotation || '(нет)'} nodePath={node.path} />
         </CardContent>
       </Card>
-      {nodeType !== 'link' && (
+      {(nodeType !== 'link' || node.content) && (
         <Card>
           <CardHeader>
             <CardTitle>Содержание</CardTitle>

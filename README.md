@@ -59,7 +59,7 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | `task build-server` | Собрать только kb-server           |
 | `task build-cli`    | Собрать только kb-cli              |
 | `task web:dev`      | Vite dev server (HMR, прокси /api) |
-| `task server:dev`   | kb-server с hot reload (air)       |
+| `task server:dev`   | kb-server с hot reload (air), без пересборки embedded UI |
 | `task dev`          | Подсказка по запуску dev-окружения |
 | `task test`         | Запустить тесты                    |
 | `task lint`         | golangci-lint                      |
@@ -71,7 +71,9 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 Для разработки запустите в двух терминалах:
 
 1. `task web:dev` — Vite dev server ([http://localhost:5173](http://localhost:5173))
-2. `task server:dev` — kb-server с hot reload
+2. `task server:dev` — kb-server с hot reload (embedded UI не пересобирается)
+
+Если нужно обновить встроенную статику (`internal/ui/static`) для бинарника `kb-server`, используйте `task build-server` или `task build`.
 
 Для `server:dev` нужен [air](https://github.com/air-verse/air): `task server:dev:install`.
 

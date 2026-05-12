@@ -63,7 +63,7 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 ### Requirement: Embedding-индекс для нод
 
-Система ДОЛЖНА (SHALL) генерировать и хранить embedding для каждой ноды. Текст для embedding SHALL формироваться: `title + " " + annotation + " " + keywords` — для всех типов; для `note` — дополнительно `+ " " + body`. Embedding MUST храниться как BLOB (little-endian float32 array) в таблице embeddings. Система MUST хранить content_hash (hash от title+annotation+keywords+type) и body_hash (hash от body) для определения изменений. При индексации ноды система MUST обновлять searchable text записи для keyword/FTS поиска.
+Система ДОЛЖНА (SHALL) генерировать и хранить embedding для каждой ноды. Текст для embedding SHALL формироваться: `title + " " + annotation + " " + keywords` — для всех типов; для `note` — дополнительно `+ " " + body`; для `link` — дополнительно `+ " " + body`, если узел содержит `content_profile` и непустое markdown-тело. Embedding MUST храниться как BLOB (little-endian float32 array) в таблице embeddings. Система MUST хранить content_hash (hash от title+annotation+keywords+type+source_kind+content_profile) и body_hash (hash от body) для определения изменений. При индексации ноды система MUST обновлять searchable text записи для keyword/FTS поиска. Searchable text MUST включать `source_kind`, `content_profile` и body для `note` и профильных `link` узлов. Система MUST создавать chunks для `article`, а также для `note` и `link` узлов с digest body, если body достаточно длинное для chunking.
 
 #### Scenario: Индексация новой ноды
 
@@ -79,6 +79,21 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 - **WHEN** нода типа article существует в indexed_nodes, но body_hash отличается
 - **THEN** старые чанки и их searchable text удаляются, генерируются новые чанки и их embeddings
+
+#### Scenario: Индексация repository profile body
+
+- **WHEN** нода `type=link` содержит `content_profile=repository_profile` и markdown-тело
+- **THEN** body включается в node embedding, searchable text и chunk index при достаточном размере
+
+#### Scenario: Индексация conceptual digest note
+
+- **WHEN** нода `type=note` содержит `content_profile=conceptual_digest` и markdown-тело
+- **THEN** body включается в node embedding, searchable text и chunk index при достаточном размере
+
+#### Scenario: Старый link без digest
+
+- **WHEN** нода `type=link` не содержит `content_profile` и имеет пустое тело
+- **THEN** индексирование продолжает использовать title, annotation и keywords без ошибки
 
 ### Requirement: SyncWorker — синхронизация индекса
 

@@ -2,7 +2,9 @@ package fetcher
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -96,10 +98,70 @@ func (f *GitHubMetaFetcher) FetchMeta(ctx context.Context, rawURL string) (*URLM
 		parts = append(parts, "Темы: "+strings.Join(topics, ", "))
 	}
 
-	return &URLMeta{
+	meta := &URLMeta{
 		Title:       title,
 		Description: strings.Join(parts, ". "),
-	}, nil
+	}
+	if readme, err := f.fetchReadme(ctx, owner, repo); err == nil {
+		meta.ContentPreview = buildMetaPreview(readme, 4000)
+	}
+
+	return meta, nil
+}
+
+func (f *GitHubMetaFetcher) fetchReadme(ctx context.Context, owner, repo string) (string, error) {
+	apiURL := strings.TrimSuffix(f.apiBaseURL, "/") + "/repos/" + owner + "/" + repo + "/readme"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", errors.Errorf("github readme fetch: create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "knowledge-db")
+
+	resp, err := f.httpClient.Do(req)
+	if err != nil {
+		return "", errors.Errorf("github readme fetch: request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", ErrURLMetaNotSupported
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+	if err != nil {
+		return "", errors.Errorf("github readme fetch: read response: %w", err)
+	}
+
+	var payload struct {
+		Content  string `json:"content"`
+		Encoding string `json:"encoding"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", errors.Errorf("github readme fetch: decode response: %w", err)
+	}
+	if payload.Content == "" {
+		return "", ErrURLMetaNotSupported
+	}
+	if payload.Encoding != "" && payload.Encoding != "base64" {
+		return "", ErrURLMetaNotSupported
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(payload.Content, "\n", ""))
+	if err != nil {
+		return "", errors.Errorf("github readme fetch: decode content: %w", err)
+	}
+
+	return string(decoded), nil
+}
+
+func buildMetaPreview(content string, maxLen int) string {
+	preview := strings.TrimSpace(content)
+	if len(preview) <= maxLen {
+		return preview
+	}
+
+	return preview[:maxLen] + "\n\n[...preview truncated...]"
 }
 
 func parseGitHubRepo(rawURL string) (string, string, error) {
