@@ -99,6 +99,7 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **KB_DATA_PATH**                                                 | Путь к корню базы знаний (обязателен для kb-server)                                                                                                                                             |
 | **KB_HTTP_ADDR**                                                 | Адрес HTTP-сервера (по умолчанию :8080)                                                                                                                                                         |
+| **KB_MCP_API_KEY**                                               | API-ключ для MCP endpoint `/api/mcp` (заголовок `Authorization: Bearer <key>`). Если пустой/не задан — MCP endpoint отключён                                                                     |
 | **KB_GIT_DISABLED**                                              | Отключить git (коммиты и sync)                                                                                                                                                                  |
 | **KB_LOGIN**, **KB_PASSWORD**                                    | Парольный режим: при задании **обоих** включается защита API и web UI (нельзя совмещать с Google OAuth)                                                                                         |
 | **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: идентификатор и секрет OAuth 2.0-клиента (тип **Web application**) в Google Cloud Console                                                                                         |
@@ -123,6 +124,14 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 | **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                           |
 | **VITE_API_URL**                                                 | URL API для web (по умолчанию [http://localhost:8080](http://localhost:8080))                                                                                                                   |
 | **ALLOWED_CORS_ORIGIN**                                          | CORS origin для dev (например [http://localhost:5173](http://localhost:5173))                                                                                                                   |
+
+### MCP endpoint
+
+- MCP доступен по `POST/GET /api/mcp` на том же сервере.
+- Для доступа обязателен Bearer-токен из `KB_MCP_API_KEY`:
+  - `Authorization: Bearer <KB_MCP_API_KEY>`
+- При отсутствии/невалидном токене сервер возвращает `401 Unauthorized`.
+- Если `KB_MCP_API_KEY` пустой или не задан, маршрут `/api/mcp` не обслуживается (MCP отключён).
 
 
 ## Режимы запуска

@@ -26,6 +26,12 @@ const testLoginBody = `{"login":"testuser","password":"testpass"}`
 
 func setupAuthTestHandler(t *testing.T, authEnabled bool) http.Handler {
 	t.Helper()
+
+	return setupAuthTestHandlerWithMCPKey(t, authEnabled, "test-mcp-key")
+}
+
+func setupAuthTestHandlerWithMCPKey(t *testing.T, authEnabled bool, mcpAPIKey string) http.Handler {
+	t.Helper()
 	dataPath := t.TempDir()
 	uploadsDir := t.TempDir()
 	h := api.NewHandlerWithUploads(dataPath, uploadsDir, &ingestion.StubIngester{}, nil)
@@ -34,6 +40,7 @@ func setupAuthTestHandler(t *testing.T, authEnabled bool) http.Handler {
 		DataPath:   dataPath,
 		UploadsDir: uploadsDir,
 		HTTP:       config.HTTP{},
+		MCPAPIKey:  mcpAPIKey,
 		Auth: config.Auth{
 			Login:      "",
 			Password:   "",
@@ -49,8 +56,11 @@ func setupAuthTestHandler(t *testing.T, authEnabled bool) http.Handler {
 	authHandler := api.NewAuthHandler(store, cfg)
 	mux, err := api.NewMux(h, authHandler)
 	require.NoError(t, err)
-	mux.Handle("GET /api/mcp", mcp.NewHandler(dataPath))
-	mux.Handle("POST /api/mcp", mcp.NewHandler(dataPath))
+	if cfg.MCPEnabled() {
+		mcpHandler := mcp.NewHandler(cfg.MCPAPIKey, nil, nil)
+		mux.Handle("GET /api/mcp", mcpHandler)
+		mux.Handle("POST /api/mcp", mcpHandler)
+	}
 
 	handler := api.Gzip(api.CORS(mux, ""))
 	if authEnabled {
@@ -205,7 +215,7 @@ func TestAuthAllowlist_WhenAuthEnabled_HealthzWithoutSession_ExpectOK(t *testing
 	resp.IsOK()
 }
 
-func TestMCP_WhenAuthEnabledAndNoSession_Expect401(t *testing.T) {
+func TestMCP_WhenNoBearerToken_Expect401(t *testing.T) {
 	t.Parallel()
 	handler := setupAuthTestHandler(t, true)
 
@@ -213,23 +223,58 @@ func TestMCP_WhenAuthEnabledAndNoSession_Expect401(t *testing.T) {
 	resp.IsUnauthorized()
 }
 
-func TestMCP_WhenAuthEnabledAndValidSession_ExpectReachesHandler(t *testing.T) {
+func TestMCP_WhenInvalidBearerToken_Expect401(t *testing.T) {
 	t.Parallel()
 	handler := setupAuthTestHandler(t, true)
 
-	loginResp := apitest.HandlePOST(t, handler, "/api/auth/login", bytes.NewReader([]byte(testLoginBody)),
-		apitest.WithContentType("application/json"))
-	cookie := loginResp.Header().Get("Set-Cookie")
-	require.NotEmpty(t, cookie)
-
-	mreq, err3 := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp", nil)
-	require.NoError(t, err3)
-	mreq.Header.Set("Cookie", cookie)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer wrong-key")
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, mreq)
+	handler.ServeHTTP(rec, req)
 
-	// MCP handler returns 501, but we get past auth (not 401)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestMCP_WhenValidBearerToken_ExpectHandlerAccess(t *testing.T) {
+	t.Parallel()
+	handler := setupAuthTestHandler(t, true)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "/api/mcp", bytes.NewReader([]byte(`{"jsonrpc":"2.0","id":1}`)))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer test-mcp-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
 	require.NotEqual(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestMCP_WhenInvalidAuthorizationFormat_Expect401(t *testing.T) {
+	t.Parallel()
+	handler := setupAuthTestHandler(t, true)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Basic test-mcp-key")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestMCP_WhenAPIKeyEmpty_ExpectRouteDisabled(t *testing.T) {
+	t.Parallel()
+	handler := setupAuthTestHandlerWithMCPKey(t, true, "   ")
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp", nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.NotEqual(t, http.StatusUnauthorized, rec.Code)
+	require.Empty(t, rec.Header().Get("WWW-Authenticate"))
+	require.Contains(t, rec.Body.String(), "<!doctype html>")
 }
 
 func TestAssets_WhenAuthEnabledAndNoSession_Expect401(t *testing.T) {

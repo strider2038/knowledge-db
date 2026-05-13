@@ -152,3 +152,4 @@ Before reporting a task as done:
 - For OpenSpec changes, run `openspec validate <change-name>` and check `openspec status --change <change-name>`.
 - If a check cannot be run, state the reason clearly in the final response.
 - Do not archive an OpenSpec change until tasks are complete, validation passes, and the user agrees to archive.
+- When adding/changing environment variables or auth/access parameters, update both `README.md` and `.env.example` in the same change.

@@ -1,7 +1,11 @@
 ## Purpose
 
-MCP (Model Context Protocol) сервер для подключения чатботов (Claude, Cursor и др.) к базе знаний. Endpoint на том же сервере, что и API.
+Уточнить требования к MCP endpoint `/api/mcp` для интеграции внешних MCP-клиентов в персональном local-first сценарии: доступ по API-ключу из окружения и реализация сервера на go-sdk.
+
 ## Requirements
+
+## MODIFIED Requirements
+
 ### Requirement: Endpoint /api/mcp
 
 MCP MUST быть доступен по пути `/api/mcp` на том же HTTP-сервере, что и REST API. Endpoint `/api/mcp` MUST требовать Bearer-токен, равный значению `KB_MCP_API_KEY`. При отсутствии токена, неверном формате `Authorization` или невалидном ключе сервер SHALL возвращать `401 Unauthorized`. Реализация MCP endpoint MUST использовать библиотеку `github.com/modelcontextprotocol/go-sdk`.
@@ -34,4 +38,3 @@ MCP-сервер ДОЛЖЕН (SHALL) использовать `KB_DATA_PATH` д
 
 - **WHEN** MCP-клиент вызывает MCP tool для поиска по базе знаний
 - **THEN** сервер возвращает данные из базы по пути `KB_DATA_PATH`
-
