@@ -21,11 +21,11 @@ type NodeListItem struct {
 	Title           string   `json:"title"`
 	Type            string   `json:"type"`
 	Created         string   `json:"created"`
-	SourceURL       string   `json:"source_url"` //nolint:tagliatelle // REST API snake_case
+	SourceURL       string   `json:"source_url"`
 	Translations    []string `json:"translations,omitempty"`
 	Annotation      string   `json:"annotation,omitempty"`
 	Keywords        []string `json:"keywords,omitempty"`
-	ManualProcessed bool     `json:"manual_processed"` //nolint:tagliatelle // REST API snake_case
+	ManualProcessed bool     `json:"manual_processed"`
 }
 
 // ListNodesOptions — параметры для ListNodesWithOptions.

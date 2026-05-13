@@ -36,14 +36,11 @@ func (c *Client) AuthorizationURL(state string) string {
 	return u.authURL() + "?" + v.Encode()
 }
 
-//nolint:tagliatelle // Google token response field names
 type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
 }
-
-//nolint:tagliatelle // Google userinfo field names
 type userInfo struct {
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`

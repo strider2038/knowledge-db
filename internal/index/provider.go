@@ -40,7 +40,7 @@ type embeddingResponse struct {
 	} `json:"data"`
 	Model string `json:"model"`
 	Usage struct {
-		TotalTokens int `json:"total_tokens"` //nolint:tagliatelle // OpenAI embeddings usage JSON
+		TotalTokens int `json:"total_tokens"`
 	} `json:"usage"`
 }
 

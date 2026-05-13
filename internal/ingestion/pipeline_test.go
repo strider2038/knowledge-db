@@ -97,6 +97,93 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 	assert.Equal(t, "note", node.Metadata["type"])
 }
 
+func TestPipelineIngester_IngestText_WhenFileFallbackAvailable_ExpectPlacementContext(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "go/concurrency"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "go/concurrency/goroutines.md"), []byte(`---
+title: Goroutines
+keywords: [goroutines, concurrency]
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+annotation: "Go goroutines and channels."
+---
+Notes about goroutines, channels and leaks.
+`), 0o644))
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"goroutines"},
+			Annotation: "Notes about goroutines",
+			ThemePath:  "go/concurrency",
+			Slug:       "goroutine-leaks",
+			Type:       "note",
+			Content:    "Goroutine leaks",
+			Title:      "Goroutine Leaks",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про goroutine leaks"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "fallback", orc.input.PlacementContext.Source)
+	require.NotEmpty(t, orc.input.PlacementContext.CandidateThemes)
+	assert.Equal(t, "go/concurrency", orc.input.PlacementContext.CandidateThemes[0].Path)
+	require.NotEmpty(t, orc.input.PlacementContext.CandidateKeywords)
+	assert.Equal(t, "goroutines", orc.input.PlacementContext.CandidateKeywords[0].Keyword)
+}
+
+func TestPipelineIngester_IngestText_WhenExplicitThemeInstruction_ExpectPlacementPriority(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "go/concurrency"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "go/concurrency/channels.md"), []byte(`---
+title: Channels
+keywords: [channels]
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+annotation: "Go channels."
+---
+`), 0o644))
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "programming/ai"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "programming/ai/agents.md"), []byte(`---
+title: AI Agents
+keywords: [agents]
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+annotation: "Agents and coding."
+---
+`), 0o644))
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"agents"},
+			Annotation: "Explicit placement note",
+			ThemePath:  "go/concurrency",
+			Slug:       "agents-note",
+			Type:       "note",
+			Content:    "Agents note",
+			Title:      "Agents Note",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Сохрани в go/concurrency заметку про agents"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "go/concurrency", orc.input.PlacementContext.ExplicitThemePath)
+	require.NotEmpty(t, orc.input.PlacementContext.CandidateThemes)
+	assert.Equal(t, "go/concurrency", orc.input.PlacementContext.CandidateThemes[0].Path)
+	assert.Contains(t, orc.input.PlacementContext.CandidateThemes[0].Reasons, "explicit_user_instruction")
+}
+
 func TestPipelineIngester_IngestText_WhenOrchestratorFails_ExpectError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

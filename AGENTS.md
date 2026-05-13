@@ -1,102 +1,154 @@
 # Agents Guide — knowledge-db
 
-Руководство для AI-агентов (Cursor, Claude, и др.) при работе с проектом управления персональной базой знаний.
+This guide is for AI agents working on **knowledge-db**, a local-first personal knowledge base manager.
 
-## Контекст проекта
+## Project Overview
 
-**knowledge-db** — система управления персональной базой знаний с принципом **оффлайн-первым** и **git-first**. База хранится локально в отдельной директории под git, доступна без интернета и полностью под контролем пользователя.
+`knowledge-db` is an offline-first, git-first system for managing a personal knowledge base. The knowledge base itself is a directory of markdown/frontmatter files under the user's control, usually in a separate git repository and referenced through `KB_DATA_PATH`.
 
-## Архитектура
+The application is intended to run locally. Remote access, hosted storage, and network-dependent features should stay optional unless a change explicitly requires them.
 
-```
+## Product Concept
+
+`knowledge-db` optimizes for two complementary workflows:
+
+- **Writing and capture are online-friendly**: users should be able to add notes, links, forwarded Telegram posts, imported Telegram archives, API payloads, and MCP-created material from wherever they are.
+- **Reading and ownership are offline-first and git-first**: the knowledge base must remain local, versioned, mergeable, and available without internet access. Nothing important should depend on a hosted service being reachable.
+
+The system is not just a bookmark archive. Ingested material should become useful knowledge-base nodes: annotated, keyworded, placed in the topic tree, indexed for search, and available as context for RAG/chat workflows.
+
+Reliability matters. Articles disappear, websites change structure, services become unavailable, and networks fail. Local markdown files plus transparent git history are core product properties, not implementation details.
+
+The project supports two main operating modes:
+
+- **Local/offline mode** for reading, validation, search, and optional local LLM usage through tools such as Ollama or LM Studio.
+- **Self-hosted mode** on a private VPS for convenient capture from mobile, Telegram bot usage, sync, and broader AI workflows.
+
+## Architecture
+
+```text
 knowledge-db/
 ├── cmd/
-│   ├── kb-server/   # API + UI + Telegram bot + MCP
-│   └── kb-cli/      # validate, init
+│   ├── kb-server/   # HTTP API, embedded UI, Telegram bot, MCP endpoint
+│   └── kb-cli/      # validate, init and maintenance commands
 ├── internal/
-│   ├── kb/          # работа с data/, валидация, дерево тем
-│   ├── api/         # HTTP handlers, роутинг
-│   ├── ingestion/   # интерфейс Ingester, pipeline
-│   ├── mcp/         # MCP endpoint /api/mcp
-│   └── ui/          # embed статики (embed.go, static/)
-├── web/             # React исходники (Vite)
-├── .cursor/skills/  # Agent skills
-├── data/            # База знаний (git subtree/submodule, локальная)
-└── openspec/        # Спецификации, изменения (OpenSpec workflow)
+│   ├── api/         # HTTP handlers and routing
+│   ├── bootstrap/   # application wiring and config
+│   ├── index/       # local search index, retrieval, embeddings
+│   ├── ingestion/   # ingestion pipeline, fetchers, LLM orchestration
+│   ├── kb/          # filesystem store, frontmatter, validation, tree
+│   ├── mcp/         # MCP endpoint
+│   └── ui/          # embedded frontend static files
+├── web/             # React + Vite frontend
+├── .agents/skills/  # repository-specific agent skills
+├── .cursor/         # Cursor rules and compatibility assets
+├── docs/            # ADRs and project notes
+└── openspec/        # OpenSpec specs and changes
 ```
 
-### serverapp (Go)
+## Core Principles
 
-- **REST API** — CRUD, поиск по ключевым словам, векторный поиск (RAG)
-- **Telegram bot** — в том же процессе, long polling
-- **MCP server** — Model Context Protocol для подключения чатботов (Claude, и др.)
+1. **Knowledge base as first-class data**: user content lives as markdown/frontmatter files, not in an application database by default.
+2. **Capture anywhere, own locally**: web UI, Telegram, API, MCP, and imports may make writing convenient, but long-term ownership stays in local git-backed files.
+3. **Offline-first**: validation, browsing, keyword search, and core knowledge-base operations should work without internet access. Embeddings and remote LLM calls are optional enhancements.
+4. **Git as source of truth**: prefer mergeable text formats and preserve meaningful diffs.
+5. **Process information into knowledge**: ingestion should preserve sources while adding structure, annotations, keywords, placement, and searchability.
+6. **Local by default**: `kb-server`, web UI, Telegram bot, and MCP are designed around localhost/private or self-hosted use.
+7. **Small, explicit changes**: keep implementation scoped to the relevant package and update specs/docs when behavior or contracts change.
 
-### web (React)
+## Language Conventions
 
-- Упрощённый UI для работы с базой
-- Работа с локально запущенным kb-server
+- Code identifiers and Go/TypeScript comments should follow the local style already used in the package.
+- OpenSpec artifacts (`proposal.md`, `design.md`, `tasks.md`, delta specs) are written in Russian.
+- User-facing knowledge-base content is usually Russian unless the source or existing entry style says otherwise.
+- General repository documentation may be English when it is meant for agents or tooling.
 
-### Agent skills
+## Working With The Knowledge Base
 
-- Навыки для работы с базой напрямую из IDE (Cursor, VSCode)
-- Локальный доступ к данным без веб-интерфейса
+- Do not assume the knowledge base is in `./data`. Use `KB_DATA_PATH` or the path provided by the user.
+- Reading and writing knowledge-base files directly is allowed only when it is part of the requested workflow.
+- Keep markdown/frontmatter compatible with the current specs and validator.
+- When introducing new frontmatter fields, entry formats, or persistence behavior, update OpenSpec and relevant documentation.
+- Apply markdown normalization rules from `.cursor/rules/markdown-normalization.mdc` when normalizing entries, OpenSpec documents, or notes in an opened knowledge-base repository.
 
-## Принципы для AI-агентов
+## Backend Guidelines
 
-1. **База — первый класс**: Хранится в `data/` (или аналогичной директории), под git. Не в БД по умолчанию — это markdown/JSON/YAML и т.п. файлы.
-2. **Оффлайн-first**: Система должна работать без интернета. Векторные эмбеддинги — опционально; полнотекстовый/ключевой поиск — обязательно.
-3. **Git как источник правды**: Версионирование, diff, merge — ключевые инструменты. Избегать форматов, которые сложно мержить.
-4. **Локальность**: kb-server и web рассчитаны на localhost. Удалённый доступ — отдельная опция, не основной сценарий.
-5. **Язык артефактов**: Proposal, design, tasks, specs — на русском. Код — по конвенции проекта (часто английский для идентификаторов).
+- Backend code is Go under `cmd/` and `internal/`.
+- Use package-local interfaces where they reduce coupling and make tests easier.
+- Use `github.com/muonsoft/errors` for wrapping errors.
+- Use contextual logging through `github.com/muonsoft/clog`; do not add direct `slog` calls in business logic unless the surrounding package already does so for bootstrap/setup.
+- Preserve offline fallback paths, especially in ingestion, search, and index-related code.
+- Prefer focused tests for behavior changes. Use `testify` assertions, and prefer in-memory `afero` filesystems for `kb.Store` tests.
 
-## Расположение кода
+## Frontend Guidelines
 
+- Frontend code lives in `web/` and uses React, TypeScript, Vite, and the existing component/style conventions.
+- Keep operational UI quiet, dense, and practical. This is a knowledge-management tool, not a marketing site.
+- Use existing routes, API clients, components, and UI patterns before adding new abstractions.
+- Run frontend checks when touching `web/`.
 
-| Компонент    | Путь                                | Технологии            |
-| ------------ | ----------------------------------- | --------------------- |
-| Сервер, API  | `cmd/kb-server`, `internal/api`     | Go, stdlib net/http   |
-| Telegram bot | `cmd/kb-server` (в том же процессе) | Go, long polling      |
-| MCP server   | `internal/mcp`                      | Go, endpoint /api/mcp |
-| Web UI       | `web/`                              | React, Vite           |
-| Agent skills | `.cursor/skills/`                   | Markdown, SKILL.md    |
-| База знаний  | `data/` или отдельный репо          | Markdown, frontmatter |
+## OpenSpec Workflow
 
-
-## Когда агент работает с базой
-
-- Читать/писать в `data/` вручную — допустимо, если это часть flow (например, skill)
-- Структура записей — согласована со спецификацией (tags, frontmatter, связи)
-- При добавлении новых полей или форматов — обновлять спеки и документацию
-
-## Нормализация markdown
-
-Правило Cursor: `.cursor/rules/markdown-normalization.mdc` (заголовки и UTF-символы, frontmatter, чистка импорта, типографика). Применяй при нормализации записей в `data/`, спеках в `openspec/` и связанных заметках в отдельном репозитории базы знаний, если он открыт в том же воркспейсе.
-
-## OpenSpec
-
-Проект использует OpenSpec для изменений. Спеки и артефакты в `openspec/`. Правила артефактов — в `openspec/config.yaml`.
-
-## Полезные команды
+- Use OpenSpec for non-trivial behavior changes.
+- Changes live under `openspec/changes/<change-name>/`.
+- Always read the relevant `proposal.md`, `design.md`, `tasks.md`, and delta specs before implementing an OpenSpec change.
+- Mark tasks complete only after the implementation and verification for that task are actually done.
+- Validate the change before considering it complete:
 
 ```bash
-# Запуск kb-server
-go run ./cmd/kb-server
-# или: KB_DATA_PATH=/path/to/data ./kb-server
-# без git (коммиты и sync отключены): KB_GIT_DISABLED=true go run ./cmd/kb-server
-
-# CLI: валидация
-./kb-cli validate --path /path/to/data
-
-# CLI: инициализация
-./kb-cli init --path /path/to/data
-
-# Сборка
-task build
-
-# Web UI (dev)
-cd web && npm run dev
-
-# Открыть change
-openspec status --change <name>
+openspec validate <change-name>
+openspec status --change <change-name>
 ```
 
+## Useful Commands
+
+```bash
+# Run the server locally
+go run ./cmd/kb-server
+KB_DATA_PATH=/path/to/kb go run ./cmd/kb-server
+KB_GIT_DISABLED=true go run ./cmd/kb-server
+
+# CLI
+go run ./cmd/kb-cli validate --path /path/to/kb
+go run ./cmd/kb-cli init --path /path/to/kb
+
+# Build
+task build
+task build-server
+task build-cli
+
+# Tests and linters
+go test ./...
+go test ./... -race
+golangci-lint run ./...
+task test
+task lint
+
+# Frontend
+task web:dev
+task web:build
+task web:test
+task web:lint
+
+# OpenSpec
+openspec list
+openspec status --change <change-name>
+openspec validate <change-name>
+```
+
+## Completion Checklist For Agents
+
+Before reporting a task as done:
+
+- Review `git diff` and make sure only relevant files changed.
+- Run formatting for touched code (`gofmt` for Go; frontend formatter/linter if applicable).
+- Run linters:
+  - Go/backend: `golangci-lint run ./...` or `task lint`.
+  - Frontend changes: `task web:lint`.
+- Run tests appropriate to the change:
+  - Go/backend: `go test ./...` or a narrower package set when the full suite is too expensive.
+  - Race-sensitive backend changes: `go test ./... -race` when practical.
+  - Frontend changes: `task web:test` and usually `task web:build`.
+- For OpenSpec changes, run `openspec validate <change-name>` and check `openspec status --change <change-name>`.
+- If a check cannot be run, state the reason clearly in the final response.
+- Do not archive an OpenSpec change until tasks are complete, validation passes, and the user agrees to archive.

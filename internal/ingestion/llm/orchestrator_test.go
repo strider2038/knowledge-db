@@ -86,9 +86,7 @@ func TestOpenAIOrchestrator_WhenNoteInput_ExpectDirectCreateNode(t *testing.T) {
 	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", nil)
 
 	result, err := orch.Process(ctx, llm.ProcessInput{
-		Text:             "Some notes about Go patterns.",
-		ExistingThemes:   []string{"go/patterns"},
-		ExistingKeywords: []string{"go", "patterns"},
+		Text: "Some notes about Go patterns.",
 	})
 
 	require.NoError(t, err)
@@ -256,6 +254,59 @@ func (s *sequenceMockClient) New(_ context.Context, _ responses.ResponseNewParam
 	}
 
 	return s.responses[i], nil
+}
+
+func TestOpenAIOrchestrator_WhenSearchPlacementCandidatesToolCall_ExpectLoopContinuesToCreateNode(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	searchArgs := `{"query":"goroutine leaks","source_kind":"article","content_profile":"conceptual_digest","type":"note"}`
+	firstResp := buildFunctionCallResponse(t, "resp1", "call1", "search_placement_candidates", searchArgs)
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"goroutines"},
+		"annotation": "A note about goroutine leaks",
+		"theme_path": "go/concurrency",
+		"slug":       "goroutine-leaks",
+		"type":       "note",
+		"content":    "Goroutine leaks note",
+		"title":      "Goroutine Leaks",
+	}
+	secondResp := buildCreateNodeResponse(t, "resp2", "call2", createNodeArgs)
+
+	callCount := 0
+	seqClient := &sequenceMockClient{
+		responses: []*responses.Response{firstResp, secondResp},
+		idx:       &callCount,
+	}
+	toolCalled := false
+	orch := llm.NewTestOrchestrator(seqClient, "gpt-4o", nil)
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text: "goroutine leaks",
+		PlacementSearch: func(_ context.Context, req llm.SearchPlacementCandidatesRequest) (*llm.PlacementContext, error) {
+			toolCalled = true
+			assert.Equal(t, "goroutine leaks", req.Query)
+			assert.Equal(t, "article", req.SourceKind)
+			assert.Equal(t, "conceptual_digest", req.ContentProfile)
+			assert.Equal(t, "note", req.Type)
+
+			return &llm.PlacementContext{
+				Source: "fallback",
+				CandidateThemes: []llm.ThemeCandidate{
+					{Path: "go/concurrency", Score: 10},
+				},
+				CandidateKeywords: []llm.KeywordCandidate{
+					{Keyword: "goroutines", Score: 8},
+				},
+			}, nil
+		},
+	})
+
+	require.NoError(t, err)
+	assert.True(t, toolCalled)
+	assert.Equal(t, "go/concurrency", result.ThemePath)
+	assert.Equal(t, "goroutine-leaks", result.Slug)
+	assert.Equal(t, 2, callCount)
 }
 
 func TestOpenAIOrchestrator_WhenTypeHint_ExpectInInstructions(t *testing.T) {

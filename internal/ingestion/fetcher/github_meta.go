@@ -62,8 +62,6 @@ func (f *GitHubMetaFetcher) FetchMeta(ctx context.Context, rawURL string) (*URLM
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.Errorf("github meta fetch: unexpected status %d", resp.StatusCode)
 	}
-
-	//nolint:tagliatelle // GitHub API fields are snake_case.
 	var payload struct {
 		FullName    string   `json:"full_name"`
 		Description string   `json:"description"`

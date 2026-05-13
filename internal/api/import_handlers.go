@@ -131,7 +131,7 @@ func (h *Handler) ImportTelegramAccept(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		TypeHint string `json:"type_hint"` //nolint:tagliatelle // REST API snake_case
+		TypeHint string `json:"type_hint"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
