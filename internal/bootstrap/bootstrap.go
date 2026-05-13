@@ -66,7 +66,6 @@ func Run() error {
 
 	committer := buildCommitter(cfg)
 	translationQueue := buildTranslationQueue(cfg)
-	ingester, translationWorker := buildIngester(cfg, committer, translationQueue)
 
 	var indexStore *index.IndexStore
 	var syncWorker *index.SyncWorker
@@ -74,6 +73,7 @@ func Run() error {
 	if cfg.Embedding.IsConfigured() {
 		indexStore, syncWorker, embeddingProvider = buildIndexComponents(cfg)
 	}
+	ingester, translationWorker := buildIngester(cfg, committer, translationQueue, indexStore)
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 	chatStore := buildChatStore(cfg)
@@ -157,7 +157,12 @@ func buildTranslationQueue(cfg *config.Config) *translationqueue.Queue {
 	return translationqueue.New(100)
 }
 
-func buildIngester(cfg *config.Config, committer igit.GitCommitter, translationQueue *translationqueue.Queue) (ingestion.Ingester, *translationworker.Worker) {
+func buildIngester(
+	cfg *config.Config,
+	committer igit.GitCommitter,
+	translationQueue *translationqueue.Queue,
+	indexStore *index.IndexStore,
+) (ingestion.Ingester, *translationworker.Worker) {
 	if !cfg.LLM.IsConfigured() {
 		slog.Warn("LLM configuration not set, ingestion pipeline disabled (using stub)")
 
@@ -171,6 +176,7 @@ func buildIngester(cfg *config.Config, committer igit.GitCommitter, translationQ
 	translator := translation.NewLLMTranslator(orchestrator)
 
 	pipeline := ingestion.NewPipelineIngester(store, orchestrator, contentFetcher, committer, cfg.DataPath, cfg.AutoTranslate, cfg.IngestExpandURLs, translator, orchestrator, translationQueue)
+	pipeline.SetPlacementIndexStore(indexStore)
 
 	var worker *translationworker.Worker
 	if translationQueue != nil {

@@ -11,6 +11,7 @@ import (
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
 
+	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
 	"github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
@@ -39,6 +40,7 @@ type PipelineIngester struct {
 	translator       translation.Translator
 	titleGenerator   TitleGenerator
 	translationQueue *translationqueue.Queue
+	indexStore       *index.IndexStore
 }
 
 // NewPipelineIngester создаёт PipelineIngester.
@@ -67,6 +69,11 @@ func NewPipelineIngester(
 		titleGenerator:   titleGenerator,
 		translationQueue: translationQueue,
 	}
+}
+
+// SetPlacementIndexStore enables index-backed placement candidates when the local index is available.
+func (p *PipelineIngester) SetPlacementIndexStore(indexStore *index.IndexStore) {
+	p.indexStore = indexStore
 }
 
 // IngestText обрабатывает входной текст через LLM-оркестратор и сохраняет узел.
@@ -222,17 +229,6 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 }
 
 func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor, typeHint string, profile SourceProfile) (llm.ProcessInput, error) {
-	tree, err := p.store.ReadTree(ctx, p.basePath)
-	if err != nil {
-		return llm.ProcessInput{}, errors.Errorf("read tree: %w", err)
-	}
-
-	themes := collectThemes(tree)
-	keywords, err := p.collectKeywords(ctx)
-	if err != nil {
-		clog.Warn(ctx, "ingest: failed to collect keywords, proceeding without them", "error", err)
-	}
-
 	if sourceURL != "" || sourceAuthor != "" {
 		var sourcePrefix string
 		if strings.HasPrefix(sourceURL, "https://t.me/") {
@@ -248,6 +244,26 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 		text = fmt.Sprintf("Профиль источника: source_kind=%s, content_profile=%s, recommended_type=%s\n\n%s", profile.SourceKind, profile.ContentProfile, profile.RecommendedType, text)
 	}
 
+	builder := NewPlacementBuilder(p.store, p.basePath, p.indexStore)
+	placementContext, err := builder.Build(ctx, PlacementBuildInput{
+		Text:           text,
+		SourceURL:      sourceURL,
+		SourceAuthor:   sourceAuthor,
+		SourceKind:     string(profile.SourceKind),
+		ContentProfile: string(profile.ContentProfile),
+		Type:           profile.RecommendedType,
+	})
+	if err != nil {
+		return llm.ProcessInput{}, errors.Errorf("build placement context: %w", err)
+	}
+	newPromptContextSize := EstimatedPlacementContextSize(*placementContext)
+	clog.Info(ctx, "ingest: placement context built",
+		"candidate_themes", len(placementContext.CandidateThemes),
+		"candidate_keywords", len(placementContext.CandidateKeywords),
+		"similar_nodes", len(placementContext.SimilarNodes),
+		"source", placementContext.Source,
+		"new_prompt_context_size", newPromptContextSize)
+
 	return llm.ProcessInput{
 		Text:             text,
 		SourceURL:        sourceURL,
@@ -256,8 +272,21 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 		SourceKind:       string(profile.SourceKind),
 		ContentProfile:   string(profile.ContentProfile),
 		RecommendedType:  profile.RecommendedType,
-		ExistingThemes:   themes,
-		ExistingKeywords: keywords,
+		PlacementContext: *placementContext,
+		PlacementSearch: func(ctx context.Context, req llm.SearchPlacementCandidatesRequest) (*llm.PlacementContext, error) {
+			sourceKind := firstNonEmptyString(req.SourceKind, string(profile.SourceKind))
+			contentProfile := firstNonEmptyString(req.ContentProfile, string(profile.ContentProfile))
+			nodeType := firstNonEmptyString(req.Type, profile.RecommendedType)
+
+			return builder.Build(ctx, PlacementBuildInput{
+				Text:           req.Query,
+				SourceURL:      sourceURL,
+				SourceAuthor:   sourceAuthor,
+				SourceKind:     sourceKind,
+				ContentProfile: contentProfile,
+				Type:           nodeType,
+			})
+		},
 	}, nil
 }
 
@@ -512,42 +541,6 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 	log.Info("translation: complete", "theme", result.ThemePath, "slug", result.Slug, "translation_slug", result.Slug+".ru", "save_duration_ms", time.Since(saveStart).Milliseconds())
 
 	return nil
-}
-
-func (p *PipelineIngester) collectKeywords(ctx context.Context) ([]string, error) {
-	nodes, err := p.store.ListAllNodes(ctx, p.basePath)
-	if err != nil {
-		return nil, err
-	}
-
-	keywordSet := make(map[string]struct{})
-	for _, n := range nodes {
-		node, err := p.store.GetNode(ctx, p.basePath, n.Path)
-		if err != nil {
-			continue
-		}
-		if kws, ok := node.Metadata["keywords"]; ok {
-			switch v := kws.(type) {
-			case []any:
-				for _, kw := range v {
-					if s, ok := kw.(string); ok {
-						keywordSet[s] = struct{}{}
-					}
-				}
-			case []string:
-				for _, s := range v {
-					keywordSet[s] = struct{}{}
-				}
-			}
-		}
-	}
-
-	result := make([]string, 0, len(keywordSet))
-	for kw := range keywordSet {
-		result = append(result, kw)
-	}
-
-	return result, nil
 }
 
 func collectThemes(tree *kb.TreeNode) []string {

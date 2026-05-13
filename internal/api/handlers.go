@@ -173,7 +173,7 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TargetPath string `json:"target_path"` //nolint:tagliatelle // REST API snake_case
+		TargetPath string `json:"target_path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -517,9 +517,9 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Text         string `json:"text"`
-		SourceURL    string `json:"source_url"`    //nolint:tagliatelle // REST API snake_case
-		SourceAuthor string `json:"source_author"` //nolint:tagliatelle // REST API snake_case
-		TypeHint     string `json:"type_hint"`     //nolint:tagliatelle // REST API snake_case
+		SourceURL    string `json:"source_url"`
+		SourceAuthor string `json:"source_author"`
+		TypeHint     string `json:"type_hint"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")

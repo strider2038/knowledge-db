@@ -7,14 +7,14 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-func buildSystemPrompt(existingThemes, existingKeywords []string, typeHint, sourceKind, contentProfile, recommendedType string) string {
+func buildSystemPrompt(input ProcessInput) string {
 	var sb strings.Builder
 
-	if typeHint != "" && typeHint != "auto" && (typeHint == "article" || typeHint == "link" || typeHint == "note") {
-		fmt.Fprintf(&sb, "Пользователь указал тип: %s. Используй именно этот тип при вызове create_node.\n\n", typeHint)
+	if input.TypeHint != "" && input.TypeHint != "auto" && (input.TypeHint == "article" || input.TypeHint == "link" || input.TypeHint == "note") {
+		fmt.Fprintf(&sb, "Пользователь указал тип: %s. Используй именно этот тип при вызове create_node.\n\n", input.TypeHint)
 	}
-	if sourceKind != "" || contentProfile != "" || recommendedType != "" {
-		fmt.Fprintf(&sb, "Предварительная классификация источника: source_kind=%s, content_profile=%s, рекомендуемый type=%s. Учитывай её при create_node; меняй только если доступный источник явно противоречит классификации.\n\n", sourceKind, contentProfile, recommendedType)
+	if input.SourceKind != "" || input.ContentProfile != "" || input.RecommendedType != "" {
+		fmt.Fprintf(&sb, "Предварительная классификация источника: source_kind=%s, content_profile=%s, рекомендуемый type=%s. Учитывай её при create_node; меняй только если доступный источник явно противоречит классификации.\n\n", input.SourceKind, input.ContentProfile, input.RecommendedType)
 	}
 
 	sb.WriteString(`Ты — ассистент для управления базой знаний. Твоя задача — проанализировать входные данные (текст, URL или их сочетание) и сохранить их как структурированный узел базы знаний.
@@ -82,27 +82,121 @@ func buildSystemPrompt(existingThemes, existingKeywords []string, typeHint, sour
 - source_author: автор источника (если указан в метаданных или в результате fetch_url_content)
 - title: читаемый заголовок (обязателен; при отсутствии в источнике — сгенерируй на основе контента)
 
+## Правила размещения
+- Используй placement context ниже как основной источник существующих тем, каноничных keywords и похожих узлов.
+- Предпочитай candidate themes и candidate keywords, если они подходят по смыслу.
+- Не создавай новый keyword-синоним, если в candidate keywords уже есть подходящее написание.
+- Если пользователь явно попросил путь темы (например, "сохрани в go/concurrency"), эта инструкция важнее автоматического shortlist.
+- Вызывай search_placement_candidates только если первичных candidates недостаточно, материал явно относится к другой ветке или есть сомнение между близкими темами.
+- Финальным действием всё равно всегда должен быть create_node.
+
 `)
 
-	if len(existingThemes) > 0 {
-		sb.WriteString("## Existing themes in the knowledge base\n\n")
-		sb.WriteString("Prefer placing content in existing themes. Create a new theme only if none of the existing ones fit.\n\n")
-		for _, t := range existingThemes {
-			fmt.Fprintf(&sb, "- %s\n", t)
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(existingKeywords) > 0 {
-		sb.WriteString("## Existing keywords\n\n")
-		sb.WriteString("Reuse these keywords when applicable to maintain consistency:\n\n")
-		sb.WriteString(strings.Join(existingKeywords, ", "))
-		sb.WriteString("\n\n")
+	if hasPlacementContext(input.PlacementContext) {
+		sb.WriteString("## Placement context\n\n")
+		writePlacementContext(&sb, input.PlacementContext)
 	}
 
 	sb.WriteString("Always call create_node as your final action to save the content.")
 
 	return sb.String()
+}
+
+func hasPlacementContext(ctx PlacementContext) bool {
+	return len(ctx.ThemeMap) > 0 ||
+		len(ctx.CandidateThemes) > 0 ||
+		len(ctx.CandidateKeywords) > 0 ||
+		len(ctx.SimilarNodes) > 0 ||
+		ctx.ExplicitThemePath != ""
+}
+
+func writePlacementContext(sb *strings.Builder, ctx PlacementContext) {
+	if ctx.Source != "" {
+		fmt.Fprintf(sb, "Candidate source: %s\n\n", ctx.Source)
+	}
+	if ctx.ExplicitThemePath != "" {
+		fmt.Fprintf(sb, "Explicit user theme instruction detected: %s\n\n", ctx.ExplicitThemePath)
+	}
+	writeThemeMap(sb, ctx.ThemeMap)
+	writeCandidateThemes(sb, ctx.CandidateThemes)
+	writeCandidateKeywords(sb, ctx.CandidateKeywords)
+	writeSimilarNodes(sb, ctx.SimilarNodes)
+}
+
+func writeThemeMap(sb *strings.Builder, themes []ThemeSummary) {
+	if len(themes) == 0 {
+		return
+	}
+	sb.WriteString("### Compact theme map\n")
+	for _, theme := range themes {
+		fmt.Fprintf(sb, "- %s (nodes: %d", theme.Path, theme.NodeCount)
+		if len(theme.TopKeywords) > 0 {
+			fmt.Fprintf(sb, ", top keywords: %s", strings.Join(theme.TopKeywords, ", "))
+		}
+		sb.WriteString(")\n")
+	}
+	sb.WriteString("\n")
+}
+
+func writeCandidateThemes(sb *strings.Builder, themes []ThemeCandidate) {
+	if len(themes) == 0 {
+		return
+	}
+	sb.WriteString("### Candidate themes\n")
+	for i, theme := range themes {
+		fmt.Fprintf(sb, "%d. %s (score: %.1f, nodes: %d)\n", i+1, theme.Path, theme.Score, theme.NodeCount)
+		writeStringListLine(sb, "reason", theme.Reasons)
+		writeStringListLine(sb, "examples", theme.Examples)
+		writeStringListLine(sb, "top keywords", theme.TopKeywords)
+	}
+	sb.WriteString("\n")
+}
+
+func writeCandidateKeywords(sb *strings.Builder, keywords []KeywordCandidate) {
+	if len(keywords) == 0 {
+		return
+	}
+	sb.WriteString("### Candidate keywords\n")
+	for _, keyword := range keywords {
+		fmt.Fprintf(sb, "- %s (score: %.1f, frequency: %d", keyword.Keyword, keyword.Score, keyword.Frequency)
+		if len(keyword.Themes) > 0 {
+			fmt.Fprintf(sb, ", themes: %s", strings.Join(keyword.Themes, ", "))
+		}
+		if len(keyword.Sources) > 0 {
+			fmt.Fprintf(sb, ", sources: %s", strings.Join(keyword.Sources, ", "))
+		}
+		sb.WriteString(")\n")
+	}
+	sb.WriteString("\n")
+}
+
+func writeSimilarNodes(sb *strings.Builder, nodes []SimilarNode) {
+	if len(nodes) == 0 {
+		return
+	}
+	sb.WriteString("### Similar nodes\n")
+	for _, node := range nodes {
+		fmt.Fprintf(sb, "- %s", node.Path)
+		if node.Title != "" {
+			fmt.Fprintf(sb, " — %s", node.Title)
+		}
+		if len(node.Keywords) > 0 {
+			fmt.Fprintf(sb, " (keywords: %s)", strings.Join(node.Keywords, ", "))
+		}
+		if len(node.MatchReasons) > 0 {
+			fmt.Fprintf(sb, "; match: %s", strings.Join(node.MatchReasons, ", "))
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+}
+
+func writeStringListLine(sb *strings.Builder, label string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+
+	fmt.Fprintf(sb, "   %s: %s\n", label, strings.Join(values, ", "))
 }
 
 func buildTools() []responses.ToolUnionParam {
@@ -132,6 +226,29 @@ func buildTools() []responses.ToolUnionParam {
 					},
 				},
 				"required": []string{"url"},
+			},
+			false,
+		),
+		responses.ToolParamOfFunction(
+			"search_placement_candidates",
+			map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Search query for local placement candidates",
+					},
+					"source_kind": map[string]any{
+						"type": "string",
+						"enum": []string{"repository", "documentation", "product_service", "online_tool", "directory_catalog", "learning_resource", "article", "news", "social_post", "unknown"},
+					},
+					"content_profile": map[string]any{
+						"type": "string",
+						"enum": []string{"repository_profile", "product_profile", "documentation_profile", "online_tool_profile", "directory_profile", "learning_resource_profile", "conceptual_digest", "brief_digest", "link_bookmark"},
+					},
+					"type": map[string]any{"type": "string", "enum": []string{"article", "link", "note"}},
+				},
+				"required": []string{"query"},
 			},
 			false,
 		),

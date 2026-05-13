@@ -98,6 +98,11 @@ linters:
       rules:
         - name: unused-parameter
           disabled: true
+    tagliatelle:
+      case:
+        use-field-name: true
+        rules:
+          json: snake
     depguard:
       rules:
         main:

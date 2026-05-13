@@ -33,8 +33,8 @@ type ProcessInput struct {
 	SourceKind       string
 	ContentProfile   string
 	RecommendedType  string
-	ExistingThemes   []string
-	ExistingKeywords []string
+	PlacementContext PlacementContext
+	PlacementSearch  PlacementSearcher
 }
 
 // ProcessResult — результат обработки.
@@ -124,9 +124,13 @@ func newOpenAIOrchestratorWithClientAndMetaFetcher(
 // Контент, полученный через fetch_url_content, кешируется в памяти и подставляется
 // в результат напрямую — LLM не воспроизводит его в create_node, чтобы избежать усечения.
 func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*ProcessResult, error) {
-	clog.Info(ctx, "ingest: llm process start", "text_len", len(input.Text), "themes", len(input.ExistingThemes), "keywords", len(input.ExistingKeywords))
+	clog.Info(ctx, "ingest: llm process start",
+		"text_len", len(input.Text),
+		"candidate_themes", len(input.PlacementContext.CandidateThemes),
+		"candidate_keywords", len(input.PlacementContext.CandidateKeywords),
+		"similar_nodes", len(input.PlacementContext.SimilarNodes))
 
-	instructions := buildSystemPrompt(input.ExistingThemes, input.ExistingKeywords, input.TypeHint, input.SourceKind, input.ContentProfile, input.RecommendedType)
+	instructions := buildSystemPrompt(input)
 	tools := buildTools()
 
 	inputItems := responses.ResponseInputParam{
@@ -265,6 +269,14 @@ func (o *OpenAIOrchestrator) processResponse(
 			output := o.executeFetchURLMeta(ctx, item.Arguments.OfString)
 			toolOutputs = append(toolOutputs, functionCallOutputAsInputItem(item.CallID, output))
 			clog.Info(ctx, "ingest: llm fetch_url_meta done", "url", url, "duration_ms", time.Since(metaStart).Milliseconds())
+
+		case "search_placement_candidates":
+			clog.Info(ctx, "ingest: llm call search_placement_candidates")
+			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
+			searchStart := time.Now()
+			output := o.executeSearchPlacementCandidates(ctx, item.Arguments.OfString, input)
+			toolOutputs = append(toolOutputs, functionCallOutputAsInputItem(item.CallID, output))
+			clog.Info(ctx, "ingest: llm search_placement_candidates done", "duration_ms", time.Since(searchStart).Milliseconds())
 		}
 	}
 
@@ -278,6 +290,42 @@ func (o *OpenAIOrchestrator) processResponse(
 	nextInputItems = append(nextInputItems, toolOutputs...)
 
 	return nil, nextInputItems, nil
+}
+
+func (o *OpenAIOrchestrator) executeSearchPlacementCandidates(ctx context.Context, argsJSON string, input ProcessInput) string {
+	if input.PlacementSearch == nil {
+		return jsonError("placement search is not configured")
+	}
+
+	var req SearchPlacementCandidatesRequest
+	if err := json.Unmarshal([]byte(argsJSON), &req); err != nil {
+		return jsonError("invalid arguments: " + err.Error())
+	}
+	req.Query = strings.TrimSpace(req.Query)
+	if req.Query == "" {
+		return jsonError("query is required")
+	}
+	if req.SourceKind == "" {
+		req.SourceKind = input.SourceKind
+	}
+	if req.ContentProfile == "" {
+		req.ContentProfile = input.ContentProfile
+	}
+	if req.Type == "" {
+		req.Type = input.RecommendedType
+	}
+
+	context, err := input.PlacementSearch(ctx, req)
+	if err != nil {
+		return jsonError("placement search failed: " + err.Error())
+	}
+
+	out, err := json.Marshal(context)
+	if err != nil {
+		return jsonError("marshal failed: " + err.Error())
+	}
+
+	return string(out)
 }
 
 // executeFetchURLContent выполняет fetch_url_content.
@@ -330,8 +378,6 @@ func (o *OpenAIOrchestrator) executeFetchURLMeta(ctx context.Context, argsJSON s
 	if err != nil {
 		return jsonError("fetch meta failed: " + err.Error())
 	}
-
-	//nolint:tagliatelle // JSON schema for tool output uses snake_case keys.
 	type metaOutput struct {
 		Title          string `json:"title"`
 		Description    string `json:"description"`
@@ -389,7 +435,6 @@ func (o *OpenAIOrchestrator) fetchURLMeta(ctx context.Context, rawURL string) (*
 }
 
 func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
-	//nolint:tagliatelle // snake_case required: these are LLM function call arguments defined in the system prompt
 	var args struct {
 		Keywords       []string `json:"keywords"`
 		Annotation     string   `json:"annotation"`

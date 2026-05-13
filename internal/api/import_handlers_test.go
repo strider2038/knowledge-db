@@ -75,7 +75,7 @@ func TestImportTelegramGetSession_WhenValid(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var createData struct {
-		SessionID string `json:"session_id"` //nolint:tagliatelle // API response snake_case
+		SessionID string `json:"session_id"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 	require.NotEmpty(t, createData.SessionID)
@@ -115,7 +115,7 @@ func TestImportTelegramAccept_WhenValid(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var createData struct {
-		SessionID string `json:"session_id"` //nolint:tagliatelle // API response snake_case
+		SessionID string `json:"session_id"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 
@@ -143,7 +143,7 @@ func TestImportTelegramReject_WhenValid(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var createData struct {
-		SessionID string `json:"session_id"` //nolint:tagliatelle // API response snake_case
+		SessionID string `json:"session_id"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 
@@ -172,7 +172,7 @@ func TestImportTelegramAccept_WhenSessionComplete_Expect409(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 
 	var createData struct {
-		SessionID string `json:"session_id"` //nolint:tagliatelle // API response snake_case
+		SessionID string `json:"session_id"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 

@@ -96,8 +96,8 @@ var chatRetrievalStopWords = map[string]struct{}{
 // ChatRequest — запрос к чатботу.
 type ChatRequest struct {
 	Message     string   `json:"message"`
-	SessionID   string   `json:"session_id"`   //nolint:tagliatelle // REST API snake_case
-	SourcePaths []string `json:"source_paths"` //nolint:tagliatelle // REST API snake_case
+	SessionID   string   `json:"session_id"`
+	SourcePaths []string `json:"source_paths"`
 }
 
 // ChatSource — источник ответа чатбота.
@@ -111,14 +111,14 @@ type ChatSource struct {
 // SearchRequest — запрос гибридного поиска.
 type SearchRequest struct {
 	Query           string   `json:"query"`
-	Types           []string `json:"type"`
+	Types           []string `json:"type"` //nolint:tagliatelle // REST API query contract uses singular "type" for a list filter.
 	Path            string   `json:"path"`
 	Recursive       bool     `json:"recursive"`
-	ManualProcessed *bool    `json:"manual_processed"` //nolint:tagliatelle // REST API snake_case
+	ManualProcessed *bool    `json:"manual_processed"`
 	Limit           int      `json:"limit"`
 	Offset          int      `json:"offset"`
 	Mode            string   `json:"mode"`
-	SourcePaths     []string `json:"source_paths"` //nolint:tagliatelle // REST API snake_case
+	SourcePaths     []string `json:"source_paths"`
 }
 
 // SearchResponse — ответ гибридного поиска.
@@ -132,8 +132,8 @@ type SearchResponse struct {
 
 // SearchMeta — metadata retrieval ответа.
 type SearchMeta struct {
-	KeywordIndex string `json:"keyword_index"`           //nolint:tagliatelle // REST API snake_case
-	QueryRewrite string `json:"query_rewrite,omitempty"` //nolint:tagliatelle // REST API snake_case
+	KeywordIndex string `json:"keyword_index"`
+	QueryRewrite string `json:"query_rewrite,omitempty"`
 }
 
 // SearchResult — карточка результата гибридного поиска.
@@ -143,11 +143,11 @@ type SearchResult struct {
 	Type         string           `json:"type"`
 	Annotation   string           `json:"annotation"`
 	Keywords     []string         `json:"keywords"`
-	SourceURL    string           `json:"source_url,omitempty"` //nolint:tagliatelle // REST API snake_case
+	SourceURL    string           `json:"source_url,omitempty"`
 	Score        float64          `json:"score"`
 	Rank         int              `json:"rank"`
-	MatchReasons []string         `json:"match_reasons"` //nolint:tagliatelle // REST API snake_case
-	SourceKinds  []string         `json:"source_kinds"`  //nolint:tagliatelle // REST API snake_case
+	MatchReasons []string         `json:"match_reasons"`
+	SourceKinds  []string         `json:"source_kinds"`
 	Fragments    []SearchFragment `json:"fragments,omitempty"`
 }
 
@@ -157,7 +157,7 @@ type SearchFragment struct {
 	Snippet   string  `json:"snippet,omitempty"`
 	Content   string  `json:"content,omitempty"`
 	Score     float64 `json:"score"`
-	MatchType string  `json:"match_type"` //nolint:tagliatelle // REST API snake_case
+	MatchType string  `json:"match_type"`
 }
 
 // chatStream — интерфейс для чтения SSE-потока от Responses API.
