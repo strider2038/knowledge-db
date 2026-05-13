@@ -14,6 +14,11 @@ import (
 )
 
 var errSemanticSearchUnavailable = errors.New("semantic_search unavailable: embeddings are disabled, use search_notes")
+var errSearchUnavailable = errors.New("search unavailable: index is not initialized")
+var errQueryRequired = errors.New("query is required")
+var errGetNoteUnavailable = errors.New("get_note unavailable: index is not initialized")
+var errPathRequired = errors.New("path is required")
+var errNodeNotFound = errors.New("node not found")
 
 type searchNotesInput struct {
 	Query           string   `json:"query" jsonschema:"Search query text for notes retrieval"`
@@ -154,11 +159,11 @@ func newServer(services *searchServices) *sdkmcp.Server {
 
 func (s *searchServices) searchNotes(ctx context.Context, input searchNotesInput) (toolResult, error) {
 	if s.indexStore == nil {
-		return toolResult{}, errors.New("search unavailable: index is not initialized")
+		return toolResult{}, errSearchUnavailable
 	}
 	query := strings.TrimSpace(input.Query)
 	if query == "" {
-		return toolResult{}, errors.New("query is required")
+		return toolResult{}, errQueryRequired
 	}
 	limit := normalizeLimit(input.Limit)
 
@@ -182,14 +187,14 @@ func (s *searchServices) searchNotes(ctx context.Context, input searchNotesInput
 
 func (s *searchServices) semanticSearch(ctx context.Context, input semanticSearchInput) (toolResult, error) {
 	if s.indexStore == nil {
-		return toolResult{}, errors.New("search unavailable: index is not initialized")
+		return toolResult{}, errSearchUnavailable
 	}
 	if s.provider == nil {
 		return toolResult{}, errSemanticSearchUnavailable
 	}
 	query := strings.TrimSpace(input.Query)
 	if query == "" {
-		return toolResult{}, errors.New("query is required")
+		return toolResult{}, errQueryRequired
 	}
 	limit := normalizeLimit(input.Limit)
 
@@ -210,17 +215,17 @@ func (s *searchServices) semanticSearch(ctx context.Context, input semanticSearc
 func (s *searchServices) getNote(ctx context.Context, input getNoteInput) (getNoteResult, error) {
 	dataPath := s.dataPath()
 	if dataPath == "" {
-		return getNoteResult{}, errors.New("get_note unavailable: index is not initialized")
+		return getNoteResult{}, errGetNoteUnavailable
 	}
 	path := strings.TrimSpace(input.Path)
 	if path == "" {
-		return getNoteResult{}, errors.New("path is required")
+		return getNoteResult{}, errPathRequired
 	}
 
 	node, err := kb.GetNode(ctx, dataPath, path)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
-			return getNoteResult{}, fmt.Errorf("node not found: %s", path)
+			return getNoteResult{}, fmt.Errorf("%w: %s", errNodeNotFound, path)
 		}
 
 		return getNoteResult{}, fmt.Errorf("get_note: %w", err)

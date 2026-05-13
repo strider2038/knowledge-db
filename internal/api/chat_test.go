@@ -208,7 +208,7 @@ func TestPostChat_WhenMemoryMode_ExpectNoSourcesAndLLMAnswer(t *testing.T) {
 	})
 	h.chatClient = &rewriteMockClient{chatTokens: []string{"Краткое резюме"}}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"session_id":"s1","message":"Сделай краткое резюме чата"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/chat", strings.NewReader(`{"session_id":"s1","message":"Сделай краткое резюме чата"}`))
 	rec := httptest.NewRecorder()
 
 	h.PostChat(rec, req)

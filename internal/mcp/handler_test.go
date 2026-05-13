@@ -42,7 +42,7 @@ func TestHandler_WhenMissingBearer_Expect401(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandler("test-key", nil, nil)
-	req := httptest.NewRequest(http.MethodGet, "/api/mcp", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp", nil)
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
@@ -54,7 +54,7 @@ func TestHandler_WhenValidBearer_ExpectPassesAuth(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandler("test-key", nil, nil)
-	req := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1}`))
 	req.Header.Set("Authorization", "Bearer test-key")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -202,7 +202,7 @@ title: Test Node
 		MaxChars:       5,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "", got.Content)
+	assert.Empty(t, got.Content)
 	assert.False(t, got.Truncated)
 	assert.Equal(t, "Test Node", got.Title)
 }
