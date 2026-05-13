@@ -255,9 +255,9 @@ func TestSyncWorker_Run_WhenPeriodicTick_ExpectFullReconcileTriggered(t *testing
 		periodicInterval: 10 * time.Millisecond,
 		events:           make(chan SyncEvent, 1),
 	}
-	var calls int32
+	var calls atomic.Int32
 	worker.fullReconcileFn = func(context.Context) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Millisecond)
@@ -265,7 +265,7 @@ func TestSyncWorker_Run_WhenPeriodicTick_ExpectFullReconcileTriggered(t *testing
 
 	_ = worker.Run(ctx)
 
-	assert.GreaterOrEqual(t, atomic.LoadInt32(&calls), int32(2))
+	assert.GreaterOrEqual(t, calls.Load(), int32(2))
 }
 
 func testNode(title, annotation string, keywords []string, nodeType, content string) *kb.Node {

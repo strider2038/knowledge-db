@@ -69,8 +69,9 @@ func newGoogleE2EHandler(t *testing.T, userInfoJSON, allowlist, webBase string) 
 	mh := NewHandlerWithUploads(data, up, &ingestion.StubIngester{}, nil)
 	router, err := NewMux(mh, ah)
 	require.NoError(t, err)
-	router.Handle("GET /api/mcp", mcp.NewHandler(data))
-	router.Handle("POST /api/mcp", mcp.NewHandler(data))
+	mcpHandler := mcp.NewHandler("test-mcp-key", nil, nil)
+	router.Handle("GET /api/mcp", mcpHandler)
+	router.Handle("POST /api/mcp", mcpHandler)
 
 	return auth.Middleware(Gzip(CORS(router, "")), st)
 }
@@ -149,4 +150,3 @@ func TestPostLogin_GoogleMode_Expect400(t *testing.T) {
 	h.ServeHTTP(r, req)
 	require.Equal(t, http.StatusBadRequest, r.Code)
 }
-

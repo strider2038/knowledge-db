@@ -192,6 +192,7 @@ func ParseLogLevel(level string) slog.Level {
 type Config struct {
 	DataPath   string `env:"KB_DATA_PATH" envDefault:""`
 	UploadsDir string `env:"KB_UPLOADS_DIR" envDefault:""`
+	MCPAPIKey  string `env:"KB_MCP_API_KEY" envDefault:""`
 	// WebPublicBaseURL — публичный базовый URL веб-интерфейса (без завершающего /), для ссылок в ответах Telegram.
 	WebPublicBaseURL string        `env:"KB_PUBLIC_WEB_BASE_URL" envDefault:""`
 	JinaAPIKey       string        `env:"JINA_API_KEY" envDefault:""`
@@ -208,6 +209,11 @@ type Config struct {
 	Telegram  Telegram
 	Auth      Auth
 	Embedding Embedding
+}
+
+// MCPEnabled returns true when MCP endpoint should be enabled.
+func (c Config) MCPEnabled() bool {
+	return strings.TrimSpace(c.MCPAPIKey) != ""
 }
 
 // Load загружает конфигурацию из .env и переменных окружения.

@@ -70,9 +70,7 @@ func Run() error {
 	var indexStore *index.IndexStore
 	var syncWorker *index.SyncWorker
 	var embeddingProvider index.EmbeddingProvider
-	if cfg.Embedding.IsConfigured() {
-		indexStore, syncWorker, embeddingProvider = buildIndexComponents(cfg)
-	}
+	indexStore, syncWorker, embeddingProvider = buildIndexComponents(cfg)
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue, indexStore)
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
@@ -97,8 +95,13 @@ func Run() error {
 		return errors.Errorf("new mux: %w", err)
 	}
 
-	mux.Handle("GET /api/mcp", mcp.NewHandler(cfg.DataPath))
-	mux.Handle("POST /api/mcp", mcp.NewHandler(cfg.DataPath))
+	if cfg.MCPEnabled() {
+		mcpHandler := mcp.NewHandler(cfg.MCPAPIKey, indexStore, embeddingProvider)
+		mux.Handle("GET /api/mcp", mcpHandler)
+		mux.Handle("POST /api/mcp", mcpHandler)
+	} else {
+		slog.Info("mcp endpoint disabled: KB_MCP_API_KEY is empty")
+	}
 
 	baseHandler := api.Gzip(api.CORS(mux, cfg.HTTP.AllowedCORSOrigin))
 	if cfg.Auth.AuthEnabled() {
@@ -222,6 +225,10 @@ func buildIndexComponents(cfg *config.Config) (*index.IndexStore, *index.SyncWor
 		slog.Error("failed to open index database", "error", err)
 
 		return nil, nil, nil
+	}
+
+	if !cfg.Embedding.IsConfigured() {
+		return store, nil, nil
 	}
 
 	provider := index.NewAPIProvider(cfg.Embedding.APIURL, cfg.Embedding.APIKey, cfg.Embedding.Model)
