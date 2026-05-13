@@ -44,14 +44,17 @@ func NewPlacementBuilder(store *kb.Store, basePath string, indexStore *index.Ind
 }
 
 // Build prepares candidate themes, candidate keywords and similar nodes.
-func (b *PlacementBuilder) Build(ctx context.Context, input PlacementBuildInput) (*llm.PlacementContext, error) {
+// The second return value is estimatedLegacyPromptContextSize: approximate JSON
+// payload size of the pre-placement prompt context (flat theme paths + unique
+// keywords from all nodes), for diagnostics next to EstimatedPlacementContextSize.
+func (b *PlacementBuilder) Build(ctx context.Context, input PlacementBuildInput) (*llm.PlacementContext, int, error) {
 	tree, err := b.store.ReadTree(ctx, b.basePath)
 	if err != nil {
-		return nil, errors.Errorf("build placement context: read tree: %w", err)
+		return nil, 0, errors.Errorf("build placement context: read tree: %w", err)
 	}
 	nodes, err := b.loadNodeProfiles(ctx)
 	if err != nil {
-		return nil, errors.Errorf("build placement context: load nodes: %w", err)
+		return nil, 0, errors.Errorf("build placement context: load nodes: %w", err)
 	}
 
 	query := buildPlacementQuery(input)
@@ -71,6 +74,8 @@ func (b *PlacementBuilder) Build(ctx context.Context, input PlacementBuildInput)
 	candidateThemes := scoreThemeCandidates(themeProfiles, similarNodes, terms, input, explicitTheme)
 	candidateKeywords := scoreKeywordCandidates(nodes, candidateThemes, similarNodes, terms, curatedKeywords)
 
+	legacyPromptContextSize := estimatedLegacyPromptContextSize(tree, nodes)
+
 	return &llm.PlacementContext{
 		Source:            source,
 		ExplicitThemePath: explicitTheme,
@@ -78,12 +83,48 @@ func (b *PlacementBuilder) Build(ctx context.Context, input PlacementBuildInput)
 		CandidateThemes:   limitThemeCandidates(candidateThemes, llm.PlacementCandidateThemeLimit),
 		CandidateKeywords: limitKeywordCandidates(candidateKeywords, llm.PlacementCandidateKeywordLimit),
 		SimilarNodes:      limitSimilarNodes(similarNodes, llm.PlacementSimilarNodeLimit),
-	}, nil
+	}, legacyPromptContextSize, nil
 }
 
 // EstimatedPlacementContextSize returns a stable approximate prompt payload size.
 func EstimatedPlacementContextSize(ctx llm.PlacementContext) int {
 	data, err := json.Marshal(ctx)
+	if err != nil {
+		return 0
+	}
+
+	return len(data)
+}
+
+// estimatedLegacyPromptContextSize approximates the old ingestion prompt attachment:
+// all theme paths from the tree plus all unique keywords from node frontmatter,
+// encoded as JSON for a size metric comparable to EstimatedPlacementContextSize.
+func estimatedLegacyPromptContextSize(tree *kb.TreeNode, nodes []nodeProfile) int {
+	themes := collectThemes(tree)
+	seen := make(map[string]struct{}, 256)
+	keywords := make([]string, 0, 256)
+	for _, n := range nodes {
+		for _, kw := range n.Keywords {
+			kw = strings.TrimSpace(kw)
+			if kw == "" {
+				continue
+			}
+			if _, ok := seen[kw]; ok {
+				continue
+			}
+			seen[kw] = struct{}{}
+			keywords = append(keywords, kw)
+		}
+	}
+	slices.Sort(keywords)
+	slices.Sort(themes)
+	data, err := json.Marshal(struct {
+		Themes   []string `json:"themes"`
+		Keywords []string `json:"keywords"`
+	}{
+		Themes:   themes,
+		Keywords: keywords,
+	})
 	if err != nil {
 		return 0
 	}

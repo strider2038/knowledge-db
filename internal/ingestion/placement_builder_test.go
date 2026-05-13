@@ -52,7 +52,7 @@ Programming with AI models.
 	builder := ingestion.NewPlacementBuilder(store, basePath, nil)
 
 	// Act
-	context, err := builder.Build(ctx, ingestion.PlacementBuildInput{
+	context, _, err := builder.Build(ctx, ingestion.PlacementBuildInput{
 		Text:           "Сохрани материал про Claude Code agent skills и репозиторные tool instructions",
 		SourceKind:     "repository",
 		ContentProfile: "repository_profile",
@@ -103,7 +103,7 @@ annotation: "AI agents in programming."
 	builder := ingestion.NewPlacementBuilder(store, basePath, nil)
 
 	// Act
-	context, err := builder.Build(ctx, ingestion.PlacementBuildInput{
+	context, _, err := builder.Build(ctx, ingestion.PlacementBuildInput{
 		Text: "Заметка про goroutine leaks и scheduler в Go",
 	})
 
@@ -148,7 +148,7 @@ annotation: "Skills for Claude Code agents."
 	builder := ingestion.NewPlacementBuilder(store, basePath, indexStore)
 
 	// Act
-	context, err := builder.Build(ctx, ingestion.PlacementBuildInput{
+	context, _, err := builder.Build(ctx, ingestion.PlacementBuildInput{
 		Text: "Claude Code agent skills repository",
 	})
 

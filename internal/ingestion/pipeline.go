@@ -245,7 +245,7 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 	}
 
 	builder := NewPlacementBuilder(p.store, p.basePath, p.indexStore)
-	placementContext, err := builder.Build(ctx, PlacementBuildInput{
+	placementContext, legacyPromptContextSize, err := builder.Build(ctx, PlacementBuildInput{
 		Text:           text,
 		SourceURL:      sourceURL,
 		SourceAuthor:   sourceAuthor,
@@ -262,6 +262,7 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 		"candidate_keywords", len(placementContext.CandidateKeywords),
 		"similar_nodes", len(placementContext.SimilarNodes),
 		"source", placementContext.Source,
+		"old_prompt_context_size", legacyPromptContextSize,
 		"new_prompt_context_size", newPromptContextSize)
 
 	return llm.ProcessInput{
@@ -278,7 +279,7 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 			contentProfile := firstNonEmptyString(req.ContentProfile, string(profile.ContentProfile))
 			nodeType := firstNonEmptyString(req.Type, profile.RecommendedType)
 
-			return builder.Build(ctx, PlacementBuildInput{
+			ctxOut, _, err := builder.Build(ctx, PlacementBuildInput{
 				Text:           req.Query,
 				SourceURL:      sourceURL,
 				SourceAuthor:   sourceAuthor,
@@ -286,6 +287,11 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 				ContentProfile: contentProfile,
 				Type:           nodeType,
 			})
+			if err != nil {
+				return nil, err
+			}
+
+			return ctxOut, nil
 		},
 	}, nil
 }
