@@ -24,9 +24,11 @@ RUN BID="${BUILD_ID}"; \
 
 # Stage 3: minimal runtime
 FROM alpine:3.19
-RUN apk add --no-cache git openssh-client ca-certificates
+RUN apk add --no-cache git openssh-client ca-certificates curl bash
 RUN adduser -D -g "" kb
 USER kb
+ENV PATH="/home/kb/.local/bin:${PATH}"
+RUN curl https://cursor.com/install -fsS | bash
 WORKDIR /data
 EXPOSE 8080
 ENTRYPOINT ["/kb", "serve"]

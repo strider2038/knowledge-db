@@ -8,7 +8,7 @@ REST API SHALL предоставлять endpoint запуска нормали
 - **THEN** API возвращает статус запуска операции (running/accepted) и идентификатор для отслеживания
 
 #### Scenario: Cursor Agent не настроен
-- **WHEN** endpoint нормализации вызван без доступного Cursor Agent или без `CURSOR_API_KEY`
+- **WHEN** endpoint нормализации вызван без доступного Cursor Agent
 - **THEN** API возвращает ошибку конфигурации с понятным сообщением и MUST NOT запускать операцию
 
 ### Requirement: Серверный post-step sync после нормализации

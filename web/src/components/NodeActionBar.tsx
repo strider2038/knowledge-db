@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Check, Languages, Move, RefreshCw, Trash2 } from 'lucide-react'
-import { type Node, getTranslateStatus, postTranslate, refreshNodeDescription } from '@/services/api'
+import { Check, Languages, Move, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { type Node, getNodeNormalizationStatus, getTranslateStatus, postTranslate, refreshNodeDescription, startNodeNormalization } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { DeleteNodeDialog } from '@/components/DeleteNodeDialog'
@@ -48,6 +48,9 @@ export function NodeActionBar({
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [refreshSuccess, setRefreshSuccess] = useState(false)
+  const [normalizing, setNormalizing] = useState(false)
+  const [normalizeError, setNormalizeError] = useState<string | null>(null)
+  const [normalizeSuccess, setNormalizeSuccess] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
 
@@ -129,6 +132,40 @@ export function NodeActionBar({
 
   const showPrimaryGroup = showManualProcessed || showTranslate || hasTranslations || canRefreshDescription
 
+  const handleNormalize = () => {
+    setNormalizing(true)
+    setNormalizeError(null)
+    setNormalizeSuccess(false)
+    startNodeNormalization(basePath)
+      .then((op) => {
+        const poll = () => {
+          getNodeNormalizationStatus(op.id)
+            .then((status) => {
+              if (status.status === 'running') {
+                setTimeout(poll, 2500)
+                return
+              }
+              setNormalizing(false)
+              if (status.status === 'error') {
+                setNormalizeError(status.error ?? 'Ошибка нормализации')
+                return
+              }
+              setNormalizeSuccess(true)
+              onNodeChanged(node)
+            })
+            .catch((err) => {
+              setNormalizing(false)
+              setNormalizeError(err instanceof Error ? err.message : 'Ошибка при проверке статуса нормализации')
+            })
+        }
+        poll()
+      })
+      .catch((err) => {
+        setNormalizing(false)
+        setNormalizeError(err instanceof Error ? err.message : 'Не удалось запустить нормализацию')
+      })
+  }
+
   return (
     <>
       <div className="sticky top-0 z-10 -mx-4 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -202,6 +239,19 @@ export function NodeActionBar({
             </Button>
           )}
 
+          {!isTranslation && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={handleNormalize}
+              disabled={normalizing}
+            >
+              <Sparkles className={cn('mr-1 size-4', normalizing && 'animate-pulse')} />
+              {normalizing ? 'Нормализация...' : 'Нормализация'}
+            </Button>
+          )}
+
           {showPrimaryGroup && <div className="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true" />}
 
           <Button
@@ -232,6 +282,12 @@ export function NodeActionBar({
           )}
           {refreshSuccess && (
             <span className="text-xs text-green-600 dark:text-green-400">Описание обновлено</span>
+          )}
+          {normalizeError && (
+            <span className="text-xs text-destructive">{normalizeError}</span>
+          )}
+          {normalizeSuccess && (
+            <span className="text-xs text-green-600 dark:text-green-400">Нормализация завершена</span>
           )}
         </div>
       </div>

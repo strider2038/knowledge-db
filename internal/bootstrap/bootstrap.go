@@ -74,6 +74,7 @@ func Run() error {
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue, indexStore)
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
+	apiHandler.SetNodeNormalizer(api.NewCursorNodeNormalizer())
 	chatStore := buildChatStore(cfg)
 	if chatStore != nil {
 		defer func() { _ = chatStore.Close() }()

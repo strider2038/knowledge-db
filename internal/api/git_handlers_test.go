@@ -9,9 +9,9 @@ import (
 	"github.com/muonsoft/api-testing/apitest"
 	"github.com/muonsoft/api-testing/assertjson"
 	"github.com/stretchr/testify/require"
-	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
-	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/api"
+	"github.com/strider2038/knowledge-db/internal/ingestion"
+	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
 )
 
 // mockGitCommitter implements GitCommitter for testing.
@@ -19,13 +19,14 @@ type mockGitCommitter struct {
 	status    *igit.GitStatus
 	statusErr error
 	commitErr error
+	syncErr   error
 	diffStat  string
 	diffErr   error
 	lastMsg   string
 }
 
 func (m *mockGitCommitter) CommitNode(_ context.Context, _, _ string) error { return nil }
-func (m *mockGitCommitter) Sync(_ context.Context) error                    { return nil }
+func (m *mockGitCommitter) Sync(_ context.Context) error                    { return m.syncErr }
 func (m *mockGitCommitter) Status(_ context.Context) (*igit.GitStatus, error) {
 	return m.status, m.statusErr
 }
@@ -109,7 +110,7 @@ func TestPostGitCommit_WhenEmptyJSONBody_ExpectOK(t *testing.T) {
 func TestPostGitCommit_WhenChanges_ExpectOK(t *testing.T) {
 	t.Parallel()
 	mc := &mockGitCommitter{
-		status:  &igit.GitStatus{HasChanges: true, ChangedFiles: 2},
+		status:   &igit.GitStatus{HasChanges: true, ChangedFiles: 2},
 		diffStat: "file1.md | 10 +++\nfile2.md | 5 --\n",
 	}
 	mux := setupGitHandler(t, mc, false)

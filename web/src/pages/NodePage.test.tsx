@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription, startNodeNormalization, getNodeNormalizationStatus } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -39,6 +39,25 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDe
       content: 'Updated content',
       metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
     }),
+    startNodeNormalization: vi.fn().mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'running',
+      stage: 'normalize',
+      started_at: new Date().toISOString(),
+      sync_done: false,
+      normalize_ok: false,
+    }),
+    getNodeNormalizationStatus: vi.fn().mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: true,
+      normalize_ok: true,
+    }),
   }
 })
 
@@ -54,6 +73,8 @@ vi.mock('../services/api', () => ({
   getNode,
   patchNodeManualProcessed,
   refreshNodeDescription,
+  startNodeNormalization,
+  getNodeNormalizationStatus,
   getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
 }))
 
@@ -88,6 +109,25 @@ describe('NodePage', () => {
       annotation: 'Updated annotation',
       content: 'Updated content',
       metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
+    })
+    startNodeNormalization.mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'running',
+      stage: 'normalize',
+      started_at: new Date().toISOString(),
+      sync_done: false,
+      normalize_ok: false,
+    })
+    getNodeNormalizationStatus.mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: true,
+      normalize_ok: true,
     })
   })
 
@@ -220,5 +260,20 @@ describe('NodePage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Обновить описание из источника' })).not.toBeInTheDocument()
+  })
+
+  it('runs node normalization and shows success', async () => {
+    renderNodePage()
+
+    const btn = await screen.findByRole('button', { name: 'Нормализация' })
+    fireEvent.click(btn)
+
+    await waitFor(() => {
+      expect(startNodeNormalization).toHaveBeenCalledWith('programming/scaling/load-balancing')
+    })
+    await waitFor(() => {
+      expect(getNodeNormalizationStatus).toHaveBeenCalledWith('op-1')
+    })
+    expect(await screen.findByText('Нормализация завершена')).toBeInTheDocument()
   })
 })
