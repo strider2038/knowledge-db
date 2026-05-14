@@ -114,7 +114,7 @@ linters:
             - $gostd
             - github.com/strider2038/knowledge-db
             - github.com
-            - github.com/urfave/cli/v2
+            - github.com/urfave/cli/v3
             - google.golang.org
             - golang.org/x/net
             - gopkg.in

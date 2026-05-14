@@ -9,7 +9,7 @@ import (
 
 func main() {
 	app := cliapp.New()
-	if err := app.RunContext(context.Background(), os.Args); err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		os.Exit(1)
 	}
 }

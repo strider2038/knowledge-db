@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 type listNodesResponse struct {
@@ -62,13 +62,13 @@ func reindexLinksCmd() *cli.Command {
 				Value: 60 * time.Second,
 			},
 		},
-		Action: func(cCtx *cli.Context) error {
-			baseURL := cCtx.String("base-url")
-			pageSize := cCtx.Int("page-size")
-			all := cCtx.Bool("all")
-			dryRun := cCtx.Bool("dry-run")
-			delay := cCtx.Duration("delay")
-			requestTimeout := cCtx.Duration("timeout")
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			baseURL := cmd.String("base-url")
+			pageSize := cmd.Int("page-size")
+			all := cmd.Bool("all")
+			dryRun := cmd.Bool("dry-run")
+			delay := cmd.Duration("delay")
+			requestTimeout := cmd.Duration("timeout")
 			if pageSize <= 0 || pageSize > 200 {
 				return fmt.Errorf("invalid --page-size: expected 1..200, got %d", pageSize)
 			}
@@ -79,8 +79,6 @@ func reindexLinksCmd() *cli.Command {
 			}
 
 			client := &http.Client{Timeout: requestTimeout}
-			ctx := cCtx.Context
-
 			paths, err := loadAllLinkPaths(ctx, client, baseURL, pageSize)
 			if err != nil {
 				return err

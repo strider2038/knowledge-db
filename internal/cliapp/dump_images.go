@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/strider2038/knowledge-db/internal/kb"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 func dumpImagesCmd() *cli.Command {
@@ -35,10 +35,10 @@ func dumpImagesCmd() *cli.Command {
 				Usage: "только показать URL и целевые пути, не скачивать",
 			},
 		},
-		Action: func(cCtx *cli.Context) error {
-			path := cCtx.String("path")
-			file := cCtx.String("file")
-			dryRun := cCtx.Bool("dry-run")
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("path")
+			file := cmd.String("file")
+			dryRun := cmd.Bool("dry-run")
 			if file == "" {
 				return errors.New("--file is required")
 			}
@@ -48,7 +48,6 @@ func dumpImagesCmd() *cli.Command {
 				return err
 			}
 
-			ctx := context.Background()
 			fs := afero.NewOsFs()
 			client := &http.Client{Timeout: 30 * time.Second}
 

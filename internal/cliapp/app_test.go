@@ -2,6 +2,7 @@ package cliapp
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestNewApp_HelpContainsCommands(t *testing.T) {
 	var stdout bytes.Buffer
 	app.Writer = &stdout
 
-	err := app.Run([]string{"kb", "--help"})
+	err := app.Run(context.Background(), []string{"kb", "--help"})
 	require.NoError(t, err)
 
 	out := stdout.String()
@@ -66,7 +67,7 @@ func TestServeCommand_UsesRunServe(t *testing.T) {
 	}
 
 	app := New()
-	err := app.Run([]string{"kb", "serve"})
+	err := app.Run(context.Background(), []string{"kb", "serve"})
 	require.ErrorIs(t, err, expectedErr)
 	require.True(t, called)
 }

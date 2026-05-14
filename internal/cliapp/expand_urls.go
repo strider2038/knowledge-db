@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/strider2038/knowledge-db/internal/kb"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 func expandUrlsCmd() *cli.Command {
@@ -32,10 +32,10 @@ func expandUrlsCmd() *cli.Command {
 				Usage: "только показать пары старый→новый URL, не записывать файл",
 			},
 		},
-		Action: func(cCtx *cli.Context) error {
-			path := cCtx.String("path")
-			file := cCtx.String("file")
-			dryRun := cCtx.Bool("dry-run")
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("path")
+			file := cmd.String("file")
+			dryRun := cmd.Bool("dry-run")
 			if file == "" {
 				return errors.New("--file is required")
 			}
@@ -45,11 +45,6 @@ func expandUrlsCmd() *cli.Command {
 				return err
 			}
 			_ = absBase
-
-			ctx := cCtx.Context
-			if ctx == nil {
-				ctx = context.Background()
-			}
 
 			res, err := kb.WriteExpandURLsFile(ctx, mdPath, dryRun)
 			if err != nil {

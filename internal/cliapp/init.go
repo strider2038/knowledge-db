@@ -1,13 +1,14 @@
 package cliapp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 const gitignoreContent = `**/.local/
@@ -59,9 +60,9 @@ func initCmd() *cli.Command {
 				Usage: "создать пример узла (example/topic/example-node/)",
 			},
 		},
-		Action: func(cCtx *cli.Context) error {
-			path := cCtx.String("path")
-			example := cCtx.Bool("example")
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("path")
+			example := cmd.Bool("example")
 			if path == "" {
 				path = "."
 			}

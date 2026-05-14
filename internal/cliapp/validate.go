@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/strider2038/knowledge-db/internal/kb"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 func validateCmd() *cli.Command {
@@ -20,8 +20,8 @@ func validateCmd() *cli.Command {
 				Usage:   "путь к базе знаний (по умолчанию текущая директория)",
 			},
 		},
-		Action: func(cCtx *cli.Context) error {
-			path := cCtx.String("path")
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("path")
 			if path == "" {
 				path = "."
 			}
@@ -29,7 +29,7 @@ func validateCmd() *cli.Command {
 			if err != nil {
 				return err
 			}
-			violations, err := kb.Validate(context.Background(), path)
+			violations, err := kb.Validate(ctx, path)
 			if err != nil {
 				return fmt.Errorf("validate: %w", err)
 			}
