@@ -296,7 +296,7 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 	}, nil
 }
 
-// expandMarkdownURLs раскрывает короткие ссылки и снимает UTM в теле markdown (как kb-cli expand-urls).
+// expandMarkdownURLs раскрывает короткие ссылки и снимает UTM в теле markdown (как kb expand-urls).
 func (p *PipelineIngester) expandMarkdownURLs(ctx context.Context, s string) string {
 	out, res := kb.ExpandURLsInString(ctx, s)
 	if len(res.FailedURLs) > 0 {

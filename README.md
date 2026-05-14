@@ -27,8 +27,7 @@
 ```
 knowledge-db/
 ├── cmd/
-│   ├── kb-server/   # API + UI + Telegram bot + MCP
-│   └── kb-cli/      # validate, init
+│   └── kb/          # serve + validate/init/служебные команды
 ├── internal/
 │   ├── kb/          # работа с data/, валидация, дерево тем
 │   ├── api/         # HTTP handlers, роутинг
@@ -50,19 +49,19 @@ knowledge-db/
 task build
 
 # Запуск сервера (KB_DATA_PATH обязателен)
-KB_DATA_PATH=/path/to/data ./kb-server
+KB_DATA_PATH=/path/to/data ./kb serve
 
 # Без git (коммиты и sync отключены)
-KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
+KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb serve
 
 # CLI: валидация структуры базы
-./kb-cli validate --path /path/to/data
+./kb validate --path /path/to/data
 
 # CLI: инициализация новой базы
-./kb-cli init --path /path/to/data
+./kb init --path /path/to/data
 
 # CLI: инициализация с примером узла (формат Obsidian)
-./kb-cli init --path /path/to/data --example
+./kb init --path /path/to/data --example
 ```
 
 ## Команды Taskfile
@@ -70,11 +69,10 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 
 | Команда             | Описание                           |
 | ------------------- | ---------------------------------- |
-| `task build`        | Собрать web + kb-server + kb-cli   |
-| `task build-server` | Собрать только kb-server           |
-| `task build-cli`    | Собрать только kb-cli              |
+| `task build`        | Собрать web + kb |
+| `task build-kb`     | Собрать только kb |
 | `task web:dev`      | Vite dev server (HMR, прокси /api) |
-| `task server:dev`   | kb-server с hot reload (air), без пересборки embedded UI |
+| `task server:dev`   | kb с hot reload (air), без пересборки embedded UI |
 | `task dev`          | Подсказка по запуску dev-окружения |
 | `task test`         | Запустить тесты                    |
 | `task lint`         | golangci-lint                      |
@@ -86,9 +84,9 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 Для разработки запустите в двух терминалах:
 
 1. `task web:dev` — Vite dev server ([http://localhost:5173](http://localhost:5173))
-2. `task server:dev` — kb-server с hot reload (embedded UI не пересобирается)
+2. `task server:dev` — kb с hot reload (embedded UI не пересобирается)
 
-Если нужно обновить встроенную статику (`internal/ui/static`) для бинарника `kb-server`, используйте `task build-server` или `task build`.
+Если нужно обновить встроенную статику (`internal/ui/static`) для бинарника `kb`, используйте `task build-kb` или `task build`.
 
 Для `server:dev` нужен [air](https://github.com/air-verse/air): `task server:dev:install`.
 
@@ -97,7 +95,7 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 
 | Переменная                                                       | Описание                                                                                                                                                                                        |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **KB_DATA_PATH**                                                 | Путь к корню базы знаний (обязателен для kb-server)                                                                                                                                             |
+| **KB_DATA_PATH**                                                 | Путь к корню базы знаний (обязателен для kb)                                                                                                                                             |
 | **KB_HTTP_ADDR**                                                 | Адрес HTTP-сервера (по умолчанию :8080)                                                                                                                                                         |
 | **KB_MCP_API_KEY**                                               | API-ключ для MCP endpoint `/api/mcp` (заголовок `Authorization: Bearer <key>`). Если пустой/не задан — MCP endpoint отключён                                                                     |
 | **KB_GIT_DISABLED**                                              | Отключить git (коммиты и sync)                                                                                                                                                                  |
@@ -139,19 +137,19 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb-server
 **Открытый режим** (по умолчанию): без `KB_LOGIN`/`KB_PASSWORD` API и web UI доступны без авторизации.
 
 ```bash
-KB_DATA_PATH=/path/to/data ./kb-server
+KB_DATA_PATH=/path/to/data ./kb serve
 ```
 
 **Парольный режим** (`KB_LOGIN` + `KB_PASSWORD`): вход через форму на `/login`. **Не задавайте** одновременно полный набор переменных Google OAuth — сервер не запустится.
 
 ```bash
-KB_DATA_PATH=/path/to/data KB_LOGIN=admin KB_PASSWORD=secret ./kb-server
+KB_DATA_PATH=/path/to/data KB_LOGIN=admin KB_PASSWORD=secret ./kb serve
 ```
 
 **Режим Google OAuth** — взаимоисключающий с паролем. Нужны **все** перечисленные в таблице переменные: клиент, redirect, секрет `state`, непустой allowlist, публичный URL SPA; `KB_LOGIN` и `KB_PASSWORD` должны быть **пустыми**.
 
 1. В [Google Cloud Console](https://console.cloud.google.com/) создайте проект (или выберите существующий), настройте **OAuth consent screen** (для теста — External и тестовые пользователи), затем **APIs & Services → Credentials → Create Credentials → OAuth client ID** и тип **Web application**.
-2. В **Authorized redirect URIs** укажите **ровно** тот же URL, что и в `KB_GOOGLE_OAUTH_REDIRECT_URL` — путь фиксирован: `/api/auth/google/callback` на том хосте и схеме, где снаружи доступен `kb-server`. Пример: `https://api.example.com/api/auth/google/callback` или для локальной проверки: `http://localhost:8080/api/auth/google/callback` (в test mode Google допускает localhost).
+2. В **Authorized redirect URIs** укажите **ровно** тот же URL, что и в `KB_GOOGLE_OAUTH_REDIRECT_URL` — путь фиксирован: `/api/auth/google/callback` на том хосте и схеме, где снаружи доступен `kb`. Пример: `https://api.example.com/api/auth/google/callback` или для локальной проверки: `http://localhost:8080/api/auth/google/callback` (в test mode Google допускает localhost).
 3. Скопируйте **Client ID** и **Client secret** в `KB_GOOGLE_OAUTH_CLIENT_ID` и `KB_GOOGLE_OAUTH_CLIENT_SECRET`. Сгенерируйте криптостойкую строку для `KB_OAUTH_STATE_SECRET` (например `openssl rand -hex 32`). В `KB_AUTH_ALLOWED_EMAILS` перечислите email пользователей; вход возможен только для **подтверждённого** в Google email.
 
 ```bash
@@ -162,12 +160,12 @@ export KB_GOOGLE_OAUTH_CLIENT_SECRET=...
 export KB_GOOGLE_OAUTH_REDIRECT_URL=https://api.example.com/api/auth/google/callback
 export KB_OAUTH_STATE_SECRET=$(openssl rand -hex 32)
 export KB_AUTH_ALLOWED_EMAILS=you@example.com,colleague@example.com
-./kb-server
+./kb serve
 ```
 
 Если задана **хотя бы одна** переменная Google OAuth, пустой набор остальных не допускается: либо полная конфигурация, либо очистите все `KB_GOOGLE_`*, `KB_OAUTH_STATE_SECRET` и `KB_AUTH_ALLOWED_EMAILS`.
 
-UI и API должны согласовываться по CORS: для production укажите `ALLOWED_CORS_ORIGIN` (origin веб-интерфейса, без пути). Вход: кнопка «Войти через Google» ведёт на `GET /api/auth/google` на том же origin, что и API, либо настраивайте прокси так, чтобы этот путь попадал на `kb-server`.
+UI и API должны согласовываться по CORS: для production укажите `ALLOWED_CORS_ORIGIN` (origin веб-интерфейса, без пути). Вход: кнопка «Войти через Google» ведёт на `GET /api/auth/google` на том же origin, что и API, либо настраивайте прокси так, чтобы этот путь попадал на `kb`.
 
 При публичном доступе (вне localhost) рекомендуется использовать TLS: cookie `Secure` требует HTTPS. Настройте reverse proxy (nginx, Caddy) с TLS и корректные заголовки `X-Forwarded-Proto`, `X-Forwarded-For`.
 
@@ -198,7 +196,7 @@ ollama pull bge-m3
 - Запустите локальный сервер (кнопка в левом нижнем углу)
 - По умолчанию: http://localhost:1234/v1
 
-**3. Запустите kb-server**:
+**3. Запустите kb**:
 
 ```bash
 export KB_DATA_PATH=/path/to/data
@@ -210,7 +208,7 @@ export KB_CHAT_MODEL=openai/gpt-oss-20b
 export KB_CHAT_API_URL=http://localhost:1234/v1
 export KB_CHAT_API_KEY="-"
 
-./kb-server
+./kb serve
 ```
 
 ### API эндпоинты
@@ -261,7 +259,7 @@ curl -X POST http://localhost:8080/api/index/rebuild
 
 ```bash
 # Сборка локально
-docker build -t kb-server .
+docker build -t kb .
 
 # Запуск (база — volume)
 docker run -d -p 8080:8080 \

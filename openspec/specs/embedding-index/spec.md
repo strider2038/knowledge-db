@@ -24,7 +24,7 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 #### Scenario: Создание базы при первом запуске
 
-- **WHEN** kb-server запускается с `KB_EMBEDDING_ENABLED=true` и файл index.db не существует
+- **WHEN** `kb serve` запускается с `KB_EMBEDDING_ENABLED=true` и файл index.db не существует
 - **THEN** создаётся директория `.kb/` и файл `index.db` с полной схемой для embeddings, chunks и searchable text
 
 #### Scenario: Директория .kb в gitignore
@@ -34,7 +34,7 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 #### Scenario: Миграция существующего индекса
 
-- **WHEN** kb-server запускается с существующим index.db без searchable text таблиц
+- **WHEN** `kb serve` запускается с существующим index.db без searchable text таблиц
 - **THEN** миграция добавляет необходимые таблицы/индексы без изменения markdown-файлов базы
 
 ### Requirement: Markdown-aware chunking
@@ -160,12 +160,12 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 #### Scenario: Embeddings отключены
 
-- **WHEN** kb-server запускается без `KB_EMBEDDING_ENABLED=true`
+- **WHEN** `kb serve` запускается без `KB_EMBEDDING_ENABLED=true`
 - **THEN** SQLite не создаётся, SyncWorker не запускается, `/api/chat` → 503
 
 #### Scenario: Embeddings включены без API key
 
-- **WHEN** kb-server запускается с `KB_EMBEDDING_ENABLED=true` но без `KB_EMBEDDING_API_KEY`
+- **WHEN** `kb serve` запускается с `KB_EMBEDDING_ENABLED=true` но без `KB_EMBEDDING_API_KEY`
 - **THEN** сервер возвращает ошибку конфигурации и не стартует
 
 ### Requirement: Состояние индекса
@@ -200,4 +200,3 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 - **WHEN** FTS5 недоступен в SQLite окружении
 - **THEN** keyword поиск продолжает работать через fallback scan без внешних сервисов
-

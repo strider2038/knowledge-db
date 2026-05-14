@@ -1,4 +1,4 @@
-# Air — hot-reload для kb-server (https://github.com/air-verse/air)
+# Air — hot-reload для kb serve (https://github.com/air-verse/air)
 
 root = "."
 tmp_dir = "tmp"
@@ -6,9 +6,9 @@ tmp_dir = "tmp"
 env_files = [".env"]
 
 [build]
-cmd = "go build -o ./tmp/kb-server ./cmd/kb-server"
-bin = "tmp/kb-server"
-entrypoint = ["./tmp/kb-server"]
+cmd = "go build -o ./tmp/kb ./cmd/kb"
+bin = "tmp/kb"
+entrypoint = ["./tmp/kb", "serve"]
 include_ext = ["go"]
 exclude_dir = ["tmp", "vendor", "web", ".git", "node_modules", "openspec", "docs"]
 exclude_regex = ["_test\\.go"]

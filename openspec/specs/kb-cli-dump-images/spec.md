@@ -1,26 +1,26 @@
 ## Purpose
 
-Подкоманда kb-cli для дампа удалённых изображений из статьи: скачивание по URL, сохранение в директорию узла и замена ссылок в markdown на локальные пути. Обеспечивает оффлайн-доступ к изображениям статей.
+Подкоманда `kb` для дампа удалённых изображений из статьи: скачивание по URL, сохранение в директорию узла и замена ссылок в markdown на локальные пути. Обеспечивает оффлайн-доступ к изображениям статей.
 
 ## Requirements
 
 ### Requirement: Подкоманда dump-images
 
-kb-cli ДОЛЖЕН (SHALL) предоставлять подкоманду dump-images для скачивания удалённых изображений из markdown-статьи и замены ссылок на локальные пути.
+CLI ДОЛЖЕН (SHALL) предоставлять подкоманду `dump-images` для скачивания удалённых изображений из markdown-статьи и замены ссылок на локальные пути.
 
 #### Сценарий: Dump по пути к файлу
 
-- **WHEN** kb-cli dump-images --file /path/to/base/theme/article.md
+- **WHEN** `kb dump-images --file /path/to/base/theme/article.md`
 - **THEN** система находит все URL изображений в markdown, скачивает их в `{themePath}/{slug}/images/`, заменяет ссылки на относительные пути и сохраняет обновлённый markdown
 
 #### Сценарий: Dump с указанием базы
 
-- **WHEN** kb-cli dump-images --path /path/to/base --file theme/article.md (или slug)
+- **WHEN** `kb dump-images --path /path/to/base --file theme/article.md (или slug)`
 - **THEN** система обрабатывает указанный файл относительно пути базы
 
 #### Сценарий: Dry-run
 
-- **WHEN** kb-cli dump-images --file article.md --dry-run
+- **WHEN** `kb dump-images --file article.md --dry-run`
 - **THEN** система выводит список найденных URL и целевых путей без скачивания и изменения файла
 
 ### Requirement: Извлечение URL изображений

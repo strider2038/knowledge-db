@@ -1,13 +1,14 @@
-package main
+package cliapp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 const gitignoreContent = `**/.local/
@@ -44,13 +45,24 @@ annotation: "Пример узла для проверки структуры"
 
 const exampleNodeName = "sample-node"
 
-func initCmd() *cobra.Command {
-	var path string
-	var example bool
-	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Инициализировать базу знаний (.gitignore, agent skills)",
-		RunE: func(cmd *cobra.Command, args []string) error {
+func initCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "init",
+		Usage: "Инициализировать базу знаний (.gitignore, agent skills)",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "path",
+				Aliases: []string{"p"},
+				Usage:   "путь к базе знаний (по умолчанию текущая директория)",
+			},
+			&cli.BoolFlag{
+				Name:  "example",
+				Usage: "создать пример узла (example/topic/example-node/)",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("path")
+			example := cmd.Bool("example")
 			if path == "" {
 				path = "."
 			}
@@ -100,10 +112,6 @@ func initCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&path, "path", "p", "", "путь к базе знаний (по умолчанию текущая директория)")
-	cmd.Flags().BoolVar(&example, "example", false, "создать пример узла (example/topic/example-node/)")
-
-	return cmd
 }
 
 func findSourceSkill() string {

@@ -1,4 +1,4 @@
-package main
+package cliapp
 
 import (
 	"context"
@@ -11,18 +11,34 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
-	"github.com/spf13/cobra"
 	"github.com/strider2038/knowledge-db/internal/kb"
+	"github.com/urfave/cli/v3"
 )
 
-func dumpImagesCmd() *cobra.Command {
-	var path, file string
-	var dryRun bool
-
-	cmd := &cobra.Command{
-		Use:   "dump-images",
-		Short: "Скачать удалённые изображения из статьи и заменить ссылки на локальные",
-		RunE: func(cmd *cobra.Command, args []string) error {
+func dumpImagesCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "dump-images",
+		Usage: "Скачать удалённые изображения из статьи и заменить ссылки на локальные",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "path",
+				Aliases: []string{"p"},
+				Usage:   "путь к базе знаний (по умолчанию текущая директория)",
+			},
+			&cli.StringFlag{
+				Name:    "file",
+				Aliases: []string{"f"},
+				Usage:   "путь к .md файлу статьи (относительно --path или абсолютный)",
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "только показать URL и целевые пути, не скачивать",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("path")
+			file := cmd.String("file")
+			dryRun := cmd.Bool("dry-run")
 			if file == "" {
 				return errors.New("--file is required")
 			}
@@ -32,7 +48,6 @@ func dumpImagesCmd() *cobra.Command {
 				return err
 			}
 
-			ctx := context.Background()
 			fs := afero.NewOsFs()
 			client := &http.Client{Timeout: 30 * time.Second}
 
@@ -74,12 +89,6 @@ func dumpImagesCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVarP(&path, "path", "p", "", "путь к базе знаний (по умолчанию текущая директория)")
-	cmd.Flags().StringVarP(&file, "file", "f", "", "путь к .md файлу статьи (относительно --path или абсолютный)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "только показать URL и целевые пути, не скачивать")
-
-	return cmd
 }
 
 func resolveDumpPaths(baseFlag, fileFlag string) (string, string, string, error) {

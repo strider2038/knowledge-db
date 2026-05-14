@@ -1,4 +1,4 @@
-package main
+package cliapp
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 type listNodesResponse struct {
@@ -29,18 +29,46 @@ type nodeResponse struct {
 	Content  string         `json:"content"`
 }
 
-func reindexLinksCmd() *cobra.Command {
-	var baseURL string
-	var pageSize int
-	var all bool
-	var dryRun bool
-	var delay time.Duration
-	var requestTimeout time.Duration
-
-	cmd := &cobra.Command{
-		Use:   "reindex-links",
-		Short: "Одноразово обновить и переиндексировать link-узлы через refresh-description",
-		RunE: func(cmd *cobra.Command, args []string) error {
+func reindexLinksCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "reindex-links",
+		Usage: "Одноразово обновить и переиндексировать link-узлы через refresh-description",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "base-url",
+				Usage: "базовый URL kb serve",
+				Value: "http://127.0.0.1:8080",
+			},
+			&cli.IntFlag{
+				Name:  "page-size",
+				Usage: "размер страницы для GET /api/nodes (1..200)",
+				Value: 200,
+			},
+			&cli.BoolFlag{
+				Name:  "all",
+				Usage: "обновлять все link-узлы с source_url (по умолчанию только legacy)",
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "только показать, какие узлы будут обработаны",
+			},
+			&cli.DurationFlag{
+				Name:  "delay",
+				Usage: "задержка между refresh-запросами (например 300ms)",
+			},
+			&cli.DurationFlag{
+				Name:  "timeout",
+				Usage: "HTTP timeout на один запрос",
+				Value: 60 * time.Second,
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			baseURL := cmd.String("base-url")
+			pageSize := cmd.Int("page-size")
+			all := cmd.Bool("all")
+			dryRun := cmd.Bool("dry-run")
+			delay := cmd.Duration("delay")
+			requestTimeout := cmd.Duration("timeout")
 			if pageSize <= 0 || pageSize > 200 {
 				return fmt.Errorf("invalid --page-size: expected 1..200, got %d", pageSize)
 			}
@@ -51,8 +79,6 @@ func reindexLinksCmd() *cobra.Command {
 			}
 
 			client := &http.Client{Timeout: requestTimeout}
-			ctx := cmd.Context()
-
 			paths, err := loadAllLinkPaths(ctx, client, baseURL, pageSize)
 			if err != nil {
 				return err
@@ -116,15 +142,6 @@ func reindexLinksCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVar(&baseURL, "base-url", "http://127.0.0.1:8080", "базовый URL kb-server")
-	cmd.Flags().IntVar(&pageSize, "page-size", 200, "размер страницы для GET /api/nodes (1..200)")
-	cmd.Flags().BoolVar(&all, "all", false, "обновлять все link-узлы с source_url (по умолчанию только legacy)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "только показать, какие узлы будут обработаны")
-	cmd.Flags().DurationVar(&delay, "delay", 0, "задержка между refresh-запросами (например 300ms)")
-	cmd.Flags().DurationVar(&requestTimeout, "timeout", 60*time.Second, "HTTP timeout на один запрос")
-
-	return cmd
 }
 
 func loadAllLinkPaths(ctx context.Context, client *http.Client, baseURL string, pageSize int) ([]string, error) {

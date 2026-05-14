@@ -1,4 +1,4 @@
-package main
+package cliapp
 
 import (
 	"context"
@@ -8,18 +8,34 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/strider2038/knowledge-db/internal/kb"
+	"github.com/urfave/cli/v3"
 )
 
-func expandUrlsCmd() *cobra.Command {
-	var path, file string
-	var dryRun bool
-
-	cmd := &cobra.Command{
-		Use:   "expand-urls",
-		Short: "Раскрыть редиректные ссылки и убрать UTM/трекинг-параметры в markdown",
-		RunE: func(cmd *cobra.Command, args []string) error {
+func expandUrlsCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "expand-urls",
+		Usage: "Раскрыть редиректные ссылки и убрать UTM/трекинг-параметры в markdown",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "path",
+				Aliases: []string{"p"},
+				Usage:   "путь к базе знаний (по умолчанию текущая директория)",
+			},
+			&cli.StringFlag{
+				Name:    "file",
+				Aliases: []string{"f"},
+				Usage:   "путь к .md файлу (относительно --path или абсолютный)",
+			},
+			&cli.BoolFlag{
+				Name:  "dry-run",
+				Usage: "только показать пары старый→новый URL, не записывать файл",
+			},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("path")
+			file := cmd.String("file")
+			dryRun := cmd.Bool("dry-run")
 			if file == "" {
 				return errors.New("--file is required")
 			}
@@ -29,11 +45,6 @@ func expandUrlsCmd() *cobra.Command {
 				return err
 			}
 			_ = absBase
-
-			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
 
 			res, err := kb.WriteExpandURLsFile(ctx, mdPath, dryRun)
 			if err != nil {
@@ -65,12 +76,6 @@ func expandUrlsCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVarP(&path, "path", "p", "", "путь к базе знаний (по умолчанию текущая директория)")
-	cmd.Flags().StringVarP(&file, "file", "f", "", "путь к .md файлу (относительно --path или абсолютный)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "только показать пары старый→новый URL, не записывать файл")
-
-	return cmd
 }
 
 func resolveMarkdownUnderBase(baseFlag, fileFlag string) (string, string, error) {
