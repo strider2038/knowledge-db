@@ -1,20 +1,27 @@
-package main
+package cliapp
 
 import (
 	"context"
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/strider2038/knowledge-db/internal/kb"
+	"github.com/urfave/cli/v2"
 )
 
-func validateCmd() *cobra.Command {
-	var path string
-	cmd := &cobra.Command{
-		Use:   "validate",
-		Short: "Проверить структуру базы знаний",
-		RunE: func(cmd *cobra.Command, args []string) error {
+func validateCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "validate",
+		Usage: "Проверить структуру базы знаний",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "path",
+				Aliases: []string{"p"},
+				Usage:   "путь к базе знаний (по умолчанию текущая директория)",
+			},
+		},
+		Action: func(cCtx *cli.Context) error {
+			path := cCtx.String("path")
 			if path == "" {
 				path = "."
 			}
@@ -37,7 +44,4 @@ func validateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&path, "path", "p", "", "путь к базе знаний (по умолчанию текущая директория)")
-
-	return cmd
 }

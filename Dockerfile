@@ -8,7 +8,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-# Stage 2: build kb-server
+# Stage 2: build kb
 FROM golang:1.25-alpine AS builder
 # Уникален на образ: ETag для embed-статики (If-None-Match иначе 304 с прежними бандлами).
 ARG BUILD_ID=
@@ -20,7 +20,7 @@ COPY . .
 COPY --from=web /app/web/dist ./internal/ui/static
 RUN BID="${BUILD_ID}"; \
   if [ -z "$BID" ]; then BID="$(date -u +%Y%m%d%H%M%S)-local"; fi; \
-  CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/strider2038/knowledge-db/internal/ui.BuildID=${BID}" -o kb-server ./cmd/kb-server
+  CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/strider2038/knowledge-db/internal/ui.BuildID=${BID}" -o kb ./cmd/kb
 
 # Stage 3: minimal runtime
 FROM alpine:3.19
@@ -29,5 +29,5 @@ RUN adduser -D -g "" kb
 USER kb
 WORKDIR /data
 EXPOSE 8080
-ENTRYPOINT ["/kb-server"]
-COPY --from=builder /app/kb-server /kb-server
+ENTRYPOINT ["/kb", "serve"]
+COPY --from=builder /app/kb /kb

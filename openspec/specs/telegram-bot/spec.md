@@ -1,6 +1,6 @@
 ## Purpose
 
-Telegram-бот для приёма сообщений и URL, вызова ingestion pipeline. Работает в том же процессе, что и kb-server. Принимает сообщения только от авторизованного пользователя.
+Telegram-бот для приёма сообщений и URL, вызова ingestion pipeline. Работает в том же процессе, что и `kb serve`. Принимает сообщения только от авторизованного пользователя.
 
 ## Requirements
 
@@ -10,12 +10,12 @@ Telegram-бот для приёма сообщений и URL, вызова inge
 
 #### Сценарий: Запуск без токена
 
-- **WHEN** kb-server запущен без TELEGRAM_TOKEN
+- **WHEN** `kb serve` запущен без TELEGRAM_TOKEN
 - **THEN** бот не стартует, логирует предупреждение
 
 #### Сценарий: Запуск без TELEGRAM_OWNER_ID
 
-- **WHEN** kb-server запущен с TELEGRAM_TOKEN, но без TELEGRAM_OWNER_ID
+- **WHEN** `kb serve` запущен с TELEGRAM_TOKEN, но без TELEGRAM_OWNER_ID
 - **THEN** сервер возвращает ошибку конфигурации и не стартует
 
 ### Requirement: Метаданные источника при пересылке

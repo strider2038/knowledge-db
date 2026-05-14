@@ -114,6 +114,7 @@ linters:
             - $gostd
             - github.com/strider2038/knowledge-db
             - github.com
+            - github.com/urfave/cli/v2
             - google.golang.org
             - golang.org/x/net
             - gopkg.in
@@ -135,6 +136,7 @@ linters:
             - $gostd
             - github.com/strider2038/knowledge-db
             - github.com
+            - github.com/urfave/cli/v2
             - google.golang.org
             - golang.org/x/net
             - gopkg.in
@@ -156,6 +158,10 @@ linters:
           - dupl
       # CLI tools используют fmt.Print для вывода; простые fmt.Errorf для ошибок
       - path: cmd/
+        linters:
+          - forbidigo
+          - err113
+      - path: internal/cliapp/
         linters:
           - forbidigo
           - err113

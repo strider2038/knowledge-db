@@ -62,7 +62,7 @@ func Run() error {
 	logHandler := slog.NewJSONHandler(os.Stdout, opts)
 	slog.SetDefault(slog.New(logHandler))
 
-	slog.Info("kb-server: starting", "addr", cfg.HTTP.Addr, "data_path", cfg.DataPath)
+	slog.Info("kb: starting server", "addr", cfg.HTTP.Addr, "data_path", cfg.DataPath)
 
 	committer := buildCommitter(cfg)
 	translationQueue := buildTranslationQueue(cfg)

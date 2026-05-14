@@ -8,7 +8,7 @@ API ДОЛЖЕН (SHALL) использовать путь к базе из пе
 
 #### Сценарий: Запуск без KB_DATA_PATH
 
-- **WHEN** kb-server запущен без KB_DATA_PATH
+- **WHEN** `kb serve` запущен без KB_DATA_PATH
 - **THEN** сервер возвращает ошибку конфигурации или не стартует
 
 ### Requirement: CRUD узлов
@@ -428,4 +428,3 @@ API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/search` 
 
 - **WHEN** поиск использует LLM rewrite исходного запроса
 - **THEN** JSON response содержит `meta.query_rewrite` с фактически использованным rewrite query
-

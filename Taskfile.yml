@@ -50,30 +50,24 @@ tasks:
     cmds:
       - npm run lint -- --fix
 
-  build-server:
-    desc: Собрать kb-server (web → copy → go build)
+  build-kb:
+    desc: Собрать kb (web → copy → go build)
     deps: [web:build]
     cmds:
       - mkdir -p {{.UI_STATIC}}
       - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
-      - go build -ldflags="{{.KB_UI_LDFLAGS}}" -o kb-server ./cmd/kb-server
-
-  build-cli:
-    desc: Собрать kb-cli
-    cmds:
-      - go build -o kb-cli ./cmd/kb-cli
+      - go build -ldflags="{{.KB_UI_LDFLAGS}}" -o kb ./cmd/kb
 
   build:
-    desc: Собрать всё (web + kb-server + kb-cli)
+    desc: Собрать всё (web + kb)
     cmds:
       - task: web:build
       - mkdir -p {{.UI_STATIC}}
       - cp -r {{.WEB_DIR}}/dist/* {{.UI_STATIC}}/
-      - go build -ldflags="{{.KB_UI_LDFLAGS}}" -o kb-server ./cmd/kb-server
-      - go build -o kb-cli ./cmd/kb-cli
+      - go build -ldflags="{{.KB_UI_LDFLAGS}}" -o kb ./cmd/kb
 
   server:dev:
-    desc: Запустить kb-server с hot reload (air) без пересборки embedded UI
+    desc: Запустить kb serve с hot reload (air) без пересборки embedded UI
     cmds:
       - air
 
@@ -88,7 +82,7 @@ tasks:
       - |
         echo "Для разработки запустите в двух терминалах:"
         echo "  1) task web:dev     - Vite dev server (HMR, прокси /api)"
-        echo "  2) task server:dev  - kb-server с hot reload (air)"
+        echo "  2) task server:dev  - kb serve с hot reload (air)"
         echo ""
         echo "Откройте http://localhost:5173 (Vite)"
 
