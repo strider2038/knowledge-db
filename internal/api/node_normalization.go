@@ -1,12 +1,16 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,44 +20,207 @@ import (
 )
 
 type normalizeOperation struct {
-	ID          string    `json:"id"`
-	NodePath    string    `json:"node_path"`
-	Status      string    `json:"status"`
-	Stage       string    `json:"stage"`
-	Error       string    `json:"error,omitempty"`
-	StartedAt   time.Time `json:"started_at"`
-	FinishedAt  time.Time `json:"finished_at,omitempty"`
-	SyncDone    bool      `json:"sync_done"`
-	NormalizeOK bool      `json:"normalize_ok"`
+	ID          string              `json:"id"`
+	NodePath    string              `json:"node_path"`
+	Status      string              `json:"status"`
+	Stage       string              `json:"stage"`
+	Error       string              `json:"error,omitempty"`
+	StartedAt   time.Time           `json:"started_at"`
+	FinishedAt  time.Time           `json:"finished_at,omitempty"`
+	SyncDone    bool                `json:"sync_done"`
+	NormalizeOK bool                `json:"normalize_ok"`
+	Logs        []normalizeLogEntry `json:"-"`
+	NextOffset  int64               `json:"-"`
+}
+
+type normalizeLogEntry struct {
+	Offset    int64     `json:"offset"`
+	Stream    string    `json:"stream"`
+	Text      string    `json:"text"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type normalizeLogsResponse struct {
+	Entries    []normalizeLogEntry `json:"entries"`
+	NextOffset int64               `json:"next_offset"`
 }
 
 type nodeNormalizer interface {
-	NormalizeNode(ctx context.Context, dataPath string, node *kb.Node) error
+	NormalizeNode(ctx context.Context, dataPath string, node *kb.Node, onLog func(stream, text string)) error
 }
 
 type cursorNodeNormalizer struct {
+}
+
+type cursorStreamState struct {
+	assistantText strings.Builder
 }
 
 func NewCursorNodeNormalizer() nodeNormalizer {
 	return &cursorNodeNormalizer{}
 }
 
-func (n *cursorNodeNormalizer) NormalizeNode(ctx context.Context, dataPath string, node *kb.Node) error {
+func (n *cursorNodeNormalizer) NormalizeNode(ctx context.Context, dataPath string, node *kb.Node, onLog func(stream, text string)) error {
 	if _, err := exec.LookPath("cursor-agent"); err != nil {
 		return errors.Errorf("cursor-agent not found in PATH: %w", err)
 	}
 
 	prompt := buildNormalizationPrompt(node)
-	cmd := exec.CommandContext(ctx, "cursor-agent", "--print", "--force", prompt)
+	cmd := exec.CommandContext(
+		ctx,
+		"cursor-agent",
+		"--print",
+		"--output-format", "stream-json",
+		"--force",
+		prompt,
+	)
 	cmd.Dir = dataPath
 	// Inherit server environment as-is (OAuth/session or explicit env outside app config).
 
-	out, err := cmd.CombinedOutput()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return errors.Errorf("run cursor-agent: %w", err, errors.String("output", string(out)))
+		return errors.Errorf("stdout pipe: %w", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return errors.Errorf("stderr pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return errors.Errorf("start cursor-agent: %w", err)
+	}
+	state := &cursorStreamState{}
+	readPipe := func(stream string, r io.Reader, wg *sync.WaitGroup) {
+		defer wg.Done()
+		s := bufio.NewScanner(r)
+		s.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+		for s.Scan() {
+			for _, line := range parseCursorLogEvents(s.Text(), state) {
+				onLog(stream, line)
+			}
+		}
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go readPipe("stdout", stdoutPipe, &wg)
+	go readPipe("stderr", stderrPipe, &wg)
+	err = cmd.Wait()
+	wg.Wait()
+	if text := strings.TrimSpace(state.assistantText.String()); text != "" {
+		onLog("stdout", text)
+	}
+	if err != nil {
+		return errors.Errorf("run cursor-agent: %w", err)
 	}
 
 	return nil
+}
+
+func parseCursorLogEvents(line string, state *cursorStreamState) []string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		return []string{line}
+	}
+	typeVal, _ := obj["type"].(string)
+	subtype, _ := obj["subtype"].(string)
+
+	// Hide noisy thinking deltas from UI logs.
+	if typeVal == "thinking" {
+		if subtype == "completed" {
+			return []string{"thinking completed"}
+		}
+
+		return nil
+	}
+
+	if typeVal == "assistant" {
+		if msg, ok := obj["message"].(map[string]any); ok {
+			if content, ok := msg["content"].([]any); ok {
+				for _, item := range content {
+					if m, ok := item.(map[string]any); ok {
+						if text, ok := m["text"].(string); ok && text != "" {
+							state.assistantText.WriteString(text)
+						}
+					}
+				}
+			}
+		}
+
+		return nil
+	}
+
+	if typeVal == "tool_call" {
+		return []string{formatToolCallEvent(obj, subtype)}
+	}
+
+	if typeVal == "result" {
+		if result, ok := obj["result"].(string); ok && result != "" {
+			// If we already accumulated the same text via assistant deltas, don't duplicate.
+			if strings.TrimSpace(result) != strings.TrimSpace(state.assistantText.String()) {
+				return []string{result}
+			}
+
+			return nil
+		}
+
+		return []string{"result:" + subtype}
+	}
+
+	if subtype != "" {
+		return []string{typeVal + ":" + subtype}
+	}
+
+	return []string{typeVal + " " + compactKV(obj)}
+}
+
+func formatToolCallEvent(obj map[string]any, subtype string) string {
+	if toolCall, ok := obj["tool_call"].(map[string]any); ok {
+		for toolName := range toolCall {
+			if subtype != "" {
+				return "tool:" + toolName + ":" + subtype
+			}
+
+			return "tool:" + toolName
+		}
+	}
+	if subtype != "" {
+		return "tool_call:" + subtype
+	}
+
+	return "tool_call"
+}
+
+func compactKV(obj map[string]any) string {
+	parts := make([]string, 0, len(obj))
+	for k, v := range obj {
+		if k == "message" || k == "result" || k == "content" {
+			continue
+		}
+		parts = append(parts, k+"="+valueToString(v))
+	}
+	return strings.Join(parts, " ")
+}
+
+func valueToString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	default:
+		if vv := fmt.Sprintf("%T", v); strings.HasPrefix(vv, "[]") {
+			return "[...]"
+		}
+		return "{...}"
+	}
 }
 
 func buildNormalizationPrompt(node *kb.Node) string {
@@ -121,6 +288,7 @@ func (h *Handler) PostNodeNormalize(w http.ResponseWriter, r *http.Request) {
 		StartedAt: time.Now().UTC(),
 	}
 	h.normalizeMu.Lock()
+	h.appendNormalizeLogLocked(&op, "system", "normalization started")
 	h.normalizeOps[op.ID] = op
 	h.normalizeMu.Unlock()
 
@@ -148,8 +316,45 @@ func (h *Handler) GetNodeNormalizeStatus(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, op)
 }
 
+// GetNodeNormalizeLogs обрабатывает GET /api/node-normalization/{id}/logs.
+func (h *Handler) GetNodeNormalizeLogs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id required")
+
+		return
+	}
+	after := int64(0)
+	if raw := r.URL.Query().Get("after"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid after")
+
+			return
+		}
+		after = v
+	}
+	h.normalizeMu.RLock()
+	op, ok := h.normalizeOps[id]
+	h.normalizeMu.RUnlock()
+	if !ok {
+		writeError(w, http.StatusNotFound, "operation not found")
+
+		return
+	}
+	entries := make([]normalizeLogEntry, 0)
+	for _, e := range op.Logs {
+		if e.Offset > after {
+			entries = append(entries, e)
+		}
+	}
+	writeJSON(w, normalizeLogsResponse{Entries: entries, NextOffset: op.NextOffset})
+}
+
 func (h *Handler) runNodeNormalization(ctx context.Context, op normalizeOperation, node *kb.Node) {
-	if err := h.normalizeRunner.NormalizeNode(ctx, h.dataPath, node); err != nil {
+	if err := h.normalizeRunner.NormalizeNode(ctx, h.dataPath, node, func(stream, text string) {
+		h.appendNormalizeLog(op.ID, stream, text)
+	}); err != nil {
 		h.completeNormalizeOp(op.ID, "error", "normalize", err.Error(), false, false)
 
 		return
@@ -169,6 +374,30 @@ func (h *Handler) runNodeNormalization(ctx context.Context, op normalizeOperatio
 	}
 
 	h.completeNormalizeOp(op.ID, "success", "done", "", true, true)
+}
+
+func (h *Handler) appendNormalizeLog(id, stream, text string) {
+	h.normalizeMu.Lock()
+	defer h.normalizeMu.Unlock()
+	op, ok := h.normalizeOps[id]
+	if !ok {
+		return
+	}
+	h.appendNormalizeLogLocked(&op, stream, text)
+	h.normalizeOps[id] = op
+}
+
+func (h *Handler) appendNormalizeLogLocked(op *normalizeOperation, stream, text string) {
+	op.NextOffset++
+	op.Logs = append(op.Logs, normalizeLogEntry{
+		Offset:    op.NextOffset,
+		Stream:    stream,
+		Text:      text,
+		Timestamp: time.Now().UTC(),
+	})
+	if len(op.Logs) > 1000 {
+		op.Logs = append([]normalizeLogEntry(nil), op.Logs[len(op.Logs)-1000:]...)
+	}
 }
 
 func (h *Handler) updateNormalizeOpStage(id, stage string) {
@@ -195,6 +424,11 @@ func (h *Handler) completeNormalizeOp(id, status, stage, errText string, normali
 	op.NormalizeOK = normalizeOK
 	op.SyncDone = syncDone
 	op.FinishedAt = time.Now().UTC()
+	if status == "success" {
+		h.appendNormalizeLogLocked(&op, "system", "normalization completed")
+	} else {
+		h.appendNormalizeLogLocked(&op, "system", "normalization failed: "+errText)
+	}
 	h.normalizeOps[id] = op
 	if status == "error" {
 		clog.Error(context.Background(), "node normalize failed", "node_path", op.NodePath, "stage", stage, "error", errText)

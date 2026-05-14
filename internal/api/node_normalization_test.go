@@ -21,7 +21,9 @@ type mockNodeNormalizer struct {
 	err error
 }
 
-func (m *mockNodeNormalizer) NormalizeNode(_ context.Context, _ string, _ *kb.Node) error {
+func (m *mockNodeNormalizer) NormalizeNode(_ context.Context, _ string, _ *kb.Node, onLog func(stream, text string)) error {
+	onLog("stdout", "line one")
+	onLog("stderr", "line two")
 	return m.err
 }
 
@@ -75,6 +77,12 @@ func TestPostNodeNormalize_WhenSuccess_ExpectOperationSuccess(t *testing.T) {
 		stCode, st := doJSON(t, mux, http.MethodGet, "/api/node-normalization/"+start.ID)
 		return stCode == http.StatusOK && st.Status == "success" && st.SyncDone
 	}, time.Second, 20*time.Millisecond)
+
+	logsReq := httptest.NewRequest(http.MethodGet, "/api/node-normalization/"+start.ID+"/logs", nil)
+	logsRec := httptest.NewRecorder()
+	mux.ServeHTTP(logsRec, logsReq)
+	require.Equal(t, http.StatusOK, logsRec.Code)
+	require.Contains(t, logsRec.Body.String(), "line one")
 }
 
 func TestPostNodeNormalize_WhenNormalizerFails_ExpectOperationError(t *testing.T) {

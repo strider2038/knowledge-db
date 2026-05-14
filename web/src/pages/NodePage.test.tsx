@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription, startNodeNormalization, getNodeNormalizationStatus } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -58,6 +58,7 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDe
       sync_done: true,
       normalize_ok: true,
     }),
+    getNodeNormalizationLogs: vi.fn().mockResolvedValue({ entries: [], next_offset: 0 }),
   }
 })
 
@@ -75,6 +76,7 @@ vi.mock('../services/api', () => ({
   refreshNodeDescription,
   startNodeNormalization,
   getNodeNormalizationStatus,
+  getNodeNormalizationLogs,
   getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
 }))
 
@@ -129,6 +131,7 @@ describe('NodePage', () => {
       sync_done: true,
       normalize_ok: true,
     })
+    getNodeNormalizationLogs.mockResolvedValue({ entries: [], next_offset: 0 })
   })
 
   it('marks manual processed via Проверено button', async () => {
