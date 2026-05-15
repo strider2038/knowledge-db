@@ -22,10 +22,16 @@ RUN BID="${BUILD_ID}"; \
   if [ -z "$BID" ]; then BID="$(date -u +%Y%m%d%H%M%S)-local"; fi; \
   CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/strider2038/knowledge-db/internal/ui.BuildID=${BID}" -o kb ./cmd/kb
 
-# Stage 3: minimal runtime
-FROM alpine:3.19
-RUN apk add --no-cache git openssh-client ca-certificates curl bash libstdc++ gcompat libc6-compat
-RUN adduser -D -g "" kb
+# Stage 3: runtime with glibc for cursor-agent
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  git \
+  openssh-client \
+  ca-certificates \
+  curl \
+  bash \
+  && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -s /bin/bash kb
 USER kb
 ENV PATH="/home/kb/.local/bin:${PATH}"
 RUN curl https://cursor.com/install -fsS | bash
