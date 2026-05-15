@@ -288,8 +288,14 @@ export function NodeActionBar({
             <span>Логи нормализации · {normalizing ? `running (${normalizeStage})` : normalizeError ? 'error' : 'success'}</span>
             {logsPanelOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
           </button>
-          {logsPanelOpen && (
-            <div className="border-t bg-muted/40 px-4 py-2">
+          <div
+            className={cn(
+              'overflow-hidden border-t bg-muted/40 transition-all duration-300 ease-out',
+              logsPanelOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0',
+            )}
+            aria-hidden={!logsPanelOpen}
+          >
+            <div className="px-4 py-2">
               <div className="mb-2 flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Режим логов</span>
                 <div className="flex gap-1">
@@ -330,7 +336,7 @@ export function NodeActionBar({
               )}
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
     </>

@@ -26,7 +26,7 @@ type normalizeOperation struct {
 	Stage       string              `json:"stage"`
 	Error       string              `json:"error,omitempty"`
 	StartedAt   time.Time           `json:"started_at"`
-	FinishedAt  time.Time           `json:"finished_at,omitempty"`
+	FinishedAt  *time.Time          `json:"finished_at,omitempty"`
 	SyncDone    bool                `json:"sync_done"`
 	NormalizeOK bool                `json:"normalize_ok"`
 	Logs        []normalizeLogEntry `json:"-"`
@@ -127,35 +127,17 @@ func parseCursorLogEvents(line string, state *cursorStreamState) []string {
 	typeVal, _ := obj["type"].(string)
 	subtype, _ := obj["subtype"].(string)
 
-	// Hide noisy thinking deltas from UI logs.
-	if typeVal == "thinking" {
-		if subtype == "completed" {
-			return []string{"thinking completed"}
-		}
-
-		return nil
+	if thinking := parseThinkingEvent(typeVal, subtype); thinking != nil {
+		return thinking
 	}
-
 	if typeVal == "assistant" {
-		if msg, ok := obj["message"].(map[string]any); ok {
-			if content, ok := msg["content"].([]any); ok {
-				for _, item := range content {
-					if m, ok := item.(map[string]any); ok {
-						if text, ok := m["text"].(string); ok && text != "" {
-							state.assistantText.WriteString(text)
-						}
-					}
-				}
-			}
-		}
+		collectAssistantText(state, obj)
 
 		return nil
 	}
-
 	if typeVal == "tool_call" {
 		return []string{formatToolCallEvent(obj, subtype)}
 	}
-
 	if typeVal == "result" {
 		if result, ok := obj["result"].(string); ok && result != "" {
 			// If we already accumulated the same text via assistant deltas, don't duplicate.
@@ -174,6 +156,38 @@ func parseCursorLogEvents(line string, state *cursorStreamState) []string {
 	}
 
 	return []string{typeVal + " " + compactKV(obj)}
+}
+
+func parseThinkingEvent(typeVal, subtype string) []string {
+	if typeVal != "thinking" {
+		return nil
+	}
+	if subtype == "completed" {
+		return []string{"thinking completed"}
+	}
+
+	return []string{}
+}
+
+func collectAssistantText(state *cursorStreamState, obj map[string]any) {
+	msg, ok := obj["message"].(map[string]any)
+	if !ok {
+		return
+	}
+	content, ok := msg["content"].([]any)
+	if !ok {
+		return
+	}
+	for _, item := range content {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		text, ok := m["text"].(string)
+		if ok && text != "" {
+			state.assistantText.WriteString(text)
+		}
+	}
 }
 
 func formatToolCallEvent(obj map[string]any, subtype string) string {
@@ -201,6 +215,7 @@ func compactKV(obj map[string]any) string {
 		}
 		parts = append(parts, k+"="+valueToString(v))
 	}
+
 	return strings.Join(parts, " ")
 }
 
@@ -214,11 +229,13 @@ func valueToString(v any) string {
 		if x {
 			return "true"
 		}
+
 		return "false"
 	default:
 		if vv := fmt.Sprintf("%T", v); strings.HasPrefix(vv, "[]") {
 			return "[...]"
 		}
+
 		return "{...}"
 	}
 }
@@ -232,7 +249,10 @@ func buildNormalizationPrompt(node *kb.Node) string {
 	b.WriteString(node.Path)
 	b.WriteString("\\n\\n")
 	b.WriteString("Frontmatter and content:\\n")
-	metaJSON, _ := json.MarshalIndent(node.Metadata, "", "  ")
+	metaJSON, err := json.MarshalIndent(node.Metadata, "", "  ")
+	if err != nil {
+		metaJSON = []byte("{}")
+	}
 	b.WriteString("metadata: ")
 	b.Write(metaJSON)
 	b.WriteString("\\n\\nannotation:\\n")
@@ -255,6 +275,13 @@ func (h *Handler) PostNodeNormalize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "node normalization unavailable")
 
 		return
+	}
+	if _, ok := h.normalizeRunner.(*cursorNodeNormalizer); ok {
+		if _, err := exec.LookPath("cursor-agent"); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "cursor-agent not found in PATH")
+
+			return
+		}
 	}
 
 	node, err := kb.GetNode(r.Context(), h.dataPath, path)
@@ -292,7 +319,7 @@ func (h *Handler) PostNodeNormalize(w http.ResponseWriter, r *http.Request) {
 	h.normalizeOps[op.ID] = op
 	h.normalizeMu.Unlock()
 
-	go h.runNodeNormalization(context.Background(), op, node)
+	go h.runNodeNormalization(context.WithoutCancel(r.Context()), op, node)
 
 	writeJSON(w, op)
 }
@@ -355,25 +382,25 @@ func (h *Handler) runNodeNormalization(ctx context.Context, op normalizeOperatio
 	if err := h.normalizeRunner.NormalizeNode(ctx, h.dataPath, node, func(stream, text string) {
 		h.appendNormalizeLog(op.ID, stream, text)
 	}); err != nil {
-		h.completeNormalizeOp(op.ID, "error", "normalize", err.Error(), false, false)
+		h.completeNormalizeOp(ctx, op.ID, "error", "normalize", err.Error(), false, false)
 
 		return
 	}
 
 	h.updateNormalizeOpStage(op.ID, "sync")
 	if h.gitDisabled || h.gitCommitter == nil {
-		h.completeNormalizeOp(op.ID, "success", "done", "", true, false)
+		h.completeNormalizeOp(ctx, op.ID, "success", "done", "", true, false)
 
 		return
 	}
 
 	if err := h.gitCommitter.Sync(ctx); err != nil {
-		h.completeNormalizeOp(op.ID, "error", "sync", fmt.Sprintf("sync error: %v", err), true, false)
+		h.completeNormalizeOp(ctx, op.ID, "error", "sync", fmt.Sprintf("sync error: %v", err), true, false)
 
 		return
 	}
 
-	h.completeNormalizeOp(op.ID, "success", "done", "", true, true)
+	h.completeNormalizeOp(ctx, op.ID, "success", "done", "", true, true)
 }
 
 func (h *Handler) appendNormalizeLog(id, stream, text string) {
@@ -411,7 +438,7 @@ func (h *Handler) updateNormalizeOpStage(id, stage string) {
 	h.normalizeOps[id] = op
 }
 
-func (h *Handler) completeNormalizeOp(id, status, stage, errText string, normalizeOK, syncDone bool) {
+func (h *Handler) completeNormalizeOp(ctx context.Context, id, status, stage, errText string, normalizeOK, syncDone bool) {
 	h.normalizeMu.Lock()
 	defer h.normalizeMu.Unlock()
 	op, ok := h.normalizeOps[id]
@@ -423,7 +450,8 @@ func (h *Handler) completeNormalizeOp(id, status, stage, errText string, normali
 	op.Error = errText
 	op.NormalizeOK = normalizeOK
 	op.SyncDone = syncDone
-	op.FinishedAt = time.Now().UTC()
+	finishedAt := time.Now().UTC()
+	op.FinishedAt = &finishedAt
 	if status == "success" {
 		h.appendNormalizeLogLocked(&op, "system", "normalization completed")
 	} else {
@@ -431,7 +459,7 @@ func (h *Handler) completeNormalizeOp(id, status, stage, errText string, normali
 	}
 	h.normalizeOps[id] = op
 	if status == "error" {
-		clog.Error(context.Background(), "node normalize failed", "node_path", op.NodePath, "stage", stage, "error", errText)
+		clog.Error(ctx, "node normalize failed", "node_path", op.NodePath, "stage", stage, "error", errText)
 	}
 }
 

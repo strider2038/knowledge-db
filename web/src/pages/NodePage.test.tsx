@@ -266,6 +266,10 @@ describe('NodePage', () => {
   })
 
   it('runs node normalization and shows success', async () => {
+    getNodeNormalizationLogs.mockResolvedValue({
+      entries: [{ offset: 1, stream: 'stdout', text: 'line one', timestamp: new Date().toISOString() }],
+      next_offset: 1,
+    })
     renderNodePage()
 
     const btn = await screen.findByRole('button', { name: 'Нормализация' })
@@ -277,6 +281,31 @@ describe('NodePage', () => {
     await waitFor(() => {
       expect(getNodeNormalizationStatus).toHaveBeenCalledWith('op-1')
     })
+    expect(await screen.findByText(/Логи нормализации ·/)).toBeInTheDocument()
+    expect(await screen.findByText('line one')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Логи нормализации ·/ }))
+    expect(screen.getByText('Режим логов')).toBeInTheDocument()
     expect(await screen.findByText('Нормализация завершена')).toBeInTheDocument()
+  })
+
+  it('shows error status in normalization log panel', async () => {
+    getNodeNormalizationStatus.mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'error',
+      stage: 'normalize',
+      error: 'normalize failed',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: false,
+      normalize_ok: false,
+    })
+
+    renderNodePage()
+    const btn = await screen.findByRole('button', { name: 'Нормализация' })
+    fireEvent.click(btn)
+
+    expect(await screen.findByText('normalize failed')).toBeInTheDocument()
+    expect(await screen.findByText('Логи нормализации · error')).toBeInTheDocument()
   })
 })
