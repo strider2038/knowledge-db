@@ -18,6 +18,14 @@ vi.mock('mermaid', () => ({
   },
 }))
 
+vi.mock('@/services/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/api')>()
+  return {
+    ...actual,
+    getAssetUrl: (path: string) => `ASSET:${path}`,
+  }
+})
+
 function renderWithTheme(ui: React.ReactElement) {
   return render(
     <ThemeProvider defaultTheme="light" attribute="class">
@@ -78,6 +86,20 @@ describe('MarkdownContent', () => {
     const code = document.querySelector('pre code')
     expect(code?.className).toMatch(/hljs|language-dockerfile/)
     expect(code?.querySelector('[class*="hljs-"]')).toBeInTheDocument()
+  })
+
+  it('resolves kb-dumped image paths against nodePath (original slug folder)', () => {
+    render(
+      <MarkdownContent
+        content={'![cap](hal-by-any-other-name/images/cf5cfa8ab925.png)'}
+        nodePath="ai/ai-bots/hal-by-any-other-name"
+      />,
+    )
+    const img = screen.getByRole('img', { name: 'cap' })
+    expect(img).toHaveAttribute(
+      'src',
+      'ASSET:ai/ai-bots/hal-by-any-other-name/images/cf5cfa8ab925.png',
+    )
   })
 
   it('renders links with target="_blank" and rel="noopener noreferrer"', () => {
