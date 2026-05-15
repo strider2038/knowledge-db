@@ -107,6 +107,10 @@ func (w *SyncWorker) Run(ctx context.Context) error {
 	}
 }
 
+func (w *SyncWorker) ProcessSingleNodeForTest(ctx context.Context, path string) {
+	w.processSingleNode(ctx, path)
+}
+
 func (w *SyncWorker) handleEvent(ctx context.Context, event SyncEvent) {
 	logger := clog.FromContext(ctx)
 	logger.Debug("sync: event received", "event", fmt.Sprintf("%T", event))
@@ -244,10 +248,6 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
 	}
 
 	logger.Info("sync: article chunks indexed", "path", nodePath, "chunks", len(chunks))
-}
-
-func (w *SyncWorker) ProcessSingleNodeForTest(ctx context.Context, path string) {
-	w.processSingleNode(ctx, path)
 }
 
 func (w *SyncWorker) fullReconcile(ctx context.Context) {

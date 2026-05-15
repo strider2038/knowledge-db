@@ -83,6 +83,7 @@ type ChunkEmbedding struct {
 	Vector     []float32
 }
 
+//nolint:interfacebloat
 type Store interface {
 	Close() error
 	DataPath() string

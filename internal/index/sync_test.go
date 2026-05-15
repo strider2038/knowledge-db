@@ -27,7 +27,7 @@ func (noopStore) UpsertNode(context.Context, string, string, string, int64) erro
 	return nil
 }
 func (noopStore) GetNodeByPath(context.Context, string) (*IndexedNode, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil
 }
 func (noopStore) DeleteNode(context.Context, string) error              { return nil }
 func (noopStore) ListAllIndexed(context.Context) ([]IndexedNode, error) { return nil, nil }
@@ -51,14 +51,16 @@ func (noopStore) GetAllNodeEmbeddings(context.Context) ([]NodeEmbedding, error) 
 func (noopStore) SearchChunkByKeywords(context.Context, []string, int) ([]KeywordChunkHit, error) {
 	return nil, nil
 }
-func (noopStore) GetStatus(context.Context, string) (*IndexStatus, error) { return nil, nil }
+func (noopStore) GetStatus(context.Context, string) (*IndexStatus, error) {
+	return nil, nil //nolint:nilnil
+}
 func (noopStore) ClearAll(context.Context) error                          { return nil }
 func (noopStore) SearchVocabulary(context.Context, SearchVocabularyOptions) ([]string, error) {
 	return nil, nil
 }
 func (noopStore) KeywordIndexMode() string { return "fts5" }
 func (noopStore) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil
 }
 func (noopStore) QueryRowContext(context.Context, string, ...any) *sql.Row {
 	return nil

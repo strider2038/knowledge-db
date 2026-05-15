@@ -193,46 +193,6 @@ func (s *Store) AddMessage(ctx context.Context, sessionID, role, content string,
 	return nil
 }
 
-func (s *Store) autoRenameSessionFromFirstMessage(ctx context.Context, sessionID, content, now string) error {
-	title := deriveTitleFromMessage(content)
-	if title == "" {
-		return nil
-	}
-	res, err := s.db.ExecContext(ctx, `
-UPDATE chat_sessions
-SET title = ?, updated_at = ?
-WHERE id = ?
-  AND title = 'Новый чат'
-  AND (
-    SELECT COUNT(*)
-    FROM chat_messages
-    WHERE session_id = ?
-      AND role = 'user'
-      AND is_summary = 0
-  ) = 1
-`, title, now, sessionID, sessionID)
-	if err != nil {
-		return err
-	}
-	_, _ = res.RowsAffected()
-
-	return nil
-}
-
-func deriveTitleFromMessage(content string) string {
-	title := strings.TrimSpace(content)
-	if title == "" {
-		return ""
-	}
-	title = strings.Join(strings.Fields(title), " ")
-	r := []rune(title)
-	if len(r) > 60 {
-		title = strings.TrimSpace(string(r[:60])) + "…"
-	}
-
-	return title
-}
-
 func (s *Store) BuildPromptMessages(ctx context.Context, sessionID string) ([]map[string]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT role, content, is_summary FROM chat_messages WHERE session_id = ? ORDER BY is_summary DESC, id ASC`, sessionID)
 	if err != nil {
@@ -258,34 +218,6 @@ func (s *Store) BuildPromptMessages(ctx context.Context, sessionID string) ([]ma
 	}
 
 	return s.compactPrompt(items), nil
-}
-
-func (s *Store) compactPrompt(items []map[string]string) []map[string]string {
-	if len(items) <= s.maxMessages {
-		return compactByRunes(items, s.maxContextRunes)
-	}
-	start := len(items) - s.maxMessages
-
-	return compactByRunes(items[start:], s.maxContextRunes)
-}
-
-func compactByRunes(items []map[string]string, budget int) []map[string]string {
-	if budget <= 0 {
-		return items
-	}
-	total := 0
-	for i := len(items) - 1; i >= 0; i-- {
-		total += len([]rune(items[i]["content"]))
-		if total > budget {
-			if i+1 < len(items) {
-				return items[i+1:]
-			}
-
-			break
-		}
-	}
-
-	return items
 }
 
 func (s *Store) SummarizeAndTrim(ctx context.Context, sessionID string) error {
@@ -346,6 +278,50 @@ func (s *Store) SummarizeAndTrim(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+func (s *Store) CleanupExpired(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM chat_sessions WHERE expires_at < ?`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	_, _ = s.db.ExecContext(ctx, `VACUUM`)
+
+	return nil
+}
+
+func (s *Store) autoRenameSessionFromFirstMessage(ctx context.Context, sessionID, content, now string) error {
+	title := deriveTitleFromMessage(content)
+	if title == "" {
+		return nil
+	}
+	res, err := s.db.ExecContext(ctx, `
+UPDATE chat_sessions
+SET title = ?, updated_at = ?
+WHERE id = ?
+  AND title = 'Новый чат'
+  AND (
+    SELECT COUNT(*)
+    FROM chat_messages
+    WHERE session_id = ?
+      AND role = 'user'
+      AND is_summary = 0
+  ) = 1
+`, title, now, sessionID, sessionID)
+	if err != nil {
+		return err
+	}
+	_, _ = res.RowsAffected()
+
+	return nil
+}
+
+func (s *Store) compactPrompt(items []map[string]string) []map[string]string {
+	if len(items) <= s.maxMessages {
+		return compactByRunes(items, s.maxContextRunes)
+	}
+	start := len(items) - s.maxMessages
+
+	return compactByRunes(items[start:], s.maxContextRunes)
+}
+
 func (s *Store) summaryTrimCount(messages []rec) int {
 	if len(messages) <= 1 {
 		return 0
@@ -373,6 +349,39 @@ type rec struct {
 	role, content string
 }
 
+func compactByRunes(items []map[string]string, budget int) []map[string]string {
+	if budget <= 0 {
+		return items
+	}
+	total := 0
+	for i := len(items) - 1; i >= 0; i-- {
+		total += len([]rune(items[i]["content"]))
+		if total > budget {
+			if i+1 < len(items) {
+				return items[i+1:]
+			}
+
+			break
+		}
+	}
+
+	return items
+}
+
+func deriveTitleFromMessage(content string) string {
+	title := strings.TrimSpace(content)
+	if title == "" {
+		return ""
+	}
+	title = strings.Join(strings.Fields(title), " ")
+	r := []rune(title)
+	if len(r) > 60 {
+		title = strings.TrimSpace(string(r[:60])) + "…"
+	}
+
+	return title
+}
+
 func trimCountByRunes(messages []rec, budget int) int {
 	if budget <= 0 {
 		return 0
@@ -387,15 +396,6 @@ func trimCountByRunes(messages []rec, budget int) int {
 	}
 
 	return 0
-}
-
-func (s *Store) CleanupExpired(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM chat_sessions WHERE expires_at < ?`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		return err
-	}
-	_, _ = s.db.ExecContext(ctx, `VACUUM`)
-
-	return nil
 }
 
 func truncateRunes(v string, limit int) string {

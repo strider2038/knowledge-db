@@ -78,117 +78,6 @@ func (s *Store) QueryRowContext(ctx context.Context, query string, args ...any) 
 	return s.db.QueryRowContext(ctx, query, args...)
 }
 
-func (s *Store) migrate() error {
-	ctx := context.Background()
-	_, err := s.db.ExecContext(ctx, "PRAGMA journal_mode=WAL")
-	if err != nil {
-		return errors.Errorf("set WAL mode: %w", err)
-	}
-
-	schema := `
-	CREATE TABLE IF NOT EXISTS embeddings (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		vector BLOB NOT NULL,
-		model TEXT NOT NULL,
-		dimensions INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS indexed_nodes (
-		path TEXT PRIMARY KEY,
-		content_hash TEXT NOT NULL,
-		body_hash TEXT NOT NULL DEFAULT '',
-		indexed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		node_embedding_id INTEGER NOT NULL,
-		FOREIGN KEY (node_embedding_id) REFERENCES embeddings(id) ON DELETE CASCADE
-	);
-	CREATE TABLE IF NOT EXISTS chunks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		node_path TEXT NOT NULL,
-		chunk_index INTEGER NOT NULL,
-		heading TEXT NOT NULL DEFAULT '',
-		content TEXT NOT NULL,
-		embedding_id INTEGER NOT NULL,
-		UNIQUE(node_path, chunk_index),
-		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE,
-		FOREIGN KEY (embedding_id) REFERENCES embeddings(id) ON DELETE CASCADE
-	);
-	CREATE TABLE IF NOT EXISTS node_search (
-		path TEXT PRIMARY KEY,
-		title TEXT NOT NULL DEFAULT '',
-		type TEXT NOT NULL DEFAULT '',
-		aliases TEXT NOT NULL DEFAULT '',
-		annotation TEXT NOT NULL DEFAULT '',
-		keywords TEXT NOT NULL DEFAULT '',
-		source_url TEXT NOT NULL DEFAULT '',
-		manual_processed INTEGER NOT NULL DEFAULT 0,
-		body TEXT NOT NULL DEFAULT '',
-		searchable_text TEXT NOT NULL DEFAULT '',
-		FOREIGN KEY (path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
-	);
-	CREATE TABLE IF NOT EXISTS chunk_search (
-		node_path TEXT NOT NULL,
-		chunk_index INTEGER NOT NULL,
-		heading TEXT NOT NULL DEFAULT '',
-		content TEXT NOT NULL DEFAULT '',
-		searchable_text TEXT NOT NULL DEFAULT '',
-		PRIMARY KEY (node_path, chunk_index),
-		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
-	);`
-
-	if _, err := s.db.ExecContext(ctx, schema); err != nil {
-		return errors.Errorf("create schema: %w", err)
-	}
-
-	if err := s.migrateFTS(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Store) migrateFTS() error {
-	ctx := context.Background()
-	if !s.detectFTS5(ctx) {
-		s.keywordIndexMode = index.KeywordIndexModeScan
-
-		return nil
-	}
-
-	schema := `
-	CREATE VIRTUAL TABLE IF NOT EXISTS node_search_fts USING fts5(
-		path UNINDEXED,
-		title,
-		type,
-		aliases,
-		annotation,
-		keywords,
-		source_url,
-		body,
-		searchable_text
-	);
-	CREATE VIRTUAL TABLE IF NOT EXISTS chunk_search_fts USING fts5(
-		node_path UNINDEXED,
-		chunk_index UNINDEXED,
-		heading,
-		content,
-		searchable_text
-	);`
-	if _, err := s.db.ExecContext(ctx, schema); err != nil {
-		return errors.Errorf("create fts schema: %w", err)
-	}
-
-	s.keywordIndexMode = index.KeywordIndexModeFTS5
-
-	return nil
-}
-
-func (s *Store) detectFTS5(ctx context.Context) bool {
-	_, err := s.db.ExecContext(ctx, `
-		CREATE VIRTUAL TABLE IF NOT EXISTS __kb_fts5_probe USING fts5(value);
-		DROP TABLE IF EXISTS __kb_fts5_probe;`)
-
-	return err == nil
-}
-
 func (s *Store) InsertEmbedding(ctx context.Context, vector []float32, model string) (int64, error) {
 	blob := encodeVector(vector)
 	dims := len(vector)
@@ -564,11 +453,120 @@ func (s *Store) DB() *sql.DB {
 }
 
 func (s *Store) execContext(ctx context.Context, query string, args ...any) error {
-	if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
-		return fmt.Errorf("%s: %w", query, err)
+	_, err := s.db.ExecContext(ctx, query, args...)
+
+	return err
+}
+
+func (s *Store) migrate() error {
+	ctx := context.Background()
+	_, err := s.db.ExecContext(ctx, "PRAGMA journal_mode=WAL")
+	if err != nil {
+		return errors.Errorf("set WAL mode: %w", err)
+	}
+
+	schema := `
+	CREATE TABLE IF NOT EXISTS embeddings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		vector BLOB NOT NULL,
+		model TEXT NOT NULL,
+		dimensions INTEGER NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS indexed_nodes (
+		path TEXT PRIMARY KEY,
+		content_hash TEXT NOT NULL,
+		body_hash TEXT NOT NULL DEFAULT '',
+		indexed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		node_embedding_id INTEGER NOT NULL,
+		FOREIGN KEY (node_embedding_id) REFERENCES embeddings(id) ON DELETE CASCADE
+	);
+	CREATE TABLE IF NOT EXISTS chunks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		node_path TEXT NOT NULL,
+		chunk_index INTEGER NOT NULL,
+		heading TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL,
+		embedding_id INTEGER NOT NULL,
+		UNIQUE(node_path, chunk_index),
+		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE,
+		FOREIGN KEY (embedding_id) REFERENCES embeddings(id) ON DELETE CASCADE
+	);
+	CREATE TABLE IF NOT EXISTS node_search (
+		path TEXT PRIMARY KEY,
+		title TEXT NOT NULL DEFAULT '',
+		type TEXT NOT NULL DEFAULT '',
+		aliases TEXT NOT NULL DEFAULT '',
+		annotation TEXT NOT NULL DEFAULT '',
+		keywords TEXT NOT NULL DEFAULT '',
+		source_url TEXT NOT NULL DEFAULT '',
+		manual_processed INTEGER NOT NULL DEFAULT 0,
+		body TEXT NOT NULL DEFAULT '',
+		searchable_text TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY (path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
+	);
+	CREATE TABLE IF NOT EXISTS chunk_search (
+		node_path TEXT NOT NULL,
+		chunk_index INTEGER NOT NULL,
+		heading TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL DEFAULT '',
+		searchable_text TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (node_path, chunk_index),
+		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
+	);`
+
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+		return errors.Errorf("create schema: %w", err)
+	}
+
+	if err := s.migrateFTS(); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func (s *Store) migrateFTS() error {
+	ctx := context.Background()
+	if !s.detectFTS5(ctx) {
+		s.keywordIndexMode = index.KeywordIndexModeScan
+
+		return nil
+	}
+
+	schema := `
+	CREATE VIRTUAL TABLE IF NOT EXISTS node_search_fts USING fts5(
+		path UNINDEXED,
+		title,
+		type,
+		aliases,
+		annotation,
+		keywords,
+		source_url,
+		body,
+		searchable_text
+	);
+	CREATE VIRTUAL TABLE IF NOT EXISTS chunk_search_fts USING fts5(
+		node_path UNINDEXED,
+		chunk_index UNINDEXED,
+		heading,
+		content,
+		searchable_text
+	);`
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+		return errors.Errorf("create fts schema: %w", err)
+	}
+
+	s.keywordIndexMode = index.KeywordIndexModeFTS5
+
+	return nil
+}
+
+func (s *Store) detectFTS5(ctx context.Context) bool {
+	_, err := s.db.ExecContext(ctx, `
+		CREATE VIRTUAL TABLE IF NOT EXISTS __kb_fts5_probe USING fts5(value);
+		DROP TABLE IF EXISTS __kb_fts5_probe;`)
+
+	return err == nil
 }
 
 func encodeVector(v []float32) []byte {

@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+//nolint:interfacebloat
 type Store interface {
 	Close() error
 	CreateSession(ctx context.Context, id, title string) (Session, error)
