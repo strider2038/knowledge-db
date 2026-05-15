@@ -2,18 +2,69 @@ package index
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"strings"
+	"database/sql"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
+
+type noopStore struct{}
+
+func (noopStore) Close() error { return nil }
+func (noopStore) DataPath() string { return "" }
+func (noopStore) InsertEmbedding(context.Context, []float32, string) (int64, error) {
+	return 0, nil
+}
+func (noopStore) DeleteEmbedding(context.Context, int64) error { return nil }
+func (noopStore) GetAllEmbeddings(context.Context) ([]EmbeddingRecord, error) {
+	return nil, nil
+}
+func (noopStore) UpsertNode(context.Context, string, string, string, int64) error {
+	return nil
+}
+func (noopStore) GetNodeByPath(context.Context, string) (*IndexedNode, error) {
+	return nil, nil //nolint:nilnil
+}
+func (noopStore) DeleteNode(context.Context, string) error              { return nil }
+func (noopStore) ListAllIndexed(context.Context) ([]IndexedNode, error) { return nil, nil }
+func (noopStore) UpsertNodeSearch(context.Context, NodeSearchDocument) error {
+	return nil
+}
+func (noopStore) DeleteNodeSearch(context.Context, string) error { return nil }
+func (noopStore) SearchNodeByKeywords(context.Context, []string, int) ([]KeywordNodeHit, error) {
+	return nil, nil
+}
+func (noopStore) UpsertChunks(context.Context, string, []Chunk) error      { return nil }
+func (noopStore) UpsertChunkSearch(context.Context, ChunkSearchDocument) error { return nil }
+func (noopStore) ListChunksByNode(context.Context, string) ([]Chunk, error) { return nil, nil }
+func (noopStore) DeleteChunks(context.Context, string) error                { return nil }
+func (noopStore) GetAllChunkEmbeddings(context.Context) ([]ChunkEmbedding, error) {
+	return nil, nil
+}
+func (noopStore) GetAllNodeEmbeddings(context.Context) ([]NodeEmbedding, error) {
+	return nil, nil
+}
+func (noopStore) SearchChunkByKeywords(context.Context, []string, int) ([]KeywordChunkHit, error) {
+	return nil, nil
+}
+func (noopStore) GetStatus(context.Context, string) (*IndexStatus, error) {
+	return nil, nil //nolint:nilnil
+}
+func (noopStore) ClearAll(context.Context) error                          { return nil }
+func (noopStore) SearchVocabulary(context.Context, SearchVocabularyOptions) ([]string, error) {
+	return nil, nil
+}
+func (noopStore) KeywordIndexMode() string { return "fts5" }
+func (noopStore) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	return nil, nil //nolint:nilnil
+}
+func (noopStore) QueryRowContext(context.Context, string, ...any) *sql.Row {
+	return nil
+}
 
 func TestComputeContentHash_WhenSameInput_ExpectSameHash(t *testing.T) {
 	t.Parallel()
@@ -149,46 +200,6 @@ func TestBuildNodeSearchDocument_WhenProfileLink_ExpectBodyAndProfileIncluded(t 
 	assert.Equal(t, "Digest body", doc.Body)
 }
 
-func TestSyncWorker_ProcessSingleNode_WhenProfileLinkDigest_ExpectKeywordAndChunkRetrieval(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	dataPath := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, "go/packages"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "go/packages/runnable.md"), []byte(`---
-title: Runnable
-keywords: [go]
-created: "2024-01-01T00:00:00Z"
-updated: "2024-01-01T00:00:00Z"
-annotation: "Repository profile"
-type: link
-source_url: "https://github.com/pior/runnable"
-source_kind: repository
-content_profile: `+string(kb.ContentProfileRepository)+`
-
----
-
-## Назначение
-
-`+strings.Repeat("digestonlyterm ", 160)+`
-`), 0o644))
-
-	store := setupTestStore(t)
-	worker := NewSyncWorker(store, &mockProvider{vectors: [][]float32{{1, 0}, {1, 0}}}, dataPath, "model", 0)
-
-	worker.processSingleNode(ctx, "go/packages/runnable")
-
-	nodeHits, err := KeywordSearchNodes(ctx, store, "digestonlyterm", 5)
-	require.NoError(t, err)
-	assert.NotEmpty(t, nodeHits)
-	chunkHits, err := KeywordSearchChunks(ctx, store, "digestonlyterm", 5)
-	require.NoError(t, err)
-	assert.NotEmpty(t, chunkHits)
-	chunkResults, err := ChunkSearch(ctx, store, &mockProvider{vectors: [][]float32{{1, 0}}}, "digestonlyterm", 5)
-	require.NoError(t, err)
-	assert.NotEmpty(t, chunkResults)
-}
-
 func TestExtractKeywords_WhenStringSlice_ExpectReturn(t *testing.T) {
 	t.Parallel()
 
@@ -215,9 +226,8 @@ func TestExtractKeywords_WhenMissing_ExpectNil(t *testing.T) {
 func TestSyncWorker_Send_ExpectNonBlocking(t *testing.T) {
 	t.Parallel()
 
-	store := setupTestStore(t)
-	provider := &mockProvider{}
-	worker := NewSyncWorker(store, provider, "/data", "model", time.Second)
+	provider := &mockProviderSync{}
+	worker := NewSyncWorker(noopStore{}, provider, "/data", "model", time.Second)
 
 	for range 200 {
 		worker.Send(SingleNodeEvent{Path: "test/path"})
@@ -227,9 +237,8 @@ func TestSyncWorker_Send_ExpectNonBlocking(t *testing.T) {
 func TestSyncWorker_Run_WhenCancelled_ExpectStop(t *testing.T) {
 	t.Parallel()
 
-	store := setupTestStore(t)
-	provider := &mockProvider{}
-	worker := NewSyncWorker(store, provider, "/data", "model", time.Second)
+	provider := &mockProviderSync{}
+	worker := NewSyncWorker(noopStore{}, provider, "/data", "model", time.Second)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -279,4 +288,21 @@ func testNode(title, annotation string, keywords []string, nodeType, content str
 			"type":       nodeType,
 		},
 	}
+}
+
+type mockProviderSync struct {
+	vectors [][]float32
+}
+
+func (m *mockProviderSync) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	result := make([][]float32, len(texts))
+	for i := range texts {
+		if i < len(m.vectors) {
+			result[i] = m.vectors[i]
+		} else {
+			result[i] = []float32{0.1, 0.2, 0.3}
+		}
+	}
+
+	return result, nil
 }

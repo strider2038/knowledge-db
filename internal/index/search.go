@@ -57,7 +57,7 @@ type KeywordChunkHit struct {
 }
 
 // VectorSearch выполняет поиск по node-level эмбеддингам.
-func VectorSearch(ctx context.Context, store *IndexStore, provider EmbeddingProvider, query string, topK int) ([]SearchResult, error) {
+func VectorSearch(ctx context.Context, store Store, provider EmbeddingProvider, query string, topK int) ([]SearchResult, error) {
 	if topK <= 0 {
 		topK = 5
 	}
@@ -119,7 +119,7 @@ func VectorSearch(ctx context.Context, store *IndexStore, provider EmbeddingProv
 }
 
 // KeywordSearch выполняет keyword/FTS поиск по нодам и чанкам.
-func KeywordSearch(ctx context.Context, store *IndexStore, query string, topK int) ([]KeywordNodeHit, []KeywordChunkHit, error) {
+func KeywordSearch(ctx context.Context, store Store, query string, topK int) ([]KeywordNodeHit, []KeywordChunkHit, error) {
 	nodes, err := KeywordSearchNodes(ctx, store, query, topK)
 	if err != nil {
 		return nil, nil, err
@@ -133,7 +133,7 @@ func KeywordSearch(ctx context.Context, store *IndexStore, query string, topK in
 }
 
 // KeywordSearchNodes выполняет keyword/FTS поиск по searchable text нод.
-func KeywordSearchNodes(ctx context.Context, store *IndexStore, query string, topK int) ([]KeywordNodeHit, error) {
+func KeywordSearchNodes(ctx context.Context, store Store, query string, topK int) ([]KeywordNodeHit, error) {
 	if topK <= 0 {
 		topK = 5
 	}
@@ -150,7 +150,7 @@ func KeywordSearchNodes(ctx context.Context, store *IndexStore, query string, to
 }
 
 // KeywordSearchChunks выполняет keyword/FTS поиск по searchable text чанков.
-func KeywordSearchChunks(ctx context.Context, store *IndexStore, query string, topK int) ([]KeywordChunkHit, error) {
+func KeywordSearchChunks(ctx context.Context, store Store, query string, topK int) ([]KeywordChunkHit, error) {
 	if topK <= 0 {
 		topK = 5
 	}
@@ -167,7 +167,7 @@ func KeywordSearchChunks(ctx context.Context, store *IndexStore, query string, t
 }
 
 // ChunkSearch выполняет поиск по chunk-level эмбеддингам.
-func ChunkSearch(ctx context.Context, store *IndexStore, provider EmbeddingProvider, query string, topK int) ([]ChunkSearchResult, error) {
+func ChunkSearch(ctx context.Context, store Store, provider EmbeddingProvider, query string, topK int) ([]ChunkSearchResult, error) {
 	if topK <= 0 {
 		topK = 5
 	}
@@ -236,8 +236,8 @@ func cosineSimilarity(a, b []float32) float32 {
 	return dot / float32(math.Sqrt(float64(normA))*math.Sqrt(float64(normB)))
 }
 
-func keywordSearchNodesFTS(ctx context.Context, store *IndexStore, query string, tokens []string, topK int) ([]KeywordNodeHit, error) {
-	rows, err := store.queryContext(ctx, `
+func keywordSearchNodesFTS(ctx context.Context, store Store, query string, tokens []string, topK int) ([]KeywordNodeHit, error) {
+	rows, err := store.QueryContext(ctx, `
 		SELECT ns.path, ns.title, ns.type, ns.aliases, ns.annotation, ns.keywords, ns.source_url, ns.manual_processed,
 			COALESCE(bm25(node_search_fts), 0) AS raw_rank
 		FROM node_search_fts
@@ -275,8 +275,8 @@ func keywordSearchNodesFTS(ctx context.Context, store *IndexStore, query string,
 	return rankKeywordNodeHits(hits, topK), nil
 }
 
-func keywordSearchNodesScan(ctx context.Context, store *IndexStore, query string, tokens []string, topK int) ([]KeywordNodeHit, error) {
-	rows, err := store.queryContext(ctx, `
+func keywordSearchNodesScan(ctx context.Context, store Store, query string, tokens []string, topK int) ([]KeywordNodeHit, error) {
+	rows, err := store.QueryContext(ctx, `
 		SELECT path, title, type, aliases, annotation, keywords, source_url, manual_processed, searchable_text
 		FROM node_search`)
 	if err != nil {
@@ -311,9 +311,9 @@ func keywordSearchNodesScan(ctx context.Context, store *IndexStore, query string
 	return rankKeywordNodeHits(hits, topK), nil
 }
 
-type keywordNodeSearchFunc func(context.Context, *IndexStore, string, []string, int) ([]KeywordNodeHit, error)
+type keywordNodeSearchFunc func(context.Context, Store, string, []string, int) ([]KeywordNodeHit, error)
 
-func fallbackKeywordSearchNodes(ctx context.Context, store *IndexStore, query string, tokens []string, topK int, search keywordNodeSearchFunc) ([]KeywordNodeHit, error) {
+func fallbackKeywordSearchNodes(ctx context.Context, store Store, query string, tokens []string, topK int, search keywordNodeSearchFunc) ([]KeywordNodeHit, error) {
 	hits, err := search(ctx, store, query, tokens, topK)
 	if err != nil || len(hits) > 0 || len(tokens) <= 1 {
 		return hits, err
@@ -341,8 +341,8 @@ func fallbackKeywordSearchNodes(ctx context.Context, store *IndexStore, query st
 	return rankKeywordNodeHits(hits, topK), nil
 }
 
-func keywordSearchChunksFTS(ctx context.Context, store *IndexStore, query string, tokens []string, topK int) ([]KeywordChunkHit, error) {
-	rows, err := store.queryContext(ctx, `
+func keywordSearchChunksFTS(ctx context.Context, store Store, query string, tokens []string, topK int) ([]KeywordChunkHit, error) {
+	rows, err := store.QueryContext(ctx, `
 		SELECT node_path, chunk_index, heading, content, COALESCE(bm25(chunk_search_fts), 0) AS raw_rank
 		FROM chunk_search_fts
 		WHERE chunk_search_fts MATCH ?
@@ -372,9 +372,9 @@ func keywordSearchChunksFTS(ctx context.Context, store *IndexStore, query string
 	return rankKeywordChunkHits(hits, topK), nil
 }
 
-type keywordChunkSearchFunc func(context.Context, *IndexStore, string, []string, int) ([]KeywordChunkHit, error)
+type keywordChunkSearchFunc func(context.Context, Store, string, []string, int) ([]KeywordChunkHit, error)
 
-func fallbackKeywordSearchChunks(ctx context.Context, store *IndexStore, query string, tokens []string, topK int, search keywordChunkSearchFunc) ([]KeywordChunkHit, error) {
+func fallbackKeywordSearchChunks(ctx context.Context, store Store, query string, tokens []string, topK int, search keywordChunkSearchFunc) ([]KeywordChunkHit, error) {
 	hits, err := search(ctx, store, query, tokens, topK)
 	if err != nil || len(hits) > 0 || len(tokens) <= 1 {
 		return hits, err
@@ -403,8 +403,8 @@ func fallbackKeywordSearchChunks(ctx context.Context, store *IndexStore, query s
 	return rankKeywordChunkHits(hits, topK), nil
 }
 
-func keywordSearchChunksScan(ctx context.Context, store *IndexStore, query string, tokens []string, topK int) ([]KeywordChunkHit, error) {
-	rows, err := store.queryContext(ctx, `
+func keywordSearchChunksScan(ctx context.Context, store Store, query string, tokens []string, topK int) ([]KeywordChunkHit, error) {
+	rows, err := store.QueryContext(ctx, `
 		SELECT node_path, chunk_index, heading, content, searchable_text
 		FROM chunk_search`)
 	if err != nil {
@@ -644,7 +644,7 @@ func keywordQueryTokens(query string) []string {
 	tokens := queryTokens(query)
 	filtered := make([]string, 0, len(tokens))
 	for _, token := range tokens {
-		if _, ok := keywordStopWords[token]; ok {
+		if _, ok := KeywordStopWords[token]; ok {
 			continue
 		}
 		filtered = append(filtered, token)
@@ -735,7 +735,7 @@ func truncateSnippet(content string) string {
 
 const keywordOversampleFactor = 5
 
-var keywordStopWords = map[string]struct{}{
+var KeywordStopWords = map[string]struct{}{
 	"a":        {},
 	"an":       {},
 	"are":      {},

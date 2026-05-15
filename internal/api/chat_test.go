@@ -16,8 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
-	"github.com/strider2038/knowledge-db/internal/chat"
+	chatSqlite "github.com/strider2038/knowledge-db/internal/chat/sqlite"
 	"github.com/strider2038/knowledge-db/internal/index"
+	indexSqlite "github.com/strider2038/knowledge-db/internal/index/sqlite"
 )
 
 func TestBuildContextText_WhenLongChunks_ExpectRespectsBudgetAndChunkPriority(t *testing.T) {
@@ -188,7 +189,7 @@ func TestPostChat_WhenMemoryMode_ExpectNoSourcesAndLLMAnswer(t *testing.T) {
 
 	tmp := t.TempDir()
 	h := NewHandler(tmp, nil)
-	chatStore, err := chat.NewStore(filepath.Join(tmp, "chat.db"))
+	chatStore, err := chatSqlite.NewStore(filepath.Join(tmp, "chat.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = chatStore.Close() })
 	session, err := chatStore.CreateSession(context.Background(), "s1", "Chat")
@@ -196,7 +197,7 @@ func TestPostChat_WhenMemoryMode_ExpectNoSourcesAndLLMAnswer(t *testing.T) {
 	require.NoError(t, chatStore.AddMessage(context.Background(), session.ID, "user", "обсудили sqlite", false))
 	h.SetChatStore(chatStore)
 
-	store, err := index.NewIndexStore(":memory:")
+	store, err := indexSqlite.NewStore(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 	h.SetIndexComponents(store, nil, &chatTestEmbeddingProvider{}, config.Embedding{
