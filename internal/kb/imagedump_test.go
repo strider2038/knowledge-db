@@ -183,3 +183,84 @@ updated: "2024-01-01T00:00:00Z"
 	exists, _ := afero.Exists(fs, filepath.Join(basePath, "theme", "node", "images"))
 	assert.False(t, exists)
 }
+
+func TestRunDumpImages_WhenGIFWithoutExtInURL_ExpectDetectedByContentType(t *testing.T) {
+	t.Parallel()
+
+	gifBytes := []byte("GIF89a")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/gif")
+		_, _ = w.Write(gifBytes)
+	}))
+	defer srv.Close()
+
+	mdContent := `---
+keywords: [test]
+---
+
+![Anim](` + srv.URL + `/asset)
+`
+
+	fs := afero.NewMemMapFs()
+	basePath := "/"
+	mdPath := filepath.Join(basePath, "topic", "article.md")
+	_ = fs.MkdirAll(filepath.Dir(mdPath), 0o755)
+	_ = afero.WriteFile(fs, mdPath, []byte(mdContent), 0o644)
+
+	modified, downloadErrors, _, err := kb.RunDumpImages(context.Background(), fs, srv.Client(), basePath, "topic", "article", false, nil)
+	require.NoError(t, err)
+	require.True(t, modified)
+	require.Empty(t, downloadErrors)
+
+	imagesDir := filepath.Join(basePath, "topic", "article", "images")
+	entries, err := afero.ReadDir(fs, imagesDir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Regexp(t, `^[a-f0-9]{12}\.gif$`, entries[0].Name())
+}
+
+func TestRunDumpImages_WhenOriginalAndTranslation_ExpectBothUpdated(t *testing.T) {
+	t.Parallel()
+
+	pngBytes := []byte{0x89, 0x50, 0x4E, 0x47}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(pngBytes)
+	}))
+	defer srv.Close()
+
+	orig := `---
+keywords: [test]
+---
+
+![Img](` + srv.URL + `/same.png)
+`
+	ru := `---
+keywords: [test]
+---
+
+![Картинка](` + srv.URL + `/same.png)
+`
+
+	fs := afero.NewMemMapFs()
+	basePath := "/"
+	origPath := filepath.Join(basePath, "topic", "article.md")
+	ruPath := filepath.Join(basePath, "topic", "article.ru.md")
+	_ = fs.MkdirAll(filepath.Dir(origPath), 0o755)
+	_ = afero.WriteFile(fs, origPath, []byte(orig), 0o644)
+	_ = afero.WriteFile(fs, ruPath, []byte(ru), 0o644)
+
+	modified, downloadErrors, _, err := kb.RunDumpImages(context.Background(), fs, srv.Client(), basePath, "topic", "article", false, nil)
+	require.NoError(t, err)
+	require.True(t, modified)
+	require.Empty(t, downloadErrors)
+
+	origOut, err := afero.ReadFile(fs, origPath)
+	require.NoError(t, err)
+	ruOut, err := afero.ReadFile(fs, ruPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(origOut), "article/images/")
+	assert.Contains(t, string(ruOut), "article/images/")
+	assert.NotContains(t, string(origOut), srv.URL)
+	assert.NotContains(t, string(ruOut), srv.URL)
+}
