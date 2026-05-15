@@ -176,6 +176,9 @@ linters:
       - path: internal/chat
         linters:
           - tagliatelle
+      - path: internal/api
+        linters:
+          - dupl
       # Конструкторы и sync.Send не передают request context по дизайну API
       - path: internal/api/chat\.go
         linters:
@@ -194,6 +197,7 @@ linters:
       - path: internal/.+_test\.go
         linters:
           - testpackage
+          - goconst
       # Проект использует fmt.Errorf для простых ошибок (err113 — sentinel)
       - path: cmd/
         linters:

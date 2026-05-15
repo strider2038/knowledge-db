@@ -24,6 +24,8 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ui"
 )
 
+const nodeTypeArticle = "article"
+
 // Handler — HTTP handlers для API.
 type Handler struct {
 	dataPath          string
@@ -43,11 +45,18 @@ type Handler struct {
 	normalizeMu       sync.RWMutex
 	normalizeOps      map[string]normalizeOperation
 	normalizeRunner   nodeNormalizer
+	dumpImagesMu      sync.RWMutex
+	dumpImagesOps     map[string]dumpImagesOperation
 }
 
 // NewHandler создаёт Handler.
 func NewHandler(dataPath string, ingester ingestion.Ingester) *Handler {
-	return &Handler{dataPath: dataPath, ingester: ingester, normalizeOps: map[string]normalizeOperation{}}
+	return &Handler{
+		dataPath:      dataPath,
+		ingester:      ingester,
+		normalizeOps:  map[string]normalizeOperation{},
+		dumpImagesOps: map[string]dumpImagesOperation{},
+	}
 }
 
 // SetChatStore устанавливает sqlite-хранилище чат-сессий.
@@ -67,6 +76,7 @@ func NewHandlerWithUploads(dataPath, uploadsDir string, ingester ingestion.Inges
 		sessionStore:     store,
 		translationQueue: translationQueue,
 		normalizeOps:     map[string]normalizeOperation{},
+		dumpImagesOps:    map[string]dumpImagesOperation{},
 	}
 }
 
@@ -177,6 +187,11 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(path, "/normalize") {
 		h.PostNodeNormalize(w, r)
+
+		return
+	}
+	if strings.HasSuffix(path, "/dump-images") {
+		h.PostNodeDumpImages(w, r)
 
 		return
 	}
@@ -551,7 +566,8 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		sourceURL = urlutil.StripTrackingParamsFromURL(sourceURL)
 	}
 	typeHint := req.TypeHint
-	if typeHint != "" && typeHint != "auto" && typeHint != "article" && typeHint != "link" && typeHint != "note" {
+	isSupportedTypeHint := typeHint == "" || typeHint == "auto" || typeHint == nodeTypeArticle || typeHint == "link" || typeHint == "note"
+	if !isSupportedTypeHint {
 		typeHint = ""
 	}
 	node, err := h.ingester.IngestText(r.Context(), ingestion.IngestRequest{
@@ -605,7 +621,7 @@ func (h *Handler) handleArticleTranslate(w http.ResponseWriter, r *http.Request,
 	}
 
 	nodeType, _ := node.Metadata["type"].(string)
-	if nodeType != "article" {
+	if nodeType != nodeTypeArticle {
 		clog.Debug(r.Context(), "article translate: not an article", "path", path)
 		writeError(w, http.StatusBadRequest, "node is not an article")
 
