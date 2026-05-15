@@ -1,6 +1,7 @@
 package ingestion
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -106,4 +107,15 @@ func TestClassifySource_WhenUnknown_ExpectLinkBookmark(t *testing.T) {
 	assert.Equal(t, kb.SourceKindUnknown, profile.SourceKind)
 	assert.Equal(t, kb.ContentProfileLinkBookmark, profile.ContentProfile)
 	assert.Equal(t, "link", profile.RecommendedType)
+}
+
+func TestClassifySource_WhenTelegramLongFormMessage_ExpectConceptualDigestNote(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("Это длинный связный текст про Go и практику без cgo. ", 140)
+	profile := ClassifySource("https://t.me/goproglib/1234", "Вызов C-функций из Go без Cgo", content, "")
+
+	assert.Equal(t, kb.SourceKindArticle, profile.SourceKind)
+	assert.Equal(t, kb.ContentProfileConceptualDigest, profile.ContentProfile)
+	assert.Equal(t, "note", profile.RecommendedType)
 }

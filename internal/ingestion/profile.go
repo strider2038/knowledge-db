@@ -92,6 +92,13 @@ func ClassifySource(rawURL, title, content, typeHint string) SourceProfile {
 			RecommendedType: "note",
 		}
 	}
+	if looksLikeLongFormMessage(title, content) {
+		return SourceProfile{
+			SourceKind:      kb.SourceKindArticle,
+			ContentProfile:  kb.ContentProfileConceptualDigest,
+			RecommendedType: "note",
+		}
+	}
 
 	return SourceProfile{
 		SourceKind:      kb.SourceKindUnknown,
@@ -167,6 +174,21 @@ func looksLikeArticle(path, text string) bool {
 	}
 
 	return strings.Count(text, " ") > 300 || containsAny(text, "article", "essay", "blog post", "статья")
+}
+
+func looksLikeLongFormMessage(title, content string) bool {
+	combined := strings.TrimSpace(title + "\n" + content)
+	if combined == "" {
+		return false
+	}
+	// Telegram-forwarded and similar long posts should be treated as notes/digests,
+	// even if they include one or more URLs in the body.
+	words := len(strings.Fields(combined))
+	if words >= 120 {
+		return true
+	}
+
+	return strings.Count(combined, "\n\n") >= 4 && words >= 80
 }
 
 func containsAny(s string, needles ...string) bool {

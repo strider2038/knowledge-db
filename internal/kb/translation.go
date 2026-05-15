@@ -63,7 +63,6 @@ func (s *Store) AppendTranslationsToOriginal(
 	basePath = filepath.Clean(basePath)
 	themePath = SanitizeNodePath(themePath)
 	slug = SanitizePathSegment(slug)
-	translationSlug = SanitizePathSegment(translationSlug)
 	stemPath := filepath.Join(basePath, filepath.FromSlash(themePath), slug)
 
 	matter, _, content, err := parseNodeFile(s.fs, stemPath)
