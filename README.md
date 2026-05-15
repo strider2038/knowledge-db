@@ -268,6 +268,8 @@ docker run -d -p 8080:8080 \
   ghcr.io/OWNER/knowledge-db:latest
 ```
 
+Образ устанавливает `cursor-agent` на этапе сборки (`curl https://cursor.com/install -fsS | bash`).
+
 ### Настройка Git в Docker
 
 Сервер выполняет `git push` и `git fetch` для синхронизации базы с remote. Для доступа к репозиторию по SSH нужны учётные данные внутри контейнера.

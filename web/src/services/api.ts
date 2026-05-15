@@ -204,6 +204,64 @@ export interface TranslateStatus {
   error?: string;
 }
 
+export interface NodeNormalizeOperation {
+  id: string;
+  node_path: string;
+  status: 'running' | 'success' | 'error';
+  stage: 'normalize' | 'sync' | 'done';
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+  sync_done: boolean;
+  normalize_ok: boolean;
+}
+
+export interface NodeNormalizationLogEntry {
+  offset: number;
+  stream: 'stdout' | 'stderr' | 'system';
+  text: string;
+  timestamp: string;
+}
+
+export interface NodeNormalizationLogsResponse {
+  entries: NodeNormalizationLogEntry[];
+  next_offset: number;
+}
+
+export async function startNodeNormalization(path: string): Promise<NodeNormalizeOperation> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/normalize`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to start normalization');
+  }
+  return res.json();
+}
+
+export async function getNodeNormalizationStatus(id: string): Promise<NodeNormalizeOperation> {
+  const res = await apiFetch(`${API_URL}/api/node-normalization/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get normalization status');
+  }
+  return res.json();
+}
+
+export async function getNodeNormalizationLogs(
+  id: string,
+  after?: number,
+): Promise<NodeNormalizationLogsResponse> {
+  const query = after !== undefined ? `?after=${encodeURIComponent(String(after))}` : '';
+  const res = await apiFetch(`${API_URL}/api/node-normalization/${encodeURIComponent(id)}/logs${query}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get normalization logs');
+  }
+  return res.json();
+}
+
 export async function postTranslate(path: string): Promise<TranslateStatus> {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
   const res = await apiFetch(`${API_URL}/api/articles/translate/${encoded}`, {

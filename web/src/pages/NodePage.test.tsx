@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -39,6 +39,26 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDe
       content: 'Updated content',
       metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
     }),
+    startNodeNormalization: vi.fn().mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'running',
+      stage: 'normalize',
+      started_at: new Date().toISOString(),
+      sync_done: false,
+      normalize_ok: false,
+    }),
+    getNodeNormalizationStatus: vi.fn().mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: true,
+      normalize_ok: true,
+    }),
+    getNodeNormalizationLogs: vi.fn().mockResolvedValue({ entries: [], next_offset: 0 }),
   }
 })
 
@@ -54,6 +74,9 @@ vi.mock('../services/api', () => ({
   getNode,
   patchNodeManualProcessed,
   refreshNodeDescription,
+  startNodeNormalization,
+  getNodeNormalizationStatus,
+  getNodeNormalizationLogs,
   getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
 }))
 
@@ -89,6 +112,26 @@ describe('NodePage', () => {
       content: 'Updated content',
       metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
     })
+    startNodeNormalization.mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'running',
+      stage: 'normalize',
+      started_at: new Date().toISOString(),
+      sync_done: false,
+      normalize_ok: false,
+    })
+    getNodeNormalizationStatus.mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: true,
+      normalize_ok: true,
+    })
+    getNodeNormalizationLogs.mockResolvedValue({ entries: [], next_offset: 0 })
   })
 
   it('marks manual processed via Проверено button', async () => {
@@ -220,5 +263,49 @@ describe('NodePage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Обновить описание из источника' })).not.toBeInTheDocument()
+  })
+
+  it('runs node normalization and shows success', async () => {
+    getNodeNormalizationLogs.mockResolvedValue({
+      entries: [{ offset: 1, stream: 'stdout', text: 'line one', timestamp: new Date().toISOString() }],
+      next_offset: 1,
+    })
+    renderNodePage()
+
+    const btn = await screen.findByRole('button', { name: 'Нормализация' })
+    fireEvent.click(btn)
+
+    await waitFor(() => {
+      expect(startNodeNormalization).toHaveBeenCalledWith('programming/scaling/load-balancing')
+    })
+    await waitFor(() => {
+      expect(getNodeNormalizationStatus).toHaveBeenCalledWith('op-1')
+    })
+    expect(await screen.findByText(/Логи нормализации ·/)).toBeInTheDocument()
+    expect(await screen.findByText('line one')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Логи нормализации ·/ }))
+    expect(screen.getByText('Режим логов')).toBeInTheDocument()
+    expect(await screen.findByText('Нормализация завершена')).toBeInTheDocument()
+  })
+
+  it('shows error status in normalization log panel', async () => {
+    getNodeNormalizationStatus.mockResolvedValue({
+      id: 'op-1',
+      node_path: mockNode.path,
+      status: 'error',
+      stage: 'normalize',
+      error: 'normalize failed',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: false,
+      normalize_ok: false,
+    })
+
+    renderNodePage()
+    const btn = await screen.findByRole('button', { name: 'Нормализация' })
+    fireEvent.click(btn)
+
+    expect(await screen.findByText('normalize failed')).toBeInTheDocument()
+    expect(await screen.findByText('Логи нормализации · error')).toBeInTheDocument()
   })
 })
