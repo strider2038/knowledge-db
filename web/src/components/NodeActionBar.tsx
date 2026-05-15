@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronUp, Languages, Move, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import {
   type Node,
+  type NodeDumpImagesLogEntry,
   type NodeNormalizationLogEntry,
+  getNodeDumpImagesLogs,
+  getNodeDumpImagesStatus,
   getNodeNormalizationLogs,
   getNodeNormalizationStatus,
   getTranslateStatus,
   postTranslate,
   refreshNodeDescription,
+  startNodeDumpImages,
   startNodeNormalization,
 } from '@/services/api'
 import { Button } from '@/components/ui/button'
@@ -69,12 +73,23 @@ export function NodeActionBar({
   const [logEntries, setLogEntries] = useState<NodeNormalizationLogEntry[]>([])
   const logOffsetRef = useRef(0)
   const logsContainerRef = useRef<HTMLDivElement | null>(null)
+  const [dumpingImages, setDumpingImages] = useState(false)
+  const [dumpImagesError, setDumpImagesError] = useState<string | null>(null)
+  const [dumpImagesSuccess, setDumpImagesSuccess] = useState(false)
+  const [dumpImagesOpID, setDumpImagesOpID] = useState<string | null>(null)
+  const [dumpImagesStage, setDumpImagesStage] = useState<string>('')
+  const [dumpImagesFinished, setDumpImagesFinished] = useState(false)
+  const [dumpLogsPanelOpen, setDumpLogsPanelOpen] = useState(false)
+  const [dumpLogEntries, setDumpLogEntries] = useState<NodeDumpImagesLogEntry[]>([])
+  const dumpLogOffsetRef = useRef(0)
+  const dumpLogsContainerRef = useRef<HTMLDivElement | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
 
   const meta = node.metadata ?? {}
   const nodeType = (meta.type as string) ?? 'note'
   const canTranslate = nodeType === 'article' && !hasTranslations && !isTranslation
+  const canDumpImages = !isTranslation && nodeType === 'article'
   const canRefreshDescription = !isTranslation && typeof meta.source_url === 'string' && meta.source_url.length > 0
   const showManualProcessed = !isTranslation
   const showTranslate = canTranslate
@@ -116,9 +131,50 @@ export function NodeActionBar({
   }, [normalizeOpID, normalizeFinished, onNodeChanged, node])
 
   useEffect(() => {
+    if (!dumpImagesOpID || dumpImagesFinished) return
+    const tick = () => {
+      getNodeDumpImagesStatus(dumpImagesOpID)
+        .then((status) => {
+          setDumpImagesStage(status.stage)
+          if (status.status === 'running') {
+            setDumpingImages(true)
+          } else {
+            setDumpingImages(false)
+            setDumpImagesFinished(true)
+            if (status.status === 'error') {
+              setDumpImagesError(status.error ?? 'Ошибка выгрузки изображений')
+            } else {
+              setDumpImagesSuccess(true)
+              onNodeChanged(node)
+            }
+          }
+        })
+        .catch((err) => setDumpImagesError(err instanceof Error ? err.message : 'Ошибка статуса выгрузки изображений'))
+
+      getNodeDumpImagesLogs(dumpImagesOpID, dumpLogOffsetRef.current)
+        .then((resp) => {
+          if (resp.entries.length > 0) {
+            setDumpLogEntries((prev) => [...prev, ...resp.entries])
+          }
+          dumpLogOffsetRef.current = resp.next_offset
+        })
+        .catch(() => {})
+    }
+
+    tick()
+    const interval = setInterval(tick, 1500)
+    return () => clearInterval(interval)
+  }, [dumpImagesOpID, dumpImagesFinished, onNodeChanged, node])
+
+  useEffect(() => {
     if (!logsPanelOpen || !logsContainerRef.current) return
     logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight
   }, [logEntries, logsPanelOpen])
+
+  useEffect(() => {
+    if (!dumpLogsPanelOpen || !dumpLogsContainerRef.current) return
+    dumpLogsContainerRef.current.scrollTop = dumpLogsContainerRef.current.scrollHeight
+  }, [dumpLogEntries, dumpLogsPanelOpen])
 
   const handleTranslate = () => {
     setTranslating(true)
@@ -197,6 +253,25 @@ export function NodeActionBar({
       })
   }
 
+  const handleDumpImages = () => {
+    setDumpingImages(true)
+    setDumpImagesError(null)
+    setDumpImagesSuccess(false)
+    setDumpImagesFinished(false)
+    setDumpLogsPanelOpen(true)
+    setDumpLogEntries([])
+    dumpLogOffsetRef.current = 0
+    startNodeDumpImages(basePath)
+      .then((op) => {
+        setDumpImagesOpID(op.id)
+        setDumpImagesStage(op.stage)
+      })
+      .catch((err) => {
+        setDumpingImages(false)
+        setDumpImagesError(err instanceof Error ? err.message : 'Не удалось запустить выгрузку изображений')
+      })
+  }
+
   return (
     <>
       <div className="sticky top-0 z-10 -mx-4 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -240,17 +315,24 @@ export function NodeActionBar({
             </div>
           )}
 
-          {canRefreshDescription && (
-            <Button variant="outline" size="sm" className="h-8" onClick={handleRefreshDescription} disabled={refreshing}>
-              <RefreshCw className={cn('mr-1 size-4', refreshing && 'animate-spin')} />
-              {refreshing ? 'Обновление...' : 'Обновить описание из источника'}
-            </Button>
-          )}
-
           {!isTranslation && (
             <Button variant="outline" size="sm" className="h-8" onClick={handleNormalize} disabled={normalizing}>
               <Sparkles className={cn('mr-1 size-4', normalizing && 'animate-pulse')} />
               {normalizing ? 'Нормализация...' : 'Нормализация'}
+            </Button>
+          )}
+
+          {canDumpImages && (
+            <Button variant="outline" size="sm" className="h-8" onClick={handleDumpImages} disabled={dumpingImages}>
+              <Sparkles className={cn('mr-1 size-4', dumpingImages && 'animate-pulse')} />
+              {dumpingImages ? 'Выгрузка изображений...' : 'Выгрузить изображения'}
+            </Button>
+          )}
+
+          {canRefreshDescription && (
+            <Button variant="outline" size="sm" className="h-8" onClick={handleRefreshDescription} disabled={refreshing}>
+              <RefreshCw className={cn('mr-1 size-4', refreshing && 'animate-spin')} />
+              {refreshing ? 'Обновление...' : 'Обновить описание из источника'}
             </Button>
           )}
 
@@ -271,6 +353,8 @@ export function NodeActionBar({
           {refreshSuccess && <span className="text-xs text-green-600 dark:text-green-400">Описание обновлено</span>}
           {normalizeError && <span className="text-xs text-destructive">{normalizeError}</span>}
           {normalizeSuccess && <span className="text-xs text-green-600 dark:text-green-400">Нормализация завершена</span>}
+          {dumpImagesError && <span className="text-xs text-destructive">{dumpImagesError}</span>}
+          {dumpImagesSuccess && <span className="text-xs text-green-600 dark:text-green-400">Выгрузка изображений завершена</span>}
         </div>
       </div>
 
@@ -334,6 +418,68 @@ export function NodeActionBar({
                   </div>
                 ))
               )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dumpImagesOpID && (
+        <div className="fixed inset-x-0 bottom-0 z-50 m-0 border-t bg-background/95">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-4 py-2 text-left text-sm"
+            onClick={() => setDumpLogsPanelOpen((v) => !v)}
+          >
+            <span>Логи выгрузки изображений · {dumpingImages ? `running (${dumpImagesStage})` : dumpImagesError ? 'error' : 'success'}</span>
+            {dumpLogsPanelOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+          </button>
+          <div
+            className={cn(
+              'overflow-hidden border-t bg-muted/40 transition-all duration-300 ease-out',
+              dumpLogsPanelOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0',
+            )}
+            aria-hidden={!dumpLogsPanelOpen}
+          >
+            <div className="px-4 py-2">
+              <div className="mb-2 flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Режим логов</span>
+                <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={logViewMode === 'compact' ? 'default' : 'outline'}
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setLogViewMode('compact')}
+                  >
+                    compact
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={logViewMode === 'raw' ? 'default' : 'outline'}
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setLogViewMode('raw')}
+                  >
+                    raw
+                  </Button>
+                </div>
+              </div>
+              <div ref={dumpLogsContainerRef} className="max-h-56 overflow-auto font-mono text-xs">
+                {dumpLogEntries.length === 0 ? (
+                  <div className="text-muted-foreground">Логов пока нет...</div>
+                ) : (
+                  dumpLogEntries.map((entry) => (
+                    <div key={entry.offset} className="whitespace-pre-wrap break-words py-0.5">
+                      <span className="mr-2 text-muted-foreground">[{entry.stream}]</span>
+                      {logViewMode === 'compact' ? (
+                        <MarkdownContent content={entry.text} nodePath={basePath} />
+                      ) : (
+                        <span>{entry.text}</span>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

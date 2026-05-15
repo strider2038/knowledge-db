@@ -47,6 +47,8 @@ func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 	mux.HandleFunc("GET /api/index/status", h.GetIndexStatus)
 	mux.HandleFunc("GET /api/node-normalization/{id}", h.GetNodeNormalizeStatus)
 	mux.HandleFunc("GET /api/node-normalization/{id}/logs", h.GetNodeNormalizeLogs)
+	mux.HandleFunc("GET /api/node-dump-images/{id}", h.GetNodeDumpImagesStatus)
+	mux.HandleFunc("GET /api/node-dump-images/{id}/logs", h.GetNodeDumpImagesLogs)
 	spa, err := NewSPAHandler()
 	if err != nil {
 		return nil, errors.Errorf("new spa handler: %w", err)

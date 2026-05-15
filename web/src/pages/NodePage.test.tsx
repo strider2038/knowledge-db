@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -59,6 +59,26 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDe
       normalize_ok: true,
     }),
     getNodeNormalizationLogs: vi.fn().mockResolvedValue({ entries: [], next_offset: 0 }),
+    startNodeDumpImages: vi.fn().mockResolvedValue({
+      id: 'dump-1',
+      node_path: mockNode.path,
+      status: 'running',
+      stage: 'dump',
+      started_at: new Date().toISOString(),
+      sync_done: false,
+      dump_ok: false,
+    }),
+    getNodeDumpImagesStatus: vi.fn().mockResolvedValue({
+      id: 'dump-1',
+      node_path: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: true,
+      dump_ok: true,
+    }),
+    getNodeDumpImagesLogs: vi.fn().mockResolvedValue({ entries: [], next_offset: 0 }),
   }
 })
 
@@ -77,6 +97,9 @@ vi.mock('../services/api', () => ({
   startNodeNormalization,
   getNodeNormalizationStatus,
   getNodeNormalizationLogs,
+  startNodeDumpImages,
+  getNodeDumpImagesStatus,
+  getNodeDumpImagesLogs,
   getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
 }))
 
@@ -132,6 +155,26 @@ describe('NodePage', () => {
       normalize_ok: true,
     })
     getNodeNormalizationLogs.mockResolvedValue({ entries: [], next_offset: 0 })
+    startNodeDumpImages.mockResolvedValue({
+      id: 'dump-1',
+      node_path: mockNode.path,
+      status: 'running',
+      stage: 'dump',
+      started_at: new Date().toISOString(),
+      sync_done: false,
+      dump_ok: false,
+    })
+    getNodeDumpImagesStatus.mockResolvedValue({
+      id: 'dump-1',
+      node_path: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: true,
+      dump_ok: true,
+    })
+    getNodeDumpImagesLogs.mockResolvedValue({ entries: [], next_offset: 0 })
   })
 
   it('marks manual processed via Проверено button', async () => {
@@ -307,5 +350,47 @@ describe('NodePage', () => {
 
     expect(await screen.findByText('normalize failed')).toBeInTheDocument()
     expect(await screen.findByText('Логи нормализации · error')).toBeInTheDocument()
+  })
+
+  it('runs dump images and shows success', async () => {
+    getNodeDumpImagesLogs.mockResolvedValue({
+      entries: [{ offset: 1, stream: 'stdout', text: 'downloaded image', timestamp: new Date().toISOString() }],
+      next_offset: 1,
+    })
+    renderNodePage()
+
+    const btn = await screen.findByRole('button', { name: 'Выгрузить изображения' })
+    fireEvent.click(btn)
+
+    await waitFor(() => {
+      expect(startNodeDumpImages).toHaveBeenCalledWith('programming/scaling/load-balancing')
+    })
+    await waitFor(() => {
+      expect(getNodeDumpImagesStatus).toHaveBeenCalledWith('dump-1')
+    })
+    expect(await screen.findByText(/Логи выгрузки изображений ·/)).toBeInTheDocument()
+    expect(await screen.findByText('downloaded image')).toBeInTheDocument()
+    expect(await screen.findByText('Выгрузка изображений завершена')).toBeInTheDocument()
+  })
+
+  it('shows error status in dump images log panel', async () => {
+    getNodeDumpImagesStatus.mockResolvedValue({
+      id: 'dump-1',
+      node_path: mockNode.path,
+      status: 'error',
+      stage: 'dump',
+      error: 'dump failed',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      sync_done: false,
+      dump_ok: false,
+    })
+
+    renderNodePage()
+    const btn = await screen.findByRole('button', { name: 'Выгрузить изображения' })
+    fireEvent.click(btn)
+
+    expect(await screen.findByText('dump failed')).toBeInTheDocument()
+    expect(await screen.findByText('Логи выгрузки изображений · error')).toBeInTheDocument()
   })
 })

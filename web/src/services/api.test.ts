@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getNodeNormalizationLogs, getNodesWithParams, searchKnowledgeBase, streamChat } from './api'
+import { getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, searchKnowledgeBase, streamChat } from './api'
 
 describe('getNodesWithParams', () => {
   let fetchMock: ReturnType<typeof vi.fn>
@@ -278,6 +278,31 @@ describe('getNodeNormalizationLogs', () => {
     await getNodeNormalizationLogs('op-1', 42)
     const url = new URL(fetchMock.mock.calls[0][0])
     expect(url.pathname).toContain('/api/node-normalization/op-1/logs')
+    expect(url.searchParams.get('after')).toBe('42')
+  })
+})
+
+describe('getNodeDumpImagesLogs', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('builds logs URL with after query', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ entries: [], next_offset: 12 }),
+    })
+
+    await getNodeDumpImagesLogs('op-1', 42)
+    const url = new URL(fetchMock.mock.calls[0][0])
+    expect(url.pathname).toContain('/api/node-dump-images/op-1/logs')
     expect(url.searchParams.get('after')).toBe('42')
   })
 })

@@ -228,6 +228,25 @@ export interface NodeNormalizationLogsResponse {
   next_offset: number;
 }
 
+export interface NodeDumpImagesOperation {
+  id: string;
+  node_path: string;
+  status: 'running' | 'success' | 'error';
+  stage: 'dump' | 'sync' | 'done';
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+  sync_done: boolean;
+  dump_ok: boolean;
+}
+
+export type NodeDumpImagesLogEntry = NodeNormalizationLogEntry;
+
+export interface NodeDumpImagesLogsResponse {
+  entries: NodeDumpImagesLogEntry[];
+  next_offset: number;
+}
+
 export async function startNodeNormalization(path: string): Promise<NodeNormalizeOperation> {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
   const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/normalize`, {
@@ -258,6 +277,40 @@ export async function getNodeNormalizationLogs(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to get normalization logs');
+  }
+  return res.json();
+}
+
+export async function startNodeDumpImages(path: string): Promise<NodeDumpImagesOperation> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/dump-images`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to start dump images');
+  }
+  return res.json();
+}
+
+export async function getNodeDumpImagesStatus(id: string): Promise<NodeDumpImagesOperation> {
+  const res = await apiFetch(`${API_URL}/api/node-dump-images/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get dump images status');
+  }
+  return res.json();
+}
+
+export async function getNodeDumpImagesLogs(
+  id: string,
+  after?: number,
+): Promise<NodeDumpImagesLogsResponse> {
+  const query = after !== undefined ? `?after=${encodeURIComponent(String(after))}` : '';
+  const res = await apiFetch(`${API_URL}/api/node-dump-images/${encodeURIComponent(id)}/logs${query}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get dump images logs');
   }
   return res.json();
 }
