@@ -40,3 +40,14 @@ func TestParseCreateNodeArgs_WhenSourceProfile_ExpectParsed(t *testing.T) {
 	assert.Equal(t, "repository", result.SourceKind)
 	assert.Equal(t, "repository_profile", result.ContentProfile)
 }
+
+func TestParseCreateNodeArgs_WhenCyrillicThemeAndSlug_ExpectSanitized(t *testing.T) {
+	t.Parallel()
+
+	args := `{"keywords":["go"],"annotation":"test","theme_path":"programming/golang","slug":"вызов-c-функций-из-go-без-cgo","type":"note","title":"Test"}`
+	result, err := parseCreateNodeArgs(args)
+
+	require.NoError(t, err)
+	assert.Equal(t, "programming/golang", result.ThemePath)
+	assert.Equal(t, "vyzov-c-funktsiy-iz-go-bez-cgo", result.Slug)
+}

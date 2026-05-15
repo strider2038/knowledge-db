@@ -519,6 +519,10 @@ func (s *Store) DeleteNode(ctx context.Context, basePath, nodePath string) error
 func (s *Store) MoveNode(ctx context.Context, basePath, nodePath, targetPath string) (*Node, error) {
 	_ = ctx
 	basePath = filepath.Clean(basePath)
+	if err := validateTargetPath(targetPath); err != nil {
+		return nil, errors.Errorf("move node: %w", err)
+	}
+	targetPath = SanitizeNodePath(targetPath)
 
 	if err := validateTargetPath(targetPath); err != nil {
 		return nil, errors.Errorf("move node: %w", err)

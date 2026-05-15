@@ -19,6 +19,8 @@ func (s *Store) CreateTranslationFile(
 	content string,
 ) error {
 	basePath = filepath.Clean(basePath)
+	themePath = SanitizeNodePath(themePath)
+	slug = SanitizePathSegment(slug)
 	themeDir := filepath.Join(basePath, filepath.FromSlash(themePath))
 	if err := s.fs.MkdirAll(themeDir, 0o755); err != nil {
 		return errors.Errorf("create translation file: mkdir: %w", err)
@@ -59,6 +61,9 @@ func (s *Store) AppendTranslationsToOriginal(
 	basePath, themePath, slug, translationSlug string,
 ) error {
 	basePath = filepath.Clean(basePath)
+	themePath = SanitizeNodePath(themePath)
+	slug = SanitizePathSegment(slug)
+	translationSlug = SanitizePathSegment(translationSlug)
 	stemPath := filepath.Join(basePath, filepath.FromSlash(themePath), slug)
 
 	matter, _, content, err := parseNodeFile(s.fs, stemPath)

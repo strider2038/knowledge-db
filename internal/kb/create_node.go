@@ -23,6 +23,8 @@ type CreateNodeParams struct {
 // Возвращает созданный Node.
 func (s *Store) CreateNode(ctx context.Context, basePath string, params CreateNodeParams) (*Node, error) {
 	basePath = filepath.Clean(basePath)
+	params.ThemePath = SanitizeNodePath(params.ThemePath)
+	params.Slug = SanitizePathSegment(params.Slug)
 
 	slug, err := s.resolveSlug(basePath, params.ThemePath, params.Slug)
 	if err != nil {

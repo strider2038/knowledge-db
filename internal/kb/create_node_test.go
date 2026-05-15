@@ -102,3 +102,23 @@ func TestCreateNode_WhenOptionalFields_ExpectStoredInFrontmatter(t *testing.T) {
 	assert.Equal(t, "article", node.Metadata["type"])
 	assert.Equal(t, sourceURL, node.Metadata["source_url"])
 }
+
+func TestCreateNode_WhenCyrillicPath_ExpectSanitizedASCIIPath(t *testing.T) {
+	t.Parallel()
+	store, base := seedMemFS(nil)
+	ctx := context.Background()
+
+	node, err := store.CreateNode(ctx, base, kb.CreateNodeParams{
+		ThemePath: "programming/golang",
+		Slug:      "вызов-c-функций-из-go-без-cgo",
+		Frontmatter: map[string]any{
+			"keywords": []string{"go"},
+			"created":  time.Now().UTC().Format(time.RFC3339),
+			"updated":  time.Now().UTC().Format(time.RFC3339),
+		},
+		Content: "content",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "programming/golang/vyzov-c-funktsiy-iz-go-bez-cgo", node.Path)
+}

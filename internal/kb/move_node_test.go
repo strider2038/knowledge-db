@@ -56,8 +56,8 @@ Content`,
 func TestMoveNode_WhenTargetConflict_ExpectErrConflict(t *testing.T) {
 	t.Parallel()
 	store, base := seedMemFS(map[string]string{
-		"source/node.md":   "---\nkeywords: []\n---\n",
-		"target/node.md":   "---\nkeywords: []\n---\n",
+		"source/node.md": "---\nkeywords: []\n---\n",
+		"target/node.md": "---\nkeywords: []\n---\n",
 	})
 	ctx := context.Background()
 
@@ -117,4 +117,17 @@ func TestMoveNode_WhenEmptyTargetPath_ExpectErrInvalidPath(t *testing.T) {
 	_, err := store.MoveNode(ctx, base, "topic/node", "")
 
 	assert.ErrorIs(t, err, kb.ErrInvalidPath)
+}
+
+func TestMoveNode_WhenTargetPathHasCyrillic_ExpectSanitizedASCIIPath(t *testing.T) {
+	t.Parallel()
+	store, base := seedMemFS(map[string]string{
+		"topic/node.md": "---\nkeywords: []\n---\n",
+	})
+	ctx := context.Background()
+
+	node, err := store.MoveNode(ctx, base, "topic/node", "programming/golang/вызов-c-функций-из-go-без-cgo")
+
+	require.NoError(t, err)
+	assert.Equal(t, "programming/golang/vyzov-c-funktsiy-iz-go-bez-cgo", node.Path)
 }

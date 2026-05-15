@@ -16,6 +16,7 @@ import (
 	"github.com/muonsoft/errors"
 
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
+	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
 )
 
@@ -456,8 +457,8 @@ func parseCreateNodeArgs(argsJSON string) (*ProcessResult, error) {
 	result := &ProcessResult{
 		Keywords:       args.Keywords,
 		Annotation:     args.Annotation,
-		ThemePath:      args.ThemePath,
-		Slug:           args.Slug,
+		ThemePath:      kb.SanitizeNodePath(args.ThemePath),
+		Slug:           kb.SanitizePathSegment(args.Slug),
 		Type:           args.Type,
 		SourceKind:     args.SourceKind,
 		ContentProfile: args.ContentProfile,
