@@ -24,11 +24,16 @@ RUN BID="${BUILD_ID}"; \
 
 # Stage 3: minimal runtime
 FROM alpine:3.19
-RUN apk add --no-cache git openssh-client ca-certificates curl bash
+RUN apk add --no-cache git openssh-client ca-certificates curl bash libstdc++
+COPY --from=web /usr/local/bin/node /usr/local/bin/node
 RUN adduser -D -g "" kb
 USER kb
 ENV PATH="/home/kb/.local/bin:${PATH}"
 RUN curl https://cursor.com/install -fsS | bash
+RUN if [ -d "/home/kb/.local/share/cursor-agent/versions" ]; then \
+      find /home/kb/.local/share/cursor-agent/versions -type f -name node -exec sh -c '\
+        for f do rm -f "$f"; ln -s /usr/local/bin/node "$f"; done' sh {} +; \
+    fi
 WORKDIR /data
 EXPOSE 8080
 ENTRYPOINT ["/kb", "serve"]
