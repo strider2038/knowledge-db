@@ -21,7 +21,7 @@ import (
 type PlacementBuilder struct {
 	store      *kb.Store
 	basePath   string
-	indexStore *index.IndexStore
+	indexStore index.Store
 }
 
 // PlacementBuildInput contains local signals available before LLM orchestration.
@@ -35,7 +35,7 @@ type PlacementBuildInput struct {
 }
 
 // NewPlacementBuilder creates a builder that always supports file fallback and may use an index.
-func NewPlacementBuilder(store *kb.Store, basePath string, indexStore *index.IndexStore) *PlacementBuilder {
+func NewPlacementBuilder(store *kb.Store, basePath string, indexStore index.Store) *PlacementBuilder {
 	return &PlacementBuilder{
 		store:      store,
 		basePath:   basePath,

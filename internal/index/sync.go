@@ -45,7 +45,7 @@ func (ManualRebuildEvent) syncEventType() {}
 
 // SyncWorker синхронизирует индекс с git-репозиторием.
 type SyncWorker struct {
-	store            *IndexStore
+	store            Store
 	provider         EmbeddingProvider
 	kbStore          *kb.Store
 	dataPath         string
@@ -56,8 +56,7 @@ type SyncWorker struct {
 	fullReconcileFn  func(context.Context)
 }
 
-// NewSyncWorker создаёт SyncWorker.
-func NewSyncWorker(store *IndexStore, provider EmbeddingProvider, dataPath, model string, rateLimit time.Duration) *SyncWorker {
+func NewSyncWorker(store Store, provider EmbeddingProvider, dataPath, model string, rateLimit time.Duration) *SyncWorker {
 	return &SyncWorker{
 		store:            store,
 		provider:         provider,
@@ -245,6 +244,10 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
 	}
 
 	logger.Info("sync: article chunks indexed", "path", nodePath, "chunks", len(chunks))
+}
+
+func (w *SyncWorker) ProcessSingleNodeForTest(ctx context.Context, path string) {
+	w.processSingleNode(ctx, path)
 }
 
 func (w *SyncWorker) fullReconcile(ctx context.Context) {

@@ -16,7 +16,9 @@ import (
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/chat"
+	sqlitechat "github.com/strider2038/knowledge-db/internal/chat/sqlite"
 	"github.com/strider2038/knowledge-db/internal/index"
+	sqliteindex "github.com/strider2038/knowledge-db/internal/index/sqlite"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
 	igit "github.com/strider2038/knowledge-db/internal/ingestion/git"
@@ -67,7 +69,7 @@ func Run() error {
 	committer := buildCommitter(cfg)
 	translationQueue := buildTranslationQueue(cfg)
 
-	var indexStore *index.IndexStore
+	var indexStore index.Store
 	var syncWorker *index.SyncWorker
 	var embeddingProvider index.EmbeddingProvider
 	indexStore, syncWorker, embeddingProvider = buildIndexComponents(cfg)
@@ -165,7 +167,7 @@ func buildIngester(
 	cfg *config.Config,
 	committer igit.GitCommitter,
 	translationQueue *translationqueue.Queue,
-	indexStore *index.IndexStore,
+	indexStore index.Store,
 ) (ingestion.Ingester, *translationworker.Worker) {
 	if !cfg.LLM.IsConfigured() {
 		slog.Warn("LLM configuration not set, ingestion pipeline disabled (using stub)")
@@ -212,7 +214,7 @@ func validateConfig(cfg *config.Config) error {
 	return nil
 }
 
-func buildIndexComponents(cfg *config.Config) (*index.IndexStore, *index.SyncWorker, index.EmbeddingProvider) {
+func buildIndexComponents(cfg *config.Config) (index.Store, *index.SyncWorker, index.EmbeddingProvider) {
 	kbDir := filepath.Join(cfg.DataPath, ".kb")
 	if err := os.MkdirAll(kbDir, 0o755); err != nil {
 		slog.Error("failed to create .kb directory", "error", err)
@@ -221,7 +223,7 @@ func buildIndexComponents(cfg *config.Config) (*index.IndexStore, *index.SyncWor
 	}
 
 	dbPath := filepath.Join(kbDir, "index.db")
-	store, err := index.NewIndexStore(dbPath)
+	store, err := sqliteindex.NewStore(dbPath)
 	if err != nil {
 		slog.Error("failed to open index database", "error", err)
 
@@ -238,7 +240,7 @@ func buildIndexComponents(cfg *config.Config) (*index.IndexStore, *index.SyncWor
 	return store, worker, provider
 }
 
-func buildChatStore(cfg *config.Config) *chat.Store {
+func buildChatStore(cfg *config.Config) chat.Store {
 	kbDir := filepath.Join(cfg.DataPath, ".kb")
 	if err := os.MkdirAll(kbDir, 0o755); err != nil {
 		slog.Error("failed to create .kb directory for chat store", "error", err)
@@ -246,7 +248,7 @@ func buildChatStore(cfg *config.Config) *chat.Store {
 		return nil
 	}
 	dbPath := filepath.Join(kbDir, "chat.db")
-	store, err := chat.NewStore(dbPath)
+	store, err := sqlitechat.NewStore(dbPath)
 	if err != nil {
 		slog.Error("failed to open chat database", "error", err)
 

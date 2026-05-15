@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/strider2038/knowledge-db/internal/index"
+	"github.com/strider2038/knowledge-db/internal/index/sqlite"
 )
 
 type testEmbeddingProvider struct {
@@ -68,7 +69,7 @@ func TestSearchServices_SemanticSearch_WhenProviderMissing_ExpectUnavailableErro
 	t.Parallel()
 
 	tmp := t.TempDir()
-	store, err := index.NewIndexStore(filepath.Join(tmp, "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(tmp, "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -82,7 +83,7 @@ func TestSearchServices_SearchNotes_WhenQueryEmpty_ExpectValidationError(t *test
 	t.Parallel()
 
 	tmp := t.TempDir()
-	store, err := index.NewIndexStore(filepath.Join(tmp, "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(tmp, "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -139,7 +140,7 @@ Body text for reading.`
 	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
 
-	store, err := index.NewIndexStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -167,7 +168,7 @@ title: Test Node
 	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
 
-	store, err := index.NewIndexStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -190,7 +191,7 @@ title: Test Node
 	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
 
-	store, err := index.NewIndexStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -212,7 +213,7 @@ func TestSearchServices_GetNote_WhenPathEmpty_ExpectValidationError(t *testing.T
 
 	dataPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
-	store, err := index.NewIndexStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -226,7 +227,7 @@ func TestSearchServices_GetNote_WhenNotFound_ExpectError(t *testing.T) {
 
 	dataPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
-	store, err := index.NewIndexStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -235,12 +236,12 @@ func TestSearchServices_GetNote_WhenNotFound_ExpectError(t *testing.T) {
 	require.EqualError(t, err, "node not found: topic/missing")
 }
 
-func setupSearchStore(t *testing.T) *index.IndexStore {
+func setupSearchStore(t *testing.T) index.Store {
 	t.Helper()
 
 	dataPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
-	store, err := index.NewIndexStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 

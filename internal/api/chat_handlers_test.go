@@ -14,22 +14,23 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
-	"github.com/strider2038/knowledge-db/internal/chat"
+	chatSqlite "github.com/strider2038/knowledge-db/internal/chat/sqlite"
 	"github.com/strider2038/knowledge-db/internal/index"
+	indexSqlite "github.com/strider2038/knowledge-db/internal/index/sqlite"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 )
 
-func setupTestHandlerWithIndex(t *testing.T) (http.Handler, *index.IndexStore) {
+func setupTestHandlerWithIndex(t *testing.T) (http.Handler, index.Store) {
 	t.Helper()
 
 	tmp := t.TempDir()
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
-	chatStore, err := chat.NewStore(filepath.Join(tmp, "chat.db"))
+	chatStore, err := chatSqlite.NewStore(filepath.Join(tmp, "chat.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = chatStore.Close() })
 	h.SetChatStore(chatStore)
 
-	store, err := index.NewIndexStore(":memory:")
+	store, err := indexSqlite.NewStore(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 
@@ -68,7 +69,7 @@ func setupTestHandlerWithoutIndex(t *testing.T) http.Handler {
 
 	tmp := t.TempDir()
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
-	chatStore, err := chat.NewStore(filepath.Join(tmp, "chat.db"))
+	chatStore, err := chatSqlite.NewStore(filepath.Join(tmp, "chat.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = chatStore.Close() })
 	h.SetChatStore(chatStore)
@@ -311,7 +312,7 @@ func TestChatsCRUD_WhenValidFlow_ExpectSuccess(t *testing.T) {
 	getMissing.HasCode(404)
 }
 
-func seedSearchIndex(t *testing.T, store *index.IndexStore) {
+func seedSearchIndex(t *testing.T, store index.Store) {
 	t.Helper()
 
 	ctx := context.Background()

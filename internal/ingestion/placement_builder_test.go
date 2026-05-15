@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kbindex "github.com/strider2038/knowledge-db/internal/index"
+	"github.com/strider2038/knowledge-db/internal/index/sqlite"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
 	"github.com/strider2038/knowledge-db/internal/kb"
@@ -131,7 +132,7 @@ annotation: "Skills for Claude Code agents."
 ---
 `,
 	})
-	indexStore, err := kbindex.NewIndexStore(":memory:")
+	indexStore, err := sqlite.NewStore(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, indexStore.Close()) })
 	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "test")

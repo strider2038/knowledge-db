@@ -1,4 +1,4 @@
-package index
+package sqlite
 
 import (
 	"context"
@@ -7,19 +7,21 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/strider2038/knowledge-db/internal/index"
 )
 
-func setupTestStore(t *testing.T) *IndexStore {
+func setupTestStore(t *testing.T) *Store {
 	t.Helper()
 
-	store, err := NewIndexStore(":memory:")
+	store, err := NewStore(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 
 	return store
 }
 
-func TestIndexStore_Migrate_ExpectSchemaCreated(t *testing.T) {
+func TestStore_Migrate_ExpectSchemaCreated(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -39,15 +41,15 @@ func TestIndexStore_Migrate_ExpectSchemaCreated(t *testing.T) {
 	assert.Contains(t, []string{"fts5", "scan"}, store.KeywordIndexMode())
 }
 
-func TestIndexStore_Migrate_WhenExistingIndex_ExpectSearchTablesAdded(t *testing.T) {
+func TestStore_Migrate_WhenExistingIndex_ExpectSearchTablesAdded(t *testing.T) {
 	t.Parallel()
 
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	store, err := NewIndexStore(dbPath)
+	store, err := NewStore(dbPath)
 	require.NoError(t, err)
 	require.NoError(t, store.Close())
 
-	store, err = NewIndexStore(dbPath)
+	store, err = NewStore(dbPath)
 	require.NoError(t, err)
 	defer store.Close()
 
@@ -58,7 +60,7 @@ func TestIndexStore_Migrate_WhenExistingIndex_ExpectSearchTablesAdded(t *testing
 	require.NoError(t, err)
 }
 
-func TestIndexStore_InsertEmbedding_ExpectRoundTrip(t *testing.T) {
+func TestStore_InsertEmbedding_ExpectRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -77,7 +79,7 @@ func TestIndexStore_InsertEmbedding_ExpectRoundTrip(t *testing.T) {
 	assert.Equal(t, 3, records[0].Dimensions)
 }
 
-func TestIndexStore_DeleteEmbedding_ExpectRemoved(t *testing.T) {
+func TestStore_DeleteEmbedding_ExpectRemoved(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -94,7 +96,7 @@ func TestIndexStore_DeleteEmbedding_ExpectRemoved(t *testing.T) {
 	assert.Empty(t, records)
 }
 
-func TestIndexStore_UpsertNode_ExpectCreated(t *testing.T) {
+func TestStore_UpsertNode_ExpectCreated(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -114,7 +116,7 @@ func TestIndexStore_UpsertNode_ExpectCreated(t *testing.T) {
 	assert.Equal(t, embID, node.NodeEmbeddingID)
 }
 
-func TestIndexStore_UpsertNodeSearch_ExpectSearchableTextStored(t *testing.T) {
+func TestStore_UpsertNodeSearch_ExpectSearchableTextStored(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -124,7 +126,7 @@ func TestIndexStore_UpsertNodeSearch_ExpectSearchableTextStored(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, store.UpsertNode(ctx, "topic/node", "hash1", "hash2", embID))
 
-	err = store.UpsertNodeSearch(ctx, NodeSearchDocument{
+	err = store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
 		Path:            "topic/node",
 		Title:           "SQLite Search",
 		Type:            "note",
@@ -149,13 +151,13 @@ func TestIndexStore_UpsertNodeSearch_ExpectSearchableTextStored(t *testing.T) {
 	assert.Equal(t, 1, manualProcessed)
 }
 
-func TestIndexStore_SearchVocabulary_ExpectCuratedTermsWithLimits(t *testing.T) {
+func TestStore_SearchVocabulary_ExpectCuratedTermsWithLimits(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
 	ctx := context.Background()
 
-	for _, doc := range []NodeSearchDocument{
+	for _, doc := range []index.NodeSearchDocument{
 		{
 			Path:     "ai/context-mode",
 			Title:    "Context Mode: Context Management",
@@ -180,7 +182,7 @@ func TestIndexStore_SearchVocabulary_ExpectCuratedTermsWithLimits(t *testing.T) 
 		require.NoError(t, store.UpsertNodeSearch(ctx, doc))
 	}
 
-	terms, err := store.SearchVocabulary(ctx, SearchVocabularyOptions{
+	terms, err := store.SearchVocabulary(ctx, index.SearchVocabularyOptions{
 		Limit:                     10,
 		MaxDocumentFrequencyRatio: 0.7,
 		MinTermRunes:              3,
@@ -196,7 +198,7 @@ func TestIndexStore_SearchVocabulary_ExpectCuratedTermsWithLimits(t *testing.T) 
 	assert.NotContains(t, terms, "ai")
 }
 
-func TestIndexStore_UpsertNode_WhenExists_ExpectUpdated(t *testing.T) {
+func TestStore_UpsertNode_WhenExists_ExpectUpdated(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -221,7 +223,7 @@ func TestIndexStore_UpsertNode_WhenExists_ExpectUpdated(t *testing.T) {
 	assert.Equal(t, embID2, node.NodeEmbeddingID)
 }
 
-func TestIndexStore_DeleteNode_ExpectRemoved(t *testing.T) {
+func TestStore_DeleteNode_ExpectRemoved(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -240,7 +242,7 @@ func TestIndexStore_DeleteNode_ExpectRemoved(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestIndexStore_ListAllIndexed_ExpectAllNodes(t *testing.T) {
+func TestStore_ListAllIndexed_ExpectAllNodes(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -255,7 +257,7 @@ func TestIndexStore_ListAllIndexed_ExpectAllNodes(t *testing.T) {
 	assert.Len(t, nodes, 2)
 }
 
-func TestIndexStore_Chunks_ExpectCRUD(t *testing.T) {
+func TestStore_Chunks_ExpectCRUD(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -265,7 +267,7 @@ func TestIndexStore_Chunks_ExpectCRUD(t *testing.T) {
 	require.NoError(t, store.UpsertNode(ctx, "topic/node", "h1", "bh1", embID))
 
 	chunkEmbID, _ := store.InsertEmbedding(ctx, []float32{0.5}, "model")
-	chunks := []Chunk{
+	chunks := []index.Chunk{
 		{NodePath: "topic/node", ChunkIndex: 0, Heading: "Intro", Content: "intro text", EmbeddingID: chunkEmbID},
 		{NodePath: "topic/node", ChunkIndex: 1, Heading: "Details", Content: "details text", EmbeddingID: chunkEmbID},
 	}
@@ -285,7 +287,7 @@ func TestIndexStore_Chunks_ExpectCRUD(t *testing.T) {
 	assert.Equal(t, 2, count)
 }
 
-func TestIndexStore_UpsertChunks_WhenReplaced_ExpectOldRemoved(t *testing.T) {
+func TestStore_UpsertChunks_WhenReplaced_ExpectOldRemoved(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -295,11 +297,11 @@ func TestIndexStore_UpsertChunks_WhenReplaced_ExpectOldRemoved(t *testing.T) {
 	require.NoError(t, store.UpsertNode(ctx, "topic/node", "h1", "bh1", embID))
 
 	chunkEmbID, _ := store.InsertEmbedding(ctx, []float32{0.5}, "model")
-	require.NoError(t, store.UpsertChunks(ctx, "topic/node", []Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, "topic/node", []index.Chunk{
 		{NodePath: "topic/node", ChunkIndex: 0, Heading: "Old", Content: "old", EmbeddingID: chunkEmbID},
 	}))
 
-	require.NoError(t, store.UpsertChunks(ctx, "topic/node", []Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, "topic/node", []index.Chunk{
 		{NodePath: "topic/node", ChunkIndex: 0, Heading: "New", Content: "new", EmbeddingID: chunkEmbID},
 	}))
 
@@ -309,7 +311,7 @@ func TestIndexStore_UpsertChunks_WhenReplaced_ExpectOldRemoved(t *testing.T) {
 	assert.Equal(t, "New", result[0].Heading)
 }
 
-func TestIndexStore_GetStatus_ExpectMetrics(t *testing.T) {
+func TestStore_GetStatus_ExpectMetrics(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -324,7 +326,7 @@ func TestIndexStore_GetStatus_ExpectMetrics(t *testing.T) {
 	assert.Equal(t, "ready", status.Status)
 }
 
-func TestIndexStore_ClearAll_ExpectEmpty(t *testing.T) {
+func TestStore_ClearAll_ExpectEmpty(t *testing.T) {
 	t.Parallel()
 
 	store := setupTestStore(t)
@@ -332,8 +334,8 @@ func TestIndexStore_ClearAll_ExpectEmpty(t *testing.T) {
 
 	embID, _ := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, store.UpsertNode(ctx, "a/b", "h1", "bh1", embID))
-	require.NoError(t, store.UpsertNodeSearch(ctx, NodeSearchDocument{Path: "a/b", Title: "Title"}))
-	require.NoError(t, store.UpsertChunks(ctx, "a/b", []Chunk{
+	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{Path: "a/b", Title: "Title"}))
+	require.NoError(t, store.UpsertChunks(ctx, "a/b", []index.Chunk{
 		{NodePath: "a/b", ChunkIndex: 0, Heading: "Heading", Content: "content", EmbeddingID: embID},
 	}))
 

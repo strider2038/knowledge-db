@@ -73,12 +73,11 @@ type Handler struct {
 }
 
 type searchServices struct {
-	indexStore *index.IndexStore
+	indexStore index.Store
 	provider   index.EmbeddingProvider
 }
 
-// NewHandler creates MCP handler with Bearer auth and search tools.
-func NewHandler(apiKey string, indexStore *index.IndexStore, provider index.EmbeddingProvider) http.Handler {
+func NewHandler(apiKey string, indexStore index.Store, provider index.EmbeddingProvider) http.Handler {
 	services := &searchServices{
 		indexStore: indexStore,
 		provider:   provider,

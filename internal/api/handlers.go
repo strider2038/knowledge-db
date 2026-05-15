@@ -36,12 +36,12 @@ type Handler struct {
 	gitCommitter      igit.GitCommitter
 	commitMsgGen      *igit.CommitMessageGenerator
 	gitDisabled       bool
-	indexStore        *index.IndexStore
+	indexStore        index.Store
 	syncWorker        *index.SyncWorker
 	embeddingProvider index.EmbeddingProvider
 	embeddingConfig   config.Embedding
 	chatClient        chatClient
-	chatStore         *chat.Store
+	chatStore         chat.Store
 	normalizeMu       sync.RWMutex
 	normalizeOps      map[string]normalizeOperation
 	normalizeRunner   nodeNormalizer
@@ -60,7 +60,7 @@ func NewHandler(dataPath string, ingester ingestion.Ingester) *Handler {
 }
 
 // SetChatStore устанавливает sqlite-хранилище чат-сессий.
-func (h *Handler) SetChatStore(store *chat.Store) {
+func (h *Handler) SetChatStore(store chat.Store) {
 	h.chatStore = store
 }
 
@@ -95,7 +95,7 @@ func (h *Handler) SetGitCommitter(committer igit.GitCommitter, msgGen *igit.Comm
 
 // SetIndexComponents устанавливает компоненты индекса для RAG.
 // При nil store все embedding endpoints возвращают 503.
-func (h *Handler) SetIndexComponents(store *index.IndexStore, worker *index.SyncWorker, provider index.EmbeddingProvider, cfg config.Embedding) {
+func (h *Handler) SetIndexComponents(store index.Store, worker *index.SyncWorker, provider index.EmbeddingProvider, cfg config.Embedding) {
 	h.indexStore = store
 	h.syncWorker = worker
 	h.embeddingProvider = provider

@@ -40,7 +40,7 @@ type PipelineIngester struct {
 	translator       translation.Translator
 	titleGenerator   TitleGenerator
 	translationQueue *translationqueue.Queue
-	indexStore       *index.IndexStore
+	indexStore       index.Store
 }
 
 // NewPipelineIngester создаёт PipelineIngester.
@@ -72,7 +72,7 @@ func NewPipelineIngester(
 }
 
 // SetPlacementIndexStore enables index-backed placement candidates when the local index is available.
-func (p *PipelineIngester) SetPlacementIndexStore(indexStore *index.IndexStore) {
+func (p *PipelineIngester) SetPlacementIndexStore(indexStore index.Store) {
 	p.indexStore = indexStore
 }
 

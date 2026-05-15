@@ -60,12 +60,11 @@ type HybridFragment struct {
 
 // RetrievalService builds unified hybrid search results for search and chat.
 type RetrievalService struct {
-	store    *IndexStore
+	store    Store
 	provider EmbeddingProvider
 }
 
-// NewRetrievalService creates a retrieval service.
-func NewRetrievalService(store *IndexStore, provider EmbeddingProvider) *RetrievalService {
+func NewRetrievalService(store Store, provider EmbeddingProvider) *RetrievalService {
 	return &RetrievalService{store: store, provider: provider}
 }
 
@@ -205,7 +204,7 @@ func (s *RetrievalService) loadNodeSearchDocument(ctx context.Context, path stri
 	var doc NodeSearchDocument
 	var aliases, keywords string
 	var manualProcessed int
-	err := s.store.queryRowContext(ctx, `
+	err := s.store.QueryRowContext(ctx, `
 		SELECT path, title, type, aliases, annotation, keywords, source_url, manual_processed, body
 		FROM node_search WHERE path = ?`, path,
 	).Scan(&doc.Path, &doc.Title, &doc.Type, &aliases, &doc.Annotation, &keywords, &doc.SourceURL, &manualProcessed, &doc.Body)
