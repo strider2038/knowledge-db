@@ -119,3 +119,31 @@ func TestClassifySource_WhenTelegramLongFormMessage_ExpectConceptualDigestNote(t
 	assert.Equal(t, kb.ContentProfileConceptualDigest, profile.ContentProfile)
 	assert.Equal(t, "note", profile.RecommendedType)
 }
+
+func TestClassifySource_WhenLongTechnicalTelegramPostWithLinks_ExpectNoteNotProduct(t *testing.T) {
+	t.Parallel()
+
+	content := `⭐️ Вызов C-функций из Go без Cgo
+
+Если вы работали с Go и вам нужно было вызвать C-библиотеку, то вы наверняка сталкивались с Cgo.
+
+Cgo работает, но тянет за собой целый набор проблем. Нужен C-компилятор на каждой целевой платформе.
+
+purego решает всё это, позволяя вызывать C-функции из чистого Go.
+
+Без Cgo отпадает необходимость в C-компиляторе. Вы можете собирать проект под другую платформу.
+
+Работает и при CGO_ENABLED=1. Это значит, что можно портировать проект с Cgo на purego постепенно.
+
+Типичные сценарии — работа с системными библиотеками, графические движки, аудио, нативные SDK.
+
+➡️ Репозиторий https://clc.to/jjgR-g
+📍 Навигация: https://clc.to/fuWG8g https://clc.to/_Jfhrg https://clc.to/zbSIdg
+🐸 Библиотека Go-разработчика http://t.me/goproglib`
+
+	profile := ClassifySource("https://t.me/goproglib/1234", "Вызов C-функций из Go без Cgo", content, "")
+
+	assert.Equal(t, kb.SourceKindArticle, profile.SourceKind)
+	assert.Equal(t, kb.ContentProfileConceptualDigest, profile.ContentProfile)
+	assert.Equal(t, "note", profile.RecommendedType)
+}

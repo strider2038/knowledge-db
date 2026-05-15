@@ -43,6 +43,13 @@ func ClassifySource(rawURL, title, content, typeHint string) SourceProfile {
 			RecommendedType: "note",
 		}
 	}
+	if looksLikeLongFormMessage(title, content) {
+		return SourceProfile{
+			SourceKind:      kb.SourceKindArticle,
+			ContentProfile:  kb.ContentProfileConceptualDigest,
+			RecommendedType: "note",
+		}
+	}
 	if looksLikeNews(host, path, text) {
 		return SourceProfile{
 			SourceKind:      kb.SourceKindNews,
@@ -86,13 +93,6 @@ func ClassifySource(rawURL, title, content, typeHint string) SourceProfile {
 		}
 	}
 	if looksLikeArticle(path, text) {
-		return SourceProfile{
-			SourceKind:      kb.SourceKindArticle,
-			ContentProfile:  kb.ContentProfileConceptualDigest,
-			RecommendedType: "note",
-		}
-	}
-	if looksLikeLongFormMessage(title, content) {
 		return SourceProfile{
 			SourceKind:      kb.SourceKindArticle,
 			ContentProfile:  kb.ContentProfileConceptualDigest,
