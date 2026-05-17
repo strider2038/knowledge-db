@@ -49,6 +49,16 @@ describe('MarkdownContent', () => {
     expect(screen.getByText('Item 2')).toBeInTheDocument()
   })
 
+  it('styles inline code as a compact chip without prose backtick pseudo-elements', () => {
+    render(<MarkdownContent content={'Use `npm run build` locally.'} />)
+    const code = screen.getByText('npm run build')
+    expect(code.tagName).toBe('CODE')
+    expect(code.className).toMatch(/rounded-md/)
+    expect(code.className).toMatch(/bg-muted/)
+    expect(code.className).toMatch(/before:content-none/)
+    expect(code.className).toMatch(/after:content-none/)
+  })
+
   it('renders GFM tables', () => {
     render(
       <MarkdownContent

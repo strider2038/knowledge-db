@@ -22,15 +22,22 @@ interface MarkdownContentProps {
   nodePath?: string
 }
 
+function classNameToString(className: unknown): string {
+  if (typeof className === 'string') return className
+  if (Array.isArray(className)) return className.filter(Boolean).join(' ')
+  if (className != null) return String(className)
+  return ''
+}
+
 function isMermaidCodeBlock(
   children: React.ReactNode
 ): { code: string } | null {
   const child = React.Children.only(children) as
-    | React.ReactElement<{ className?: string; children?: React.ReactNode }>
+    | React.ReactElement<{ className?: unknown; children?: React.ReactNode }>
     | undefined
-  if (!child || child.type !== 'code') return null
-  const className = child.props?.className
-  if (!className?.includes('language-mermaid')) return null
+  if (!child || !React.isValidElement(child)) return null
+  const className = classNameToString(child.props?.className)
+  if (!className.includes('language-mermaid')) return null
   const code = child.props?.children
   const codeStr =
     typeof code === 'string' ? code : Array.isArray(code) ? code.join('') : ''
@@ -46,6 +53,24 @@ function resolveImageSrc(src: string | undefined, nodePath: string | undefined):
       ? `${nodePath}/images/${src.slice(imagesIdx + 7)}`
       : `${nodePath}/${src.replace(/^\.\//, '')}`
   return getAssetUrl(assetPath)
+}
+
+/** Plain text from markdown <code> children (strings or nested spans from highlight.js). */
+function flattenCodeText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(flattenCodeText).join('')
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return flattenCodeText(node.props.children)
+  }
+  return ''
+}
+
+function isBlockMarkdownCode(className: unknown, children: React.ReactNode): boolean {
+  const cls = classNameToString(className)
+  if (/\blanguage-[\w-]+\b/.test(cls) || /\bhljs\b/.test(cls)) return true
+  // Fenced block without language: mdast appends trailing '\n' to code text; inline collapses newlines to spaces.
+  return flattenCodeText(children).endsWith('\n')
 }
 
 export function MarkdownContent({ content, nodePath }: MarkdownContentProps) {
@@ -90,6 +115,27 @@ export function MarkdownContent({ content, nodePath }: MarkdownContentProps) {
             </table>
           </div>
         ),
+        code: ({ children, className, node, ...props }) => {
+          void node
+          if (isBlockMarkdownCode(className, children)) {
+            return (
+              <code {...props} className={cn(className)}>
+                {children}
+              </code>
+            )
+          }
+          return (
+            <code
+              {...props}
+              className={cn(
+                'rounded-md border border-border/70 bg-muted px-[0.35em] py-[0.12em] font-mono text-[0.875em] font-medium leading-snug text-foreground [font-variant-ligatures:none] before:content-none after:content-none break-words',
+                className
+              )}
+            >
+              {children}
+            </code>
+          )
+        },
       }}
     >
       {content}
