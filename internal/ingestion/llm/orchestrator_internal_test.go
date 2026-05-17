@@ -61,7 +61,7 @@ func TestExecuteFetchURLMeta_WhenHighQualityMeta_ExpectMetaSource(t *testing.T) 
 	t.Parallel()
 	orch := &OpenAIOrchestrator{
 		contentFetcher: &contentFetcherStub{
-			result: &fetcher.FetchResult{Title: "Should not be used", Content: "ignored"},
+			result: &fetcher.FetchResult{Title: "Should not be used", Content: "Extra preview content"},
 		},
 		metaFetcher: &metaFetcherStub{
 			meta: &fetcher.URLMeta{
@@ -76,6 +76,7 @@ func TestExecuteFetchURLMeta_WhenHighQualityMeta_ExpectMetaSource(t *testing.T) 
 	var payload map[string]string
 	err := json.Unmarshal([]byte(out), &payload)
 	require.NoError(t, err)
-	assert.Equal(t, "github_api", payload["source"])
-	assert.Empty(t, payload["content_preview"])
+	assert.Equal(t, "content_fallback", payload["source"])
+	assert.NotEmpty(t, payload["content_preview"])
+	assert.Contains(t, payload["content_preview"], "Extra preview content")
 }

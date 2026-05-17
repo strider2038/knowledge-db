@@ -67,6 +67,12 @@ type OpenAIOrchestrator struct {
 	metaFetcher    fetcher.URLMetaFetcher
 }
 
+const (
+	nodeTypeArticle = "article"
+	nodeTypeLink    = "link"
+	nodeTypeNote    = "note"
+)
+
 // NewOpenAIOrchestrator создаёт OpenAIOrchestrator.
 func NewOpenAIOrchestrator(apiKey, apiURL, model string, contentFetcher fetcher.ContentFetcher) *OpenAIOrchestrator {
 	return NewOpenAIOrchestratorWithMetaFetcher(apiKey, apiURL, model, contentFetcher, defaultURLMetaFetcher())
@@ -230,7 +236,7 @@ func (o *OpenAIOrchestrator) processResponse(
 			// Если есть кешированный контент для source_url — используем его напрямую,
 			// не полагаясь на то что LLM воспроизвёл контент без усечения.
 			// Только для article: для link/note с digest-телом нельзя подменять content кешем полного fetch.
-			if result.SourceURL != "" && result.Type == "article" {
+			if result.SourceURL != "" && result.Type == nodeTypeArticle {
 				if cached, ok := fetchCache[result.SourceURL]; ok && cached.Content != "" {
 					clog.Info(ctx, "ingest: using cached fetch content", "url", result.SourceURL, "content_len", len(cached.Content))
 					result.Content = cached.Content
@@ -397,7 +403,7 @@ func (o *OpenAIOrchestrator) executeFetchURLMeta(ctx context.Context, argsJSON s
 		output.ContentPreview = buildContentPreview(meta.ContentPreview, 4000)
 	}
 
-	if output.ContentPreview == "" && isLowQualityMeta(meta) && o.contentFetcher != nil {
+	if o.contentFetcher != nil {
 		result, fetchErr := o.contentFetcher.Fetch(ctx, args.URL)
 		if fetchErr == nil {
 			const previewLen = 2000
@@ -504,7 +510,7 @@ func applyStrictTypeHint(input ProcessInput, result *ProcessResult) {
 	}
 
 	switch input.TypeHint {
-	case "article", "link", "note":
+	case nodeTypeArticle, nodeTypeLink, nodeTypeNote:
 		result.Type = input.TypeHint
 	}
 }
@@ -514,7 +520,7 @@ func (o *OpenAIOrchestrator) ensureArticleContent(
 	result *ProcessResult,
 	fetchCache map[string]*fetcher.FetchResult,
 ) {
-	if result == nil || result.Type != "article" {
+	if result == nil || result.Type != nodeTypeArticle {
 		return
 	}
 	if strings.TrimSpace(result.SourceURL) == "" {
@@ -708,37 +714,4 @@ func buildContentPreview(content string, maxLen int) string {
 	}
 
 	return preview[:maxLen] + "\n\n[...контент усечён для анализа аннотации...]"
-}
-
-func isLowQualityMeta(meta *fetcher.URLMeta) bool {
-	if meta == nil {
-		return true
-	}
-
-	title := strings.ToLower(strings.TrimSpace(meta.Title))
-	description := strings.ToLower(strings.TrimSpace(meta.Description))
-	if description == "" {
-		return true
-	}
-	if len([]rune(description)) < 60 {
-		return true
-	}
-
-	templatePhrases := []string{
-		"github is where people build software",
-		"project hosted on github",
-		"allows contributions from developers",
-		"repository aims to facilitate collaborative development",
-	}
-	for _, phrase := range templatePhrases {
-		if strings.Contains(description, phrase) {
-			return true
-		}
-	}
-
-	if strings.HasPrefix(title, "github -") && !strings.Contains(description, "темы:") && !strings.Contains(description, "основной язык:") {
-		return true
-	}
-
-	return false
 }

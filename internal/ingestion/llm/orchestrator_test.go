@@ -35,6 +35,7 @@ type mockContentFetcher struct {
 
 func (m *mockContentFetcher) Fetch(_ context.Context, _ string) (*fetcher.FetchResult, error) {
 	m.calls++
+
 	return m.result, m.err
 }
 

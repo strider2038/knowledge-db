@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	ErrNotImplemented    = errors.New("ingestion not implemented")
-	ErrSourceURLRequired = errors.New("source_url required")
+	ErrNotImplemented     = errors.New("ingestion not implemented")
+	ErrSourceURLRequired  = errors.New("source_url required")
+	ErrDigestContentEmpty = errors.New("digest content is empty for profiled link")
 )
 
 // StubIngester — заглушка, возвращает ErrNotImplemented.

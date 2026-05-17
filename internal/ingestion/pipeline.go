@@ -43,6 +43,8 @@ type PipelineIngester struct {
 	indexStore       index.Store
 }
 
+const nodeTypeArticle = "article"
+
 // NewPipelineIngester создаёт PipelineIngester.
 // translationQueue — опционально; при nil используется синхронный перевод.
 func NewPipelineIngester(
@@ -180,14 +182,13 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 		return nil, errors.Errorf("refresh description: %w", ErrSourceURLRequired)
 	}
 
-	fetchResult, err := p.contentFetcher.Fetch(ctx, sourceURL)
+	currentType, _ := current.Frontmatter["type"].(string)
+	currentProfile, _ := current.Frontmatter["content_profile"].(string)
+	text, sourceAuthor, profile, err := p.buildRefreshInput(ctx, sourceURL, currentType, currentProfile)
 	if err != nil {
-		return nil, errors.Errorf("refresh description: fetch source: %w", err)
+		return nil, errors.Errorf("refresh description: build input: %w", err)
 	}
-
-	text := fmt.Sprintf("URL: %s\nTitle: %s\n\n%s", sourceURL, fetchResult.Title, fetchResult.Content)
-	profile := ClassifySource(sourceURL, fetchResult.Title, fetchResult.Content, "")
-	processInput, err := p.buildProcessInput(ctx, text, sourceURL, fetchResult.Author, "", profile)
+	processInput, err := p.buildProcessInput(ctx, text, sourceURL, sourceAuthor, "", profile)
 	if err != nil {
 		return nil, errors.Errorf("refresh description: build context: %w", err)
 	}
@@ -195,6 +196,12 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 	result, err := p.orchestrator.Process(ctx, processInput)
 	if err != nil {
 		return nil, errors.Errorf("refresh description: orchestrate: %w", err)
+	}
+	if result == nil {
+		return nil, errors.New("refresh description: empty orchestrator result")
+	}
+	if err := p.ensureDigestContent(ctx, result, processInput); err != nil {
+		return nil, errors.Errorf("refresh description: %w", err)
 	}
 	applyProfileToResult(result, profile)
 	if result.SourceURL == "" {
@@ -226,6 +233,40 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 	clog.Info(ctx, "refresh description: complete", "path", path)
 
 	return node, nil
+}
+
+func (p *PipelineIngester) buildRefreshInput(
+	ctx context.Context,
+	sourceURL, currentType, currentProfile string,
+) (string, string, SourceProfile, error) {
+	baseText := "URL: " + sourceURL
+	switch {
+	case currentType == nodeTypeArticle:
+		fetchResult, err := p.contentFetcher.Fetch(ctx, sourceURL)
+		if err != nil {
+			return "", "", SourceProfile{}, errors.Errorf("fetch source: %w", err)
+		}
+		text := fmt.Sprintf("URL: %s\nTitle: %s\n\n%s", sourceURL, fetchResult.Title, fetchResult.Content)
+		profile := ClassifySource(sourceURL, fetchResult.Title, fetchResult.Content, "")
+
+		return text, fetchResult.Author, profile, nil
+	case currentType == "note" && (currentProfile == string(kb.ContentProfileConceptualDigest) || currentProfile == string(kb.ContentProfileBriefDigest)):
+		fetchResult, _ := p.contentFetcher.Fetch(ctx, sourceURL)
+		if fetchResult == nil {
+			profile := ClassifySource(sourceURL, "", "", "")
+
+			return baseText, "", profile, nil
+		}
+		text := fmt.Sprintf("URL: %s\nTitle: %s\n\n%s", sourceURL, fetchResult.Title, fetchResult.Content)
+		profile := ClassifySource(sourceURL, fetchResult.Title, fetchResult.Content, "")
+
+		return text, fetchResult.Author, profile, nil
+	default:
+		profile := ClassifySource(sourceURL, "", "", "")
+		text := baseText + "\n\nОбнови metadata и markdown digest для link-узла. Вызови fetch_url_meta и используй его факты."
+
+		return text, "", profile, nil
+	}
 }
 
 func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor, typeHint string, profile SourceProfile) (llm.ProcessInput, error) {
@@ -427,6 +468,45 @@ func applyProfileToResult(result *llm.ProcessResult, profile SourceProfile) {
 	if result.Type == "" {
 		result.Type = profile.RecommendedType
 	}
+}
+
+func (p *PipelineIngester) ensureDigestContent(
+	ctx context.Context,
+	result *llm.ProcessResult,
+	processInput llm.ProcessInput,
+) error {
+	if !requiresDigestContent(result) {
+		return nil
+	}
+	if strings.TrimSpace(result.Content) != "" {
+		return nil
+	}
+
+	retryInput := processInput
+	retryInput.Text += "\n\nКритично: для profile link узла поле content обязательно и должно содержать markdown digest. Пустой content недопустим."
+	retried, err := p.orchestrator.Process(ctx, retryInput)
+	if err != nil {
+		return errors.Errorf("%w: retry failed: %v", ErrDigestContentEmpty, err)
+	}
+	if !requiresDigestContent(retried) || strings.TrimSpace(retried.Content) != "" {
+		*result = *retried
+
+		return nil
+	}
+
+	return ErrDigestContentEmpty
+}
+
+func requiresDigestContent(result *llm.ProcessResult) bool {
+	if result == nil || result.Type != "link" {
+		return false
+	}
+	profile := kb.ContentProfile(strings.TrimSpace(result.ContentProfile))
+	if profile == "" || profile == kb.ContentProfileLinkBookmark {
+		return false
+	}
+
+	return kb.IsValidContentProfile(string(profile))
 }
 
 func applyProfileToFrontmatter(frontmatter map[string]any, sourceKind, contentProfile string) {

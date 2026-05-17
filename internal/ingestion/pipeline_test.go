@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,25 @@ func (m *mockOrchestrator) Process(_ context.Context, input llm.ProcessInput) (*
 	m.input = input
 
 	return m.result, m.err
+}
+
+type sequenceOrchestrator struct {
+	results []*llm.ProcessResult
+	errs    []error
+	inputs  []llm.ProcessInput
+}
+
+func (m *sequenceOrchestrator) Process(_ context.Context, input llm.ProcessInput) (*llm.ProcessResult, error) {
+	m.inputs = append(m.inputs, input)
+	idx := len(m.inputs) - 1
+	if idx < len(m.errs) && m.errs[idx] != nil {
+		return nil, m.errs[idx]
+	}
+	if idx < len(m.results) {
+		return m.results[idx], nil
+	}
+
+	return nil, ingestion.ErrNotImplemented
 }
 
 // mockTitleGenerator — мок TitleGenerator.
@@ -621,7 +641,7 @@ keywords: [old]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
 annotation: "Old"
-type: link
+type: article
 source_url: "https://techcrunch.com/release"
 ---
 
@@ -679,4 +699,104 @@ Old body
 	assert.Equal(t, "news", node.Metadata["source_kind"])
 	assert.Equal(t, "brief_digest", node.Metadata["content_profile"])
 	assert.Equal(t, "## Суть новости\n\nКраткая выжимка.", node.Content)
+}
+
+func TestPipelineIngester_RefreshDescription_WhenLearningResourceLink_ExpectDigestContent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "ai/ai-bots"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "ai/ai-bots/granola-ai-notepad.md"), []byte(`---
+title: Granola
+keywords: [ai, notes]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Old"
+type: link
+source_url: "https://www.granola.ai"
+content_profile: "learning_resource_profile"
+---
+
+Old body
+`), 0o644))
+	store := kb.NewStore(fs)
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:       []string{"ai-блокнот", "встречи"},
+			Annotation:     "Updated learning resource digest",
+			Type:           "link",
+			SourceKind:     "learning_resource",
+			ContentProfile: "learning_resource_profile",
+			Content:        "## Чему учит\n\nПрактика AI-заметок во время встреч.",
+			Title:          "Granola",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.RefreshDescription(ctx, "ai/ai-bots/granola-ai-notepad")
+
+	require.NoError(t, err)
+	assert.Equal(t, "link", node.Metadata["type"])
+	assert.Equal(t, "learning_resource", node.Metadata["source_kind"])
+	assert.Equal(t, "learning_resource_profile", node.Metadata["content_profile"])
+	assert.Equal(t, "## Чему учит\n\nПрактика AI-заметок во время встреч.", node.Content)
+}
+
+func TestPipelineIngester_RefreshDescription_WhenProfileLinkDigestEmptyAfterRetry_ExpectErrorAndNoMutation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	nodePath := filepath.Join(base, "go/packages/runnable.md")
+	require.NoError(t, fs.MkdirAll(filepath.Dir(nodePath), 0o755))
+	original := `---
+title: Runnable
+keywords: [go]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Old"
+type: link
+source_url: "https://github.com/pior/runnable"
+source_kind: repository
+content_profile: repository_profile
+---
+
+Old body
+`
+	require.NoError(t, afero.WriteFile(fs, nodePath, []byte(original), 0o644))
+	store := kb.NewStore(fs)
+	orc := &sequenceOrchestrator{
+		results: []*llm.ProcessResult{
+			{
+				Keywords:       []string{"go"},
+				Annotation:     "Empty digest",
+				Type:           "link",
+				SourceKind:     "repository",
+				ContentProfile: "repository_profile",
+				Content:        "",
+				Title:          "Runnable",
+			},
+			{
+				Keywords:       []string{"go"},
+				Annotation:     "Still empty digest",
+				Type:           "link",
+				SourceKind:     "repository",
+				ContentProfile: "repository_profile",
+				Content:        "",
+				Title:          "Runnable",
+			},
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	_, err := pipeline.RefreshDescription(ctx, "go/packages/runnable")
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, ingestion.ErrDigestContentEmpty)
+	data, readErr := afero.ReadFile(fs, nodePath)
+	require.NoError(t, readErr)
+	assert.Equal(t, original, string(data))
+	require.Len(t, orc.inputs, 2)
+	assert.Contains(t, strings.ToLower(orc.inputs[1].Text), "пустой content недопустим")
 }
