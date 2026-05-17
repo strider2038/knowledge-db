@@ -88,3 +88,13 @@
 
 - **WHEN** клиент вызывает debug MCP tool для чтения последних raw Telegram записей с корректным debug API ключом
 - **THEN** система SHALL вернуть записи из `.kb/telegram-raw` без изменения исходного payload
+
+#### Scenario: Обновление статуса issue через debug MCP
+
+- **WHEN** клиент вызывает debug MCP tool `debug_update_issue_status` с валидными `id` и `status` (`new`, `investigating`, `fixed`) и корректным debug API ключом
+- **THEN** система SHALL обновить статус issue в `.kb/issues` и вернуть обновлённое состояние issue
+
+#### Scenario: Невалидный статус при обновлении через debug MCP
+
+- **WHEN** клиент вызывает `debug_update_issue_status` со статусом вне `new`, `investigating`, `fixed`
+- **THEN** система MUST отклонить вызов с ошибкой валидации

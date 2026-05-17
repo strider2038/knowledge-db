@@ -400,14 +400,14 @@ func (o *OpenAIOrchestrator) executeFetchURLMeta(ctx context.Context, argsJSON s
 		Source:      source,
 	}
 	if meta.ContentPreview != "" {
-		output.ContentPreview = buildContentPreview(meta.ContentPreview, 4000)
+		output.ContentPreview = buildContentPreview(cleanMetaPreviewContent(meta.ContentPreview), 4000)
 	}
 
 	if o.contentFetcher != nil {
 		result, fetchErr := o.contentFetcher.Fetch(ctx, args.URL)
 		if fetchErr == nil {
 			const previewLen = 2000
-			output.ContentPreview = buildContentPreview(result.Content, previewLen)
+			output.ContentPreview = buildContentPreview(cleanMetaPreviewContent(result.Content), previewLen)
 			output.Source = "content_fallback"
 			if output.Title == "" {
 				output.Title = result.Title
@@ -714,4 +714,49 @@ func buildContentPreview(content string, maxLen int) string {
 	}
 
 	return preview[:maxLen] + "\n\n[...контент усечён для анализа аннотации...]"
+}
+
+// cleanMetaPreviewContent удаляет шумные блоки (изображения/дубли) из контента
+// перед передачей в LLM для построения digest/аннотации ссылок.
+func cleanMetaPreviewContent(content string) string {
+	lines := strings.Split(content, "\n")
+	seen := make(map[string]struct{}, len(lines))
+	var out []string
+	prevBlank := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if isImageMarkdownLine(trimmed) {
+			continue
+		}
+		if trimmed == "" {
+			if prevBlank || len(out) == 0 {
+				continue
+			}
+			out = append(out, "")
+			prevBlank = true
+
+			continue
+		}
+		prevBlank = false
+
+		normalized := strings.ToLower(trimmed)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, trimmed)
+	}
+
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
+func isImageMarkdownLine(line string) bool {
+	if !strings.HasPrefix(line, "![") {
+		return false
+	}
+	if !strings.Contains(line, "](") || !strings.HasSuffix(line, ")") {
+		return false
+	}
+
+	return true
 }

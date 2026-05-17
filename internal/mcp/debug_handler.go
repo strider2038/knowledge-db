@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -11,9 +12,15 @@ import (
 	"github.com/strider2038/knowledge-db/internal/debugdata"
 )
 
+var (
+	errIssueIDRequired    = errors.New("id is required")
+	errIssueStatusInvalid = errors.New("status must be one of: new, investigating, fixed")
+)
+
 type debugStore interface {
 	ListIssues(ctx context.Context, limit int) ([]debugdata.Issue, error)
 	ReadIssue(ctx context.Context, issueID string) (debugdata.Issue, error)
+	UpdateIssueStatus(ctx context.Context, issueID, status string) (debugdata.Issue, error)
 	ReadLastTelegramRaw(ctx context.Context, limit int) ([]debugdata.TelegramRawRecord, error)
 }
 
@@ -97,6 +104,39 @@ func NewDebugHandler(apiKey string, store debugStore) http.Handler {
 		}
 
 		return &sdkmcp.CallToolResult{}, map[string]any{"records": records, "total": len(records)}, nil
+	})
+
+	sdkmcp.AddTool(server, &sdkmcp.Tool{
+		Name:        "debug_update_issue_status",
+		Description: "Update debug issue status",
+	}, func(ctx context.Context, _ *sdkmcp.CallToolRequest, input struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}) (*sdkmcp.CallToolResult, any, error) {
+		issueID := strings.TrimSpace(input.ID)
+		status := strings.TrimSpace(input.Status)
+		if issueID == "" {
+			return nil, nil, errIssueIDRequired
+		}
+		switch status {
+		case debugdata.IssueStatusNew, debugdata.IssueStatusInvestigating, debugdata.IssueStatusFixed:
+		default:
+			return nil, nil, errIssueStatusInvalid
+		}
+
+		issue, err := store.UpdateIssueStatus(ctx, issueID, status)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return &sdkmcp.CallToolResult{}, map[string]any{
+			"id":         issue.ID,
+			"status":     issue.Status,
+			"title":      issue.Title,
+			"page":       issue.Page,
+			"created_at": issue.CreatedAt.Format(time.RFC3339),
+			"updated_at": issue.UpdatedAt.Format(time.RFC3339),
+		}, nil
 	})
 
 	transport := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {

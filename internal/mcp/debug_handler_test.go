@@ -30,6 +30,19 @@ func (s *debugStoreStub) ReadIssue(_ context.Context, issueID string) (debugdata
 	return debugdata.Issue{ID: issueID, Status: debugdata.IssueStatusNew, Title: "Bug"}, nil
 }
 
+func (s *debugStoreStub) UpdateIssueStatus(_ context.Context, issueID, status string) (debugdata.Issue, error) {
+	now := time.Now().UTC()
+
+	return debugdata.Issue{
+		ID:        issueID,
+		Status:    status,
+		Title:     "Bug",
+		Page:      "node",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
+}
+
 func (s *debugStoreStub) ReadLastTelegramRaw(_ context.Context, _ int) ([]debugdata.TelegramRawRecord, error) {
 	return []debugdata.TelegramRawRecord{{UpdateID: 1, ReceivedAt: time.Now().UTC()}}, nil
 }
@@ -51,5 +64,19 @@ func TestDebugHandler_WhenValidKey_ExpectAccessible(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
+	require.NotEqual(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestDebugHandler_UpdateIssueStatusTool_WhenValidInput_ExpectAccessible(t *testing.T) {
+	t.Parallel()
+	h := NewDebugHandler("debug-key", &debugStoreStub{})
+	reqBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"debug_update_issue_status","arguments":{"id":"issue-1","status":"fixed"}}}`
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/mcp/debug", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer debug-key")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
 	require.NotEqual(t, http.StatusUnauthorized, rec.Code)
 }
