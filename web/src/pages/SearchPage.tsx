@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { searchKnowledgeBase, type SearchResponse, type SearchResult } from '@/services/api'
 import { getTypeBadgeColor, getTypeButtonClass } from '@/lib/type-styles'
 import { cn } from '@/lib/utils'
+import { DebugIssueDialog } from '@/components/DebugIssueDialog'
 
 const NODE_TYPES = ['article', 'link', 'note'] as const
 const NODE_TYPE_LABELS: Record<(typeof NODE_TYPES)[number], string> = {
@@ -21,7 +22,8 @@ export function SearchPage() {
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
   const path = params.get('path') ?? ''
-  const type = params.get('type')?.split(',').filter(Boolean) ?? []
+  const rawType = params.get('type') ?? ''
+  const type = useMemo(() => rawType.split(',').filter(Boolean), [rawType])
   const manualProcessed = params.get('manual_processed') ?? ''
   const [draft, setDraft] = useState(query)
   const [results, setResults] = useState<SearchResult[]>([])
@@ -169,6 +171,17 @@ export function SearchPage() {
             Спросить по этим источникам
           </Button>
         )}
+        <DebugIssueDialog
+          page="search"
+          title={`Search issue: ${query || 'empty-query'}`}
+          context={{
+            query,
+            filters: { path, type, manualProcessed },
+            results,
+            meta: searchMeta,
+            total: searchTotal,
+          }}
+        />
       </div>
 
       {!loading && searched && !error && searchMeta && (

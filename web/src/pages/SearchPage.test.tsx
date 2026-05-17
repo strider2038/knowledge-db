@@ -61,6 +61,7 @@ describe('SearchPage', () => {
     expect(screen.getByText('Local database')).toBeInTheDocument()
     expect(screen.getByText('sqlite snippet')).toBeInTheDocument()
     expect(screen.getByText('Как выполнен поиск')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Сообщить о проблеме' })).toBeInTheDocument()
     expect(screen.getByText('Исходный запрос')).toBeInTheDocument()
     expect(screen.getByText('Запрос к индексу')).toBeInTheDocument()
     expect(screen.getByText('sqlite local index')).toBeInTheDocument()

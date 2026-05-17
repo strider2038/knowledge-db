@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { getTypeBadgeColor } from '@/lib/type-styles'
 import { NodeActionBar } from '@/components/NodeActionBar'
 import { useGitStatus } from '@/hooks/useGitStatus'
+import { DebugIssueDialog } from '@/components/DebugIssueDialog'
 
 function formatDate(value: unknown): string {
   if (!value || typeof value !== 'string') return '—'
@@ -248,6 +249,18 @@ export function NodePage() {
       )}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
         <h1 className="text-2xl font-semibold leading-snug">{title}</h1>
+        <DebugIssueDialog
+          page="node"
+          title={`Node issue: ${node.path}`}
+          context={{
+            nodePath: node.path,
+            title,
+            type: nodeType,
+            metadata: node.metadata ?? {},
+            annotation: node.annotation,
+            content: node.content,
+          }}
+        />
       </div>
       {manualError ? (
         <p className="text-sm text-destructive">{manualError}</p>

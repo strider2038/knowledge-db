@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, PanelLeft, Pencil, Plus, Send, Square, Trash2, User, X } from 'lucide-react'
 import { streamChat, type ChatSource, listChats, createChat, getChat, renameChat, deleteChat, type ChatSession } from '@/services/api'
 import { Button } from '@/components/ui/button'
@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { cn } from '@/lib/utils'
+import { DebugIssueDialog } from '@/components/DebugIssueDialog'
 
 type ChatMessage = {
   id: string
@@ -33,15 +34,26 @@ export function ChatPage() {
     [sessions, activeSessionID]
   )
 
-  useEffect(() => {
-    void initChats()
+  const openSession = useCallback(async (id: string) => {
+    setActiveSessionID(id)
+    setError(null)
+    try {
+      const data = await getChat(id)
+      const loadedMessages = Array.isArray(data.messages) ? data.messages : []
+      setMessages(
+        loadedMessages.map((m) => ({
+          id: `loaded-${m.id}`,
+          role: m.role,
+          content: m.content,
+          status: 'done',
+        }))
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось открыть чат')
+    }
   }, [])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView?.({ block: 'end' })
-  }, [messages, loading])
-
-  async function initChats() {
+  const initChats = useCallback(async () => {
     setBootLoading(true)
     setError(null)
     try {
@@ -61,26 +73,15 @@ export function ChatPage() {
     } finally {
       setBootLoading(false)
     }
-  }
+  }, [openSession])
 
-  async function openSession(id: string) {
-    setActiveSessionID(id)
-    setError(null)
-    try {
-      const data = await getChat(id)
-      const loadedMessages = Array.isArray(data.messages) ? data.messages : []
-      setMessages(
-        loadedMessages.map((m) => ({
-          id: `loaded-${m.id}`,
-          role: m.role,
-          content: m.content,
-          status: 'done',
-        }))
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось открыть чат')
-    }
-  }
+  useEffect(() => {
+    void initChats()
+  }, [initChats])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView?.({ block: 'end' })
+  }, [messages, loading])
 
   async function handleCreateChat() {
     try {
@@ -295,6 +296,18 @@ export function ChatPage() {
         )}
 
         {error && <p className="mb-2 text-sm text-destructive">{error}</p>}
+        <div className="mb-2">
+          <DebugIssueDialog
+            page="chat"
+            title={`Chat issue: ${activeSession?.title || activeSessionID || 'session'}`}
+            context={{
+              activeSessionID,
+              activeSessionTitle: activeSession?.title || '',
+              sourcePaths,
+              messages,
+            }}
+          />
+        </div>
 
         <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t pt-3">
           <textarea

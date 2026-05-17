@@ -43,6 +43,8 @@ func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 	mux.HandleFunc("PATCH /api/chats/{id}", h.PatchChatByID)
 	mux.HandleFunc("DELETE /api/chats/{id}", h.DeleteChatByID)
 	mux.HandleFunc("POST /api/chat", h.PostChat)
+	mux.HandleFunc("POST /api/debug/issues", h.PostDebugIssue)
+	mux.HandleFunc("PATCH /api/debug/issues/{id}", h.PatchDebugIssueStatus)
 	mux.HandleFunc("POST /api/index/rebuild", h.PostIndexRebuild)
 	mux.HandleFunc("GET /api/index/status", h.GetIndexStatus)
 	mux.HandleFunc("GET /api/node-normalization/{id}", h.GetNodeNormalizeStatus)

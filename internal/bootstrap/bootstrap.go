@@ -17,6 +17,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/chat"
 	sqlitechat "github.com/strider2038/knowledge-db/internal/chat/sqlite"
+	"github.com/strider2038/knowledge-db/internal/debugdata"
 	"github.com/strider2038/knowledge-db/internal/index"
 	sqliteindex "github.com/strider2038/knowledge-db/internal/index/sqlite"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
@@ -77,6 +78,8 @@ func Run() error {
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 	apiHandler.SetNodeNormalizer(api.NewCursorNodeNormalizer())
+	debugStore := debugdata.NewStore(cfg.DataPath)
+	apiHandler.SetDebugIssueStore(debugStore)
 	chatStore := buildChatStore(cfg)
 	if chatStore != nil {
 		defer func() { _ = chatStore.Close() }()
@@ -105,6 +108,13 @@ func Run() error {
 	} else {
 		slog.Info("mcp endpoint disabled: KB_MCP_API_KEY is empty")
 	}
+	if cfg.MCPDebugEnabled() {
+		debugMCPHandler := mcp.NewDebugHandler(cfg.MCPDebugAPIKey, debugStore)
+		mux.Handle("GET /api/mcp/debug", debugMCPHandler)
+		mux.Handle("POST /api/mcp/debug", debugMCPHandler)
+	} else {
+		slog.Info("debug mcp endpoint disabled: KB_MCP_DEBUG_API_KEY is empty")
+	}
 
 	baseHandler := api.Gzip(api.CORS(mux, cfg.HTTP.AllowedCORSOrigin))
 	if cfg.Auth.AuthEnabled() {
@@ -126,7 +136,14 @@ func Run() error {
 	m.Register(runnable.HTTPServer(srv).ShutdownTimeout(30 * time.Second))
 
 	if cfg.Telegram.Token != "" {
-		bot := telegram.NewBot(cfg.Telegram.Token, cfg.Telegram.OwnerID, ingester, cfg.WebPublicBaseURL)
+		bot := telegram.NewBot(
+			cfg.Telegram.Token,
+			cfg.Telegram.OwnerID,
+			ingester,
+			cfg.WebPublicBaseURL,
+			debugStore,
+			cfg.TelegramRawLogEnabled,
+		)
 		m.Register(bot)
 	}
 

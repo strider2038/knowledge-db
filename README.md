@@ -98,6 +98,8 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb serve
 | **KB_DATA_PATH**                                                 | Путь к корню базы знаний (обязателен для kb)                                                                                                                                             |
 | **KB_HTTP_ADDR**                                                 | Адрес HTTP-сервера (по умолчанию :8080)                                                                                                                                                         |
 | **KB_MCP_API_KEY**                                               | API-ключ для MCP endpoint `/api/mcp` (заголовок `Authorization: Bearer <key>`). Если пустой/не задан — MCP endpoint отключён                                                                     |
+| **KB_MCP_DEBUG_API_KEY**                                         | API-ключ для debug MCP endpoint `/api/mcp/debug` (заголовок `Authorization: Bearer <key>`). Если пустой/не задан — debug MCP endpoint отключён                                                   |
+| **KB_TELEGRAM_RAW_LOG_ENABLED**                                  | Включить запись сырых Telegram update payload в `.kb/telegram-raw/*.ndjson` и периодическую очистку файлов старше 14 дней                                                                       |
 | **KB_GIT_DISABLED**                                              | Отключить git (коммиты и sync)                                                                                                                                                                  |
 | **KB_LOGIN**, **KB_PASSWORD**                                    | Парольный режим: при задании **обоих** включается защита API и web UI (нельзя совмещать с Google OAuth)                                                                                         |
 | **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: идентификатор и секрет OAuth 2.0-клиента (тип **Web application**) в Google Cloud Console                                                                                         |
@@ -130,6 +132,12 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb serve
   - `Authorization: Bearer <KB_MCP_API_KEY>`
 - При отсутствии/невалидном токене сервер возвращает `401 Unauthorized`.
 - Если `KB_MCP_API_KEY` пустой или не задан, маршрут `/api/mcp` не обслуживается (MCP отключён).
+
+### Debug MCP endpoint
+
+- Debug MCP доступен по `POST/GET /api/mcp/debug`.
+- Для доступа обязателен Bearer-токен из `KB_MCP_DEBUG_API_KEY`.
+- Если `KB_MCP_DEBUG_API_KEY` пустой или не задан, debug endpoint не обслуживается.
 
 
 ## Режимы запуска

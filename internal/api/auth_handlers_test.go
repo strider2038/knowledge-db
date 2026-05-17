@@ -37,10 +37,11 @@ func setupAuthTestHandlerWithMCPKey(t *testing.T, authEnabled bool, mcpAPIKey st
 	h := api.NewHandlerWithUploads(dataPath, uploadsDir, &ingestion.StubIngester{}, nil)
 
 	cfg := &config.Config{
-		DataPath:   dataPath,
-		UploadsDir: uploadsDir,
-		HTTP:       config.HTTP{},
-		MCPAPIKey:  mcpAPIKey,
+		DataPath:       dataPath,
+		UploadsDir:     uploadsDir,
+		HTTP:           config.HTTP{},
+		MCPAPIKey:      mcpAPIKey,
+		MCPDebugAPIKey: mcpAPIKey,
 		Auth: config.Auth{
 			Login:      "",
 			Password:   "",
@@ -60,6 +61,11 @@ func setupAuthTestHandlerWithMCPKey(t *testing.T, authEnabled bool, mcpAPIKey st
 		mcpHandler := mcp.NewHandler(cfg.MCPAPIKey, nil, nil)
 		mux.Handle("GET /api/mcp", mcpHandler)
 		mux.Handle("POST /api/mcp", mcpHandler)
+	}
+	if cfg.MCPDebugEnabled() {
+		debugHandler := mcp.NewDebugHandler(cfg.MCPDebugAPIKey, nil)
+		mux.Handle("GET /api/mcp/debug", debugHandler)
+		mux.Handle("POST /api/mcp/debug", debugHandler)
 	}
 
 	handler := api.Gzip(api.CORS(mux, ""))
@@ -268,6 +274,20 @@ func TestMCP_WhenAPIKeyEmpty_ExpectRouteDisabled(t *testing.T) {
 	handler := setupAuthTestHandlerWithMCPKey(t, true, "   ")
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp", nil)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.NotEqual(t, http.StatusUnauthorized, rec.Code)
+	require.Empty(t, rec.Header().Get("WWW-Authenticate"))
+	require.Contains(t, rec.Body.String(), "<!doctype html>")
+}
+
+func TestDebugMCP_WhenAPIKeyEmpty_ExpectRouteDisabled(t *testing.T) {
+	t.Parallel()
+	handler := setupAuthTestHandlerWithMCPKey(t, true, "   ")
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "/api/mcp/debug", nil)
 	require.NoError(t, err)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

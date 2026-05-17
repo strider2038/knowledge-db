@@ -190,9 +190,11 @@ func ParseLogLevel(level string) slog.Level {
 
 // Config — конфигурация приложения.
 type Config struct {
-	DataPath   string `env:"KB_DATA_PATH" envDefault:""`
-	UploadsDir string `env:"KB_UPLOADS_DIR" envDefault:""`
-	MCPAPIKey  string `env:"KB_MCP_API_KEY" envDefault:""`
+	DataPath              string `env:"KB_DATA_PATH" envDefault:""`
+	UploadsDir            string `env:"KB_UPLOADS_DIR" envDefault:""`
+	MCPAPIKey             string `env:"KB_MCP_API_KEY" envDefault:""`
+	MCPDebugAPIKey        string `env:"KB_MCP_DEBUG_API_KEY" envDefault:""`
+	TelegramRawLogEnabled bool   `env:"KB_TELEGRAM_RAW_LOG_ENABLED" envDefault:"false"`
 	// WebPublicBaseURL — публичный базовый URL веб-интерфейса (без завершающего /), для ссылок в ответах Telegram.
 	WebPublicBaseURL string        `env:"KB_PUBLIC_WEB_BASE_URL" envDefault:""`
 	JinaAPIKey       string        `env:"JINA_API_KEY" envDefault:""`
@@ -214,6 +216,10 @@ type Config struct {
 // MCPEnabled returns true when MCP endpoint should be enabled.
 func (c Config) MCPEnabled() bool {
 	return strings.TrimSpace(c.MCPAPIKey) != ""
+}
+
+func (c Config) MCPDebugEnabled() bool {
+	return strings.TrimSpace(c.MCPDebugAPIKey) != ""
 }
 
 // Load загружает конфигурацию из .env и переменных окружения.

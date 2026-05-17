@@ -214,6 +214,7 @@ describe('NodePage', () => {
     expect(screen.queryByText('Метаданные')).not.toBeInTheDocument()
     expect(screen.getAllByText('load-balancing').length).toBeGreaterThan(0)
     expect(screen.getAllByText('scaling').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Сообщить о проблеме' })).toBeInTheDocument()
   })
 
   it('back button navigates to / when state is absent', async () => {

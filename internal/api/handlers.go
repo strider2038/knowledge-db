@@ -47,6 +47,7 @@ type Handler struct {
 	normalizeRunner   nodeNormalizer
 	dumpImagesMu      sync.RWMutex
 	dumpImagesOps     map[string]dumpImagesOperation
+	debugStore        debugIssueStore
 }
 
 // NewHandler создаёт Handler.
@@ -104,6 +105,10 @@ func (h *Handler) SetIndexComponents(store index.Store, worker *index.SyncWorker
 		chatURL, chatKey := cfg.ChatAPIConfig()
 		h.chatClient = newOpenAIChatClient(chatURL, chatKey)
 	}
+}
+
+func (h *Handler) SetDebugIssueStore(store debugIssueStore) {
+	h.debugStore = store
 }
 
 // PostArticleTranslate обрабатывает POST /api/articles/translate/{path...}.
