@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { createDebugIssue, getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, postGitSync, searchKnowledgeBase, streamChat } from './api'
+import { createDebugIssue, getKeywordSuggestions, getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, patchNodeMetadata, postGitSync, searchKnowledgeBase, streamChat } from './api'
 
 describe('getNodesWithParams', () => {
   let fetchMock: ReturnType<typeof vi.fn>
@@ -156,6 +156,102 @@ describe('ingestText', () => {
     })
     const { ingestText } = await import('./api')
     await expect(ingestText('text')).rejects.toThrow('ingestion not implemented')
+  })
+})
+
+describe('patchNodeMetadata', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sends PATCH payload with title and keywords', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ path: 'topic/node', annotation: '', content: '', metadata: {} }),
+    })
+
+    await patchNodeMetadata('topic/node', {
+      title: 'New title',
+      keywords: ['go', 'kubernetes'],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/nodes/topic/node'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ title: 'New title', keywords: ['go', 'kubernetes'] }),
+      })
+    )
+  })
+})
+
+describe('getKeywordSuggestions', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('collects keywords from all pages and sorts by frequency', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          nodes: [
+            {
+              path: 'a',
+              title: 'A',
+              type: 'note',
+              created: '',
+              source_url: '',
+              manual_processed: false,
+              keywords: ['go', '  kubernetes '],
+            },
+            {
+              path: 'b',
+              title: 'B',
+              type: 'note',
+              created: '',
+              source_url: '',
+              manual_processed: false,
+              keywords: ['go'],
+            },
+          ],
+          total: 3,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          nodes: [
+            {
+              path: 'c',
+              title: 'C',
+              type: 'note',
+              created: '',
+              source_url: '',
+              manual_processed: false,
+              keywords: ['ai'],
+            },
+          ],
+          total: 3,
+        }),
+      })
+
+    const result = await getKeywordSuggestions()
+    expect(result).toEqual(['go', 'ai', 'kubernetes'])
   })
 })
 

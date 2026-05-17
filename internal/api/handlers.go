@@ -285,7 +285,7 @@ func (h *Handler) RefreshDescription(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, node)
 }
 
-// PatchNode обрабатывает PATCH /api/nodes/{path...} — обновление поля manual_processed в frontmatter.
+// PatchNode обрабатывает PATCH /api/nodes/{path...} — частичное обновление frontmatter узла.
 func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -304,24 +304,55 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if len(raw) != 1 {
-		writeError(w, http.StatusBadRequest, "body must contain only manual_processed")
+	if len(raw) == 0 {
+		writeError(w, http.StatusBadRequest, "body must contain at least one field")
 
 		return
 	}
-	rawVal, ok := raw["manual_processed"]
-	if !ok {
-		writeError(w, http.StatusBadRequest, "body must contain only manual_processed")
+
+	params := kb.PatchNodeMetadataParams{}
+	for key := range raw {
+		switch key {
+		case "manual_processed", "title", "keywords":
+		default:
+			writeError(w, http.StatusBadRequest, "unsupported field: "+key)
+
+			return
+		}
+	}
+	if rawVal, ok := raw["manual_processed"]; ok {
+		var value bool
+		if err := json.Unmarshal(rawVal, &value); err != nil {
+			writeError(w, http.StatusBadRequest, "manual_processed must be a boolean")
+
+			return
+		}
+		params.ManualProcessed = &value
+	}
+	if rawVal, ok := raw["title"]; ok {
+		var value string
+		if err := json.Unmarshal(rawVal, &value); err != nil {
+			writeError(w, http.StatusBadRequest, "title must be a string")
+
+			return
+		}
+		params.Title = &value
+	}
+	if rawVal, ok := raw["keywords"]; ok {
+		var value []string
+		if err := json.Unmarshal(rawVal, &value); err != nil {
+			writeError(w, http.StatusBadRequest, "keywords must be an array of strings")
+
+			return
+		}
+		params.Keywords = &value
+	}
+	if params.ManualProcessed == nil && params.Title == nil && params.Keywords == nil {
+		writeError(w, http.StatusBadRequest, "body must contain at least one field")
 
 		return
 	}
-	var value bool
-	if err := json.Unmarshal(rawVal, &value); err != nil {
-		writeError(w, http.StatusBadRequest, "manual_processed must be a boolean")
-
-		return
-	}
-	if err := kb.PatchNodeManualProcessed(r.Context(), h.dataPath, path, value); err != nil {
+	if err := kb.PatchNodeMetadata(r.Context(), h.dataPath, path, params); err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
 			clog.Debug(r.Context(), "patch node: not found", "path", path)
 			writeError(w, http.StatusNotFound, "node not found")
@@ -339,6 +370,9 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 
 		return
+	}
+	if h.syncWorker != nil {
+		h.syncWorker.Send(index.SingleNodeEvent{Path: path})
 	}
 	writeJSON(w, node)
 }

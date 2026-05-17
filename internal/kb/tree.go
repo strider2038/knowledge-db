@@ -31,6 +31,11 @@ func PatchNodeManualProcessed(ctx context.Context, basePath, nodePath string, va
 	return NewStore(afero.NewOsFs()).PatchNodeManualProcessed(ctx, basePath, nodePath, value)
 }
 
+// PatchNodeMetadata обновляет metadata-фронтматтер узла.
+func PatchNodeMetadata(ctx context.Context, basePath, nodePath string, params PatchNodeMetadataParams) error {
+	return NewStore(afero.NewOsFs()).PatchNodeMetadata(ctx, basePath, nodePath, params)
+}
+
 // DeleteNode удаляет узел из базы знаний (файл .md и вложения).
 func DeleteNode(ctx context.Context, basePath, nodePath string) error {
 	return NewStore(afero.NewOsFs()).DeleteNode(ctx, basePath, nodePath)
