@@ -52,7 +52,7 @@ func Middleware(next http.Handler, store *session.Store) http.Handler {
 
 func isAllowlisted(path string) bool {
 	switch path {
-	case "/healthz", "/readyz", "/api/mcp":
+	case "/healthz", "/readyz", "/api/mcp", "/api/mcp/debug":
 		return true
 	}
 

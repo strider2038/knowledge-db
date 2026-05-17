@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, searchKnowledgeBase, streamChat } from './api'
+import { createDebugIssue, getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, searchKnowledgeBase, streamChat } from './api'
 
 describe('getNodesWithParams', () => {
   let fetchMock: ReturnType<typeof vi.fn>
@@ -304,5 +304,40 @@ describe('getNodeDumpImagesLogs', () => {
     const url = new URL(fetchMock.mock.calls[0][0])
     expect(url.pathname).toContain('/api/node-dump-images/op-1/logs')
     expect(url.searchParams.get('after')).toBe('42')
+  })
+})
+
+describe('createDebugIssue', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('posts payload to debug issues endpoint', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'issue-1', status: 'new' }),
+    })
+
+    const res = await createDebugIssue({
+      title: 'UI bug',
+      description: 'broken button',
+      page: 'node',
+      context: { path: 'a/b' },
+    })
+
+    expect(res).toEqual({ id: 'issue-1', status: 'new' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/debug/issues'),
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    )
   })
 })

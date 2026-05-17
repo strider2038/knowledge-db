@@ -16,6 +16,7 @@ import (
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
 
+	"github.com/strider2038/knowledge-db/internal/debugdata"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/kb"
 	"github.com/strider2038/knowledge-db/internal/pkg/urlutil"
@@ -59,15 +60,25 @@ type Bot struct {
 	ingester         ingestion.Ingester
 	webPublicBaseURL string
 	buffer           *forwardBuffer
+	rawLogger        rawLogger
+	rawLogEnabled    bool
+	lastRawCleanupAt time.Time
+}
+
+type rawLogger interface {
+	AppendTelegramRaw(ctx context.Context, record debugdata.TelegramRawRecord) error
+	CleanupTelegramRaw(ctx context.Context, now time.Time, ttl time.Duration) error
 }
 
 // NewBot создаёт бота. webPublicBaseURL — публичный базовый URL веб-интерфейса (KB_PUBLIC_WEB_BASE_URL), без завершающего /; пусто — без ссылок в подтверждении.
-func NewBot(token string, ownerID int64, ingester ingestion.Ingester, webPublicBaseURL string) *Bot {
+func NewBot(token string, ownerID int64, ingester ingestion.Ingester, webPublicBaseURL string, rawLogger rawLogger, rawLogEnabled bool) *Bot {
 	b := &Bot{
 		token:            token,
 		ownerID:          ownerID,
 		ingester:         ingester,
 		webPublicBaseURL: strings.TrimRight(strings.TrimSpace(webPublicBaseURL), "/"),
+		rawLogger:        rawLogger,
+		rawLogEnabled:    rawLogEnabled,
 	}
 	b.buffer = newForwardBuffer(b)
 
@@ -544,6 +555,7 @@ type update struct {
 }
 
 func (b *Bot) handleUpdate(ctx context.Context, u update) {
+	b.logRawUpdate(ctx, u)
 	if u.Message == nil {
 		return
 	}
@@ -625,6 +637,36 @@ func (b *Bot) handleUpdate(ctx context.Context, u update) {
 	b.buffer.addComment(ctx, chatID, text)
 }
 
+func (b *Bot) logRawUpdate(ctx context.Context, u update) {
+	if !b.rawLogEnabled || b.rawLogger == nil {
+		return
+	}
+	payload, err := json.Marshal(u)
+	if err != nil {
+		clog.Warn(ctx, "telegram bot: raw log marshal failed", "error", err)
+
+		return
+	}
+	if err := b.rawLogger.AppendTelegramRaw(ctx, debugdata.TelegramRawRecord{
+		ReceivedAt: time.Now().UTC(),
+		UpdateID:   u.UpdateID,
+		Payload:    payload,
+	}); err != nil {
+		clog.Warn(ctx, "telegram bot: raw log append failed", "error", err)
+
+		return
+	}
+
+	now := time.Now().UTC()
+	if now.Sub(b.lastRawCleanupAt) < time.Hour {
+		return
+	}
+	b.lastRawCleanupAt = now
+	if err := b.rawLogger.CleanupTelegramRaw(ctx, now, 14*24*time.Hour); err != nil {
+		clog.Warn(ctx, "telegram bot: raw cleanup failed", "error", err)
+	}
+}
+
 func webNodePageURL(base, nodePath string) string {
 	if base == "" || nodePath == "" {
 		return ""
@@ -635,7 +677,7 @@ func webNodePageURL(base, nodePath string) string {
 		if p == "" {
 			continue
 		}
-			escaped = append(escaped, url.PathEscape(p))
+		escaped = append(escaped, url.PathEscape(p))
 	}
 
 	pathPart := strings.Join(escaped, "/")

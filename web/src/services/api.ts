@@ -32,6 +32,26 @@ export interface Node {
   metadata: Record<string, unknown>;
 }
 
+export interface DebugIssuePayload {
+  title: string
+  description: string
+  page: 'node' | 'search' | 'chat'
+  context: Record<string, unknown>
+}
+
+export async function createDebugIssue(payload: DebugIssuePayload): Promise<{ id: string; status: string }> {
+  const res = await apiFetch(`${API_URL}/api/debug/issues`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as { error?: string }).error || 'Failed to create debug issue')
+  }
+  return res.json()
+}
+
 export interface NodeListItem {
   path: string;
   title: string;

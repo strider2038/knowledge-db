@@ -3,6 +3,8 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/strider2038/knowledge-db/internal/debugdata"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
@@ -26,6 +29,106 @@ func (m *mockIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) 
 
 func (m *mockIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
 	return m.node, m.err
+}
+
+type spyRawLogger struct {
+	appendCalls  atomic.Int32
+	cleanupCalls atomic.Int32
+}
+
+func (s *spyRawLogger) AppendTelegramRaw(_ context.Context, _ debugdata.TelegramRawRecord) error {
+	s.appendCalls.Add(1)
+
+	return nil
+}
+
+func (s *spyRawLogger) CleanupTelegramRaw(_ context.Context, _ time.Time, _ time.Duration) error {
+	s.cleanupCalls.Add(1)
+
+	return nil
+}
+
+func TestLogRawUpdate_WhenRawLogDisabled_ExpectNoRawLoggerCalls(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	spy := &spyRawLogger{}
+	bot := NewBot("token", 12345, &mockIngester{}, "", spy, false)
+	bot.logRawUpdate(ctx, update{
+		UpdateID: 99,
+		Message: &message{
+			MessageID: 1,
+			Text:      "hello",
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	})
+	require.Equal(t, int32(0), spy.appendCalls.Load())
+	require.Equal(t, int32(0), spy.cleanupCalls.Load())
+}
+
+func TestLogRawUpdate_WhenRawLogEnabledButLoggerNil_ExpectNoPanic(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	bot := NewBot("token", 12345, &mockIngester{}, "", nil, true)
+	assert.NotPanics(t, func() {
+		bot.logRawUpdate(ctx, update{
+			UpdateID: 1,
+			Message: &message{
+				MessageID: 1,
+				Text:      "hi",
+				From: &struct {
+					ID int64 `json:"id"`
+				}{ID: 12345},
+			},
+		})
+	})
+}
+
+func TestHandleUpdate_WhenRawLogDisabled_ExpectNoRawLoggerCalls(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	spy := &spyRawLogger{}
+	bot := NewBot("token", 12345, &mockIngester{
+		node: &kb.Node{Path: "p", Metadata: map[string]any{}},
+	}, "", spy, false)
+	bot.buffer.ttl = time.Millisecond
+	u := update{
+		UpdateID: 1,
+		Message: &message{
+			MessageID: 1,
+			Text:      "raw-test",
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	}
+	bot.handleUpdate(ctx, u)
+	require.Equal(t, int32(0), spy.appendCalls.Load())
+	require.Equal(t, int32(0), spy.cleanupCalls.Load())
+}
+
+func TestLogRawUpdate_WhenRawLogEnabled_ExpectTelegramRawNDJSON(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	store := debugdata.NewStore(root)
+	bot := NewBot("token", 12345, &mockIngester{}, "", store, true)
+	bot.logRawUpdate(ctx, update{
+		UpdateID: 42,
+		Message: &message{
+			MessageID: 1,
+			Text:      "logged",
+			From: &struct {
+				ID int64 `json:"id"`
+			}{ID: 12345},
+		},
+	})
+	dir := filepath.Join(root, ".kb", "telegram-raw")
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+	assert.Equal(t, ".ndjson", filepath.Ext(entries[0].Name()))
 }
 
 func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
@@ -44,7 +147,7 @@ func TestHandleUpdate_WhenAuthorizedUser_ExpectIngestCalled(t *testing.T) {
 		},
 	}
 
-	bot := NewBot("en", 12345, mock, "")
+	bot := NewBot("en", 12345, mock, "", nil, false)
 	bot.buffer.ttl = time.Millisecond
 
 	origIngester := bot.ingester
@@ -76,7 +179,7 @@ func TestHandleUpdate_WhenUnauthorizedUser_ExpectIngestNotCalled(t *testing.T) {
 		called: &ingestCalled,
 	}
 
-	bot := NewBot("token", 99999, mock, "")
+	bot := NewBot("token", 99999, mock, "", nil, false)
 
 	u := update{
 		UpdateID: 1,
@@ -102,7 +205,7 @@ func TestHandleUpdate_WhenNoOwnerIDSet_ExpectAllUsersAllowed(t *testing.T) {
 	bot := NewBot("token", 0, &callTrackingIngester{
 		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		called: &ingestCalled,
-	}, "")
+	}, "", nil, false)
 	bot.buffer.ttl = time.Millisecond
 
 	u := update{
@@ -138,7 +241,7 @@ func TestHandleUpdate_WhenCaptionOnly_ExpectIngestCalled(t *testing.T) {
 		inner:        mock,
 		called:       &ingestCalled,
 		capturedText: &capturedText,
-	}, "")
+	}, "", nil, false)
 	bot.buffer.ttl = time.Millisecond
 
 	u := update{
@@ -174,7 +277,7 @@ func TestHandleUpdate_WhenCommentThenForward_ExpectMergedIngest(t *testing.T) {
 		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
 		called:       &ingestCalled,
-	}, "")
+	}, "", nil, false)
 
 	// Шаг 1: пользователь пишет комментарий как обычный текст
 	commentUpdate := update{
@@ -230,7 +333,7 @@ func TestHandleUpdate_WhenReplyToForwardedMessage_ExpectMergedIngest(t *testing.
 		inner:        &mockIngester{node: &kb.Node{Path: "ai/notes/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
 		called:       &ingestCalled,
-	}, "")
+	}, "", nil, false)
 
 	forwarded := &message{
 		MessageID: 10,
@@ -271,7 +374,7 @@ func TestHandleUpdate_WhenForwardedWithoutReply_ExpectBufferedThenFlushed(t *tes
 	bot := NewBot("token", 12345, &callTrackingIngester{
 		inner:  &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		called: &ingestCalled,
-	}, "")
+	}, "", nil, false)
 
 	forwardOrigin := json.RawMessage(`{"type":"user"}`)
 	u := update{
@@ -305,7 +408,7 @@ func TestHandleUpdate_WhenForwardedWithoutReply_ExpectFlushedAfterTTL(t *testing
 		inner:        &mockIngester{node: &kb.Node{Path: "go/test", Metadata: map[string]any{}}},
 		capturedText: &capturedText,
 		called:       &ingestCalled,
-	}, "")
+	}, "", nil, false)
 	bot.buffer.ttl = time.Millisecond
 
 	forwardOrigin := json.RawMessage(`{"type":"user"}`)
@@ -349,7 +452,7 @@ func TestHandleUpdate_WhenReplyArrivesDuringBuffer_ExpectSingleIngest(t *testing
 			defer mu.Unlock()
 			capturedTexts = append(capturedTexts, text)
 		},
-	}, "")
+	}, "", nil, false)
 
 	forwardOrigin := json.RawMessage(`{"type":"user"}`)
 	fwd := update{
@@ -631,7 +734,7 @@ func TestHandleUpdate_WhenForwardedMessage_ExpectIngestWithSourceMetadata(t *tes
 			captureMu.Unlock()
 		},
 	}
-	bot := NewBot("token", 12345, mock, "")
+	bot := NewBot("token", 12345, mock, "", nil, false)
 	bot.buffer.ttl = time.Millisecond
 
 	u := update{

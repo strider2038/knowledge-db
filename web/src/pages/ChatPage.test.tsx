@@ -54,6 +54,7 @@ describe('ChatPage', () => {
   it('sends message with active session id', async () => {
     renderChatPage()
     await screen.findAllByText('Chat 1')
+    expect(screen.getByRole('button', { name: 'Сообщить о проблеме' })).toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('Спросите что-нибудь...'), {
       target: { value: 'sqlite' },
