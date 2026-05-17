@@ -113,8 +113,8 @@ func (h *Handler) startDumpImagesJob(ctx context.Context, path string) (Job, err
 	})
 	h.jobs.SetRunning(job.ID, "dump")
 	h.jobs.AppendLog(job.ID, "system", "dump images started")
-	go h.runNodeDumpImagesJob(context.WithoutCancel(ctx), job.ID, path)
 	updated, _ := h.jobs.Get(job.ID)
+	go h.runNodeDumpImagesJob(context.WithoutCancel(ctx), job.ID, path)
 
 	return updated, nil
 }

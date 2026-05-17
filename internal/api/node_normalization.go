@@ -348,8 +348,8 @@ func (h *Handler) startNormalizeJob(ctx context.Context, path string) (Job, erro
 	})
 	h.jobs.SetRunning(job.ID, "normalize")
 	h.jobs.AppendLog(job.ID, "system", "normalization started")
-	go h.runNodeNormalizationJob(context.WithoutCancel(ctx), job.ID, node)
 	updated, _ := h.jobs.Get(job.ID)
+	go h.runNodeNormalizationJob(context.WithoutCancel(ctx), job.ID, node)
 
 	return updated, nil
 }
