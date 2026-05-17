@@ -23,7 +23,12 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ui"
 )
 
-const nodeTypeArticle = "article"
+const (
+	nodeTypeArticle           = "article"
+	patchFieldManualProcessed = "manual_processed"
+	patchFieldTitle           = "title"
+	patchFieldKeywords        = "keywords"
+)
 
 // Handler — HTTP handlers для API.
 type Handler struct {
@@ -313,14 +318,14 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 	params := kb.PatchNodeMetadataParams{}
 	for key := range raw {
 		switch key {
-		case "manual_processed", "title", "keywords":
+		case patchFieldManualProcessed, patchFieldTitle, patchFieldKeywords:
 		default:
 			writeError(w, http.StatusBadRequest, "unsupported field: "+key)
 
 			return
 		}
 	}
-	if rawVal, ok := raw["manual_processed"]; ok {
+	if rawVal, ok := raw[patchFieldManualProcessed]; ok {
 		var value bool
 		if err := json.Unmarshal(rawVal, &value); err != nil {
 			writeError(w, http.StatusBadRequest, "manual_processed must be a boolean")
@@ -329,7 +334,7 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 		}
 		params.ManualProcessed = &value
 	}
-	if rawVal, ok := raw["title"]; ok {
+	if rawVal, ok := raw[patchFieldTitle]; ok {
 		var value string
 		if err := json.Unmarshal(rawVal, &value); err != nil {
 			writeError(w, http.StatusBadRequest, "title must be a string")
@@ -338,7 +343,7 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 		}
 		params.Title = &value
 	}
-	if rawVal, ok := raw["keywords"]; ok {
+	if rawVal, ok := raw[patchFieldKeywords]; ok {
 		var value []string
 		if err := json.Unmarshal(rawVal, &value); err != nil {
 			writeError(w, http.StatusBadRequest, "keywords must be an array of strings")
