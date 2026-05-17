@@ -529,6 +529,11 @@ export interface GitCommitResponse {
   committed: boolean;
 }
 
+export interface GitSyncResponse {
+  synced: boolean;
+  message: string;
+}
+
 export async function postGitCommit(message?: string): Promise<GitCommitResponse> {
   const body = message ? { message } : {};
   const res = await apiFetch(`${API_URL}/api/git/commit`, {
@@ -539,6 +544,19 @@ export async function postGitCommit(message?: string): Promise<GitCommitResponse
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to commit');
+  }
+  return res.json();
+}
+
+export async function postGitSync(): Promise<GitSyncResponse> {
+  const res = await apiFetch(`${API_URL}/api/git/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to sync');
   }
   return res.json();
 }

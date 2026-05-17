@@ -543,6 +543,34 @@ func (h *Handler) PostGitCommit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"message": message, "committed": true})
 }
 
+// PostGitSync обрабатывает POST /api/git/sync — fetch и merge с origin (как git pull по сути).
+func (h *Handler) PostGitSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+
+		return
+	}
+	if h.gitDisabled || h.gitCommitter == nil {
+		writeError(w, http.StatusServiceUnavailable, "git is disabled")
+
+		return
+	}
+	if err := h.gitCommitter.Sync(r.Context()); err != nil {
+		clog.Errorf(r.Context(), "git sync: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	if h.syncWorker != nil {
+		h.syncWorker.Send(index.GitSyncDiffEvent{})
+	}
+	clog.Info(r.Context(), "git sync: manual pull completed")
+	writeJSON(w, map[string]any{
+		"synced":  true,
+		"message": "синхронизировано с удалённым репозиторием",
+	})
+}
+
 // Ingest обрабатывает POST /api/ingest.
 func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

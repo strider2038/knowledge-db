@@ -31,6 +31,7 @@ func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 	mux.HandleFunc("POST /api/ingest", h.Ingest)
 	mux.HandleFunc("GET /api/git/status", h.GetGitStatus)
 	mux.HandleFunc("POST /api/git/commit", h.PostGitCommit)
+	mux.HandleFunc("POST /api/git/sync", h.PostGitSync)
 	mux.HandleFunc("POST /api/import/telegram", h.ImportTelegramCreate)
 	mux.HandleFunc("GET /api/import/telegram/session/{id}", h.ImportTelegramGetSession)
 	mux.HandleFunc("POST /api/import/telegram/session/{id}/accept", h.ImportTelegramAccept)

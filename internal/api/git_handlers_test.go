@@ -20,13 +20,18 @@ type mockGitCommitter struct {
 	statusErr error
 	commitErr error
 	syncErr   error
+	syncCalls int
 	diffStat  string
 	diffErr   error
 	lastMsg   string
 }
 
 func (m *mockGitCommitter) CommitNode(_ context.Context, _, _ string) error { return nil }
-func (m *mockGitCommitter) Sync(_ context.Context) error                    { return m.syncErr }
+func (m *mockGitCommitter) Sync(_ context.Context) error {
+	m.syncCalls++
+
+	return m.syncErr
+}
 func (m *mockGitCommitter) Status(_ context.Context) (*igit.GitStatus, error) {
 	return m.status, m.statusErr
 }
@@ -173,3 +178,49 @@ func TestPostGitCommit_WhenGitDisabled_Expect503(t *testing.T) {
 
 	resp.HasCode(503)
 }
+
+func TestPostGitSync_WhenOK_ExpectOK(t *testing.T) {
+	t.Parallel()
+	mc := &mockGitCommitter{}
+	mux := setupGitHandler(t, mc, false)
+
+	resp := apitest.HandlePOST(t, mux, "/api/git/sync",
+		strings.NewReader(`{}`),
+		apitest.WithJSONContentType())
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("synced").IsTrue()
+		json.Node("message").IsString()
+	})
+	require.Equal(t, 1, mc.syncCalls)
+}
+
+func TestPostGitSync_WhenSyncFails_Expect500(t *testing.T) {
+	t.Parallel()
+	mc := &mockGitCommitter{syncErr: assertGitSyncError{}}
+	mux := setupGitHandler(t, mc, false)
+
+	resp := apitest.HandlePOST(t, mux, "/api/git/sync",
+		strings.NewReader(`{}`),
+		apitest.WithJSONContentType())
+
+	resp.HasCode(http.StatusInternalServerError)
+	require.Equal(t, 1, mc.syncCalls)
+}
+
+func TestPostGitSync_WhenGitDisabled_Expect503(t *testing.T) {
+	t.Parallel()
+	mux := setupGitHandler(t, &mockGitCommitter{}, true)
+
+	resp := apitest.HandlePOST(t, mux, "/api/git/sync",
+		strings.NewReader(`{}`),
+		apitest.WithJSONContentType())
+
+	resp.HasCode(503)
+}
+
+// assertGitSyncError implements error for stable handler output.
+type assertGitSyncError struct{}
+
+func (assertGitSyncError) Error() string { return "sync failed" }

@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
-import { GitCommit, LogOut, Menu } from 'lucide-react'
+import { GitCommit, LogOut, Menu, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { logout, postGitCommit, getIndexStatus } from '@/services/api'
+import { logout, postGitCommit, postGitSync, getIndexStatus } from '@/services/api'
 import { useGitStatus } from '@/hooks/useGitStatus'
 import { toast } from '@/hooks/use-toast'
 import { ModeToggle } from './mode-toggle'
@@ -32,6 +32,7 @@ export function Navbar() {
   const { authenticated, authEnabled, refresh } = useAuth()
   const { status: gitStatus, refresh: refreshGit } = useGitStatus()
   const [committing, setCommitting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [chatAvailable, setChatAvailable] = useState(false)
   const [searchAvailable, setSearchAvailable] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -82,6 +83,26 @@ export function Navbar() {
       })
     } finally {
       setCommitting(false)
+    }
+  }
+
+  const handleRefresh = async () => {
+    setSyncing(true)
+    try {
+      const result = await postGitSync()
+      toast({
+        title: 'Обновлено',
+        description: result.message,
+      })
+      await refreshGit()
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Не удалось обновить',
+        description: err instanceof Error ? err.message : 'Ошибка запроса',
+      })
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -188,44 +209,74 @@ export function Navbar() {
       </div>
 
       <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
-        {showSaveArea && !saveActive && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex max-w-full">
-                <Button type="button" variant="outline" size="sm" className="h-9 px-2 sm:px-3" disabled>
-                  <GitCommit className="size-4 sm:mr-1.5 sm:hidden" aria-hidden />
-                  <span className="hidden sm:inline">{saveLabelIdle}</span>
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-balance">
-              {gitDisabled ? GIT_DISABLED_HINT : 'Нет незакоммиченных изменений в репозитории базы. Кнопка станет активной после правок файлов.'}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {showSaveArea && saveActive && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 gap-0 px-2 sm:gap-1.5 sm:px-3"
-                disabled={committing}
-                onClick={() => void handleSave()}
-                aria-label={saveLabelActive}
-              >
-                <GitCommit className="size-4 shrink-0 sm:mr-1.5" aria-hidden />
-                <span className="hidden sm:inline">{saveLabelActive}</span>
-                <span className="pl-1 text-xs tabular-nums sm:hidden" aria-hidden>
-                  {gitStatus?.changed_files ?? 0}
+        {showSaveArea && (
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex max-w-full">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-0 px-2 sm:gap-1.5 sm:px-3"
+                    disabled={gitDisabled || syncing || committing}
+                    onClick={() => void handleRefresh()}
+                    aria-label={syncing ? 'Обновление...' : 'Обновить'}
+                  >
+                    <RefreshCw
+                      className={cn('size-4 shrink-0 sm:mr-1.5', syncing && 'animate-spin')}
+                      aria-hidden
+                    />
+                    <span className="hidden sm:inline">{syncing ? 'Обновление...' : 'Обновить'}</span>
+                  </Button>
                 </span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs sm:hidden">
-              {saveLabelActive}
-            </TooltipContent>
-          </Tooltip>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs text-balance">
+                {gitDisabled
+                  ? GIT_DISABLED_HINT
+                  : 'Подтянуть изменения с удалённого репозитория (git fetch и merge с origin/main).'}
+              </TooltipContent>
+            </Tooltip>
+            {!saveActive && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex max-w-full">
+                    <Button type="button" variant="outline" size="sm" className="h-9 px-2 sm:px-3" disabled>
+                      <GitCommit className="size-4 sm:mr-1.5 sm:hidden" aria-hidden />
+                      <span className="hidden sm:inline">{saveLabelIdle}</span>
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-balance">
+                  {gitDisabled ? GIT_DISABLED_HINT : 'Нет незакоммиченных изменений в репозитории базы. Кнопка станет активной после правок файлов.'}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {saveActive && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-0 px-2 sm:gap-1.5 sm:px-3"
+                    disabled={committing || syncing}
+                    onClick={() => void handleSave()}
+                    aria-label={saveLabelActive}
+                  >
+                    <GitCommit className="size-4 shrink-0 sm:mr-1.5" aria-hidden />
+                    <span className="hidden sm:inline">{saveLabelActive}</span>
+                    <span className="pl-1 text-xs tabular-nums sm:hidden" aria-hidden>
+                      {gitStatus?.changed_files ?? 0}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs sm:hidden">
+                  {saveLabelActive}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         )}
         {authEnabled && authenticated && (
           <Tooltip>

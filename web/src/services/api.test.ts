@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { createDebugIssue, getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, searchKnowledgeBase, streamChat } from './api'
+import { createDebugIssue, getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, postGitSync, searchKnowledgeBase, streamChat } from './api'
 
 describe('getNodesWithParams', () => {
   let fetchMock: ReturnType<typeof vi.fn>
@@ -304,6 +304,36 @@ describe('getNodeDumpImagesLogs', () => {
     const url = new URL(fetchMock.mock.calls[0][0])
     expect(url.pathname).toContain('/api/node-dump-images/op-1/logs')
     expect(url.searchParams.get('after')).toBe('42')
+  })
+})
+
+describe('postGitSync', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('POSTs to /api/git/sync with empty JSON body', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ synced: true, message: 'ok' }),
+    })
+
+    const res = await postGitSync()
+    expect(res).toEqual({ synced: true, message: 'ok' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/git/sync'),
+      expect.objectContaining({
+        method: 'POST',
+        body: '{}',
+      }),
+    )
   })
 })
 

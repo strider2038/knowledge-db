@@ -324,6 +324,20 @@ API MUST предоставлять эндпоинт `POST /api/git/commit` дл
 - **WHEN** POST /api/git/commit и нет незакоммиченных изменений
 - **THEN** возвращается `{ "committed": false, "message": "no changes to commit" }`
 
+### Requirement: Git-sync API
+
+API MUST предоставлять эндпоинт `POST /api/git/sync` для ручной синхронизации рабочей копии базы с удалённым репозиторием: выполняется та же операция, что и у фонового git-sync (fetch и merge с `origin/main`, см. `GitCommitter.Sync`). Тело запроса MAY быть пустым JSON `{}`. При успехе ответ MUST содержать `synced: true` и поле `message` с кратким описанием для UI. При отключённом git — 503. При ошибке git (сеть, merge и т.п.) — 5xx с диагностическим текстом. Если на сервере включён embedding-индекс, после успешного sync система SHOULD поставить в очередь индексатору полную сверку с файловой системой (как при событии после pull).
+
+#### Сценарий: Успешный sync
+
+- **WHEN** POST /api/git/sync и git включён, операция fetch/merge завершается без ошибки
+- **THEN** возвращается 200 и JSON с `synced: true` и непустым `message`
+
+#### Сценарий: Git отключён
+
+- **WHEN** POST /api/git/sync и KB_GIT_DISABLED=true
+- **THEN** возвращается 503
+
 ### Requirement: API управления чат-сессиями
 
 Система SHALL предоставлять REST API для создания, получения списка, чтения, продолжения, удаления и переименования чат-сессий.
