@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDescription, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -33,11 +33,24 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, refreshNodeDe
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
     })),
-    refreshNodeDescription: vi.fn().mockResolvedValue({
-      ...mockNode,
-      annotation: 'Updated annotation',
-      content: 'Updated content',
-      metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
+    startJob: vi.fn().mockResolvedValue({
+      id: 'job-refresh-1',
+      type: 'refresh_description',
+      target: mockNode.path,
+      status: 'running',
+      stage: 'start',
+      started_at: new Date().toISOString(),
+      next_offset: 0,
+    }),
+    getJobStatus: vi.fn().mockResolvedValue({
+      id: 'job-refresh-1',
+      type: 'refresh_description',
+      target: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      next_offset: 0,
     }),
     startNodeNormalization: vi.fn().mockResolvedValue({
       id: 'op-1',
@@ -93,7 +106,8 @@ vi.mock('react-router-dom', async (importOriginal) => {
 vi.mock('../services/api', () => ({
   getNode,
   patchNodeManualProcessed,
-  refreshNodeDescription,
+  startJob,
+  getJobStatus,
   startNodeNormalization,
   getNodeNormalizationStatus,
   getNodeNormalizationLogs,
@@ -123,18 +137,37 @@ function renderNodePage(initialPath = '/node/programming/scaling/load-balancing'
 
 describe('NodePage', () => {
   beforeEach(() => {
+    vi.useRealTimers()
     mockNavigate.mockClear()
+    getNode.mockReset()
     getNode.mockResolvedValue(mockNode)
+    patchNodeManualProcessed.mockReset()
     patchNodeManualProcessed.mockImplementation(async (_path: string, v: boolean) => ({
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
     }))
-    refreshNodeDescription.mockResolvedValue({
-      ...mockNode,
-      annotation: 'Updated annotation',
-      content: 'Updated content',
-      metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
+    startJob.mockReset()
+    startJob.mockResolvedValue({
+      id: 'job-refresh-1',
+      type: 'refresh_description',
+      target: mockNode.path,
+      status: 'running',
+      stage: 'start',
+      started_at: new Date().toISOString(),
+      next_offset: 0,
     })
+    getJobStatus.mockReset()
+    getJobStatus.mockResolvedValue({
+      id: 'job-refresh-1',
+      type: 'refresh_description',
+      target: mockNode.path,
+      status: 'success',
+      stage: 'done',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      next_offset: 0,
+    })
+    startNodeNormalization.mockReset()
     startNodeNormalization.mockResolvedValue({
       id: 'op-1',
       node_path: mockNode.path,
@@ -144,6 +177,7 @@ describe('NodePage', () => {
       sync_done: false,
       normalize_ok: false,
     })
+    getNodeNormalizationStatus.mockReset()
     getNodeNormalizationStatus.mockResolvedValue({
       id: 'op-1',
       node_path: mockNode.path,
@@ -154,7 +188,9 @@ describe('NodePage', () => {
       sync_done: true,
       normalize_ok: true,
     })
+    getNodeNormalizationLogs.mockReset()
     getNodeNormalizationLogs.mockResolvedValue({ entries: [], next_offset: 0 })
+    startNodeDumpImages.mockReset()
     startNodeDumpImages.mockResolvedValue({
       id: 'dump-1',
       node_path: mockNode.path,
@@ -164,6 +200,7 @@ describe('NodePage', () => {
       sync_done: false,
       dump_ok: false,
     })
+    getNodeDumpImagesStatus.mockReset()
     getNodeDumpImagesStatus.mockResolvedValue({
       id: 'dump-1',
       node_path: mockNode.path,
@@ -174,6 +211,7 @@ describe('NodePage', () => {
       sync_done: true,
       dump_ok: true,
     })
+    getNodeDumpImagesLogs.mockReset()
     getNodeDumpImagesLogs.mockResolvedValue({ entries: [], next_offset: 0 })
   })
 
@@ -281,17 +319,36 @@ describe('NodePage', () => {
   })
 
   it('refreshes description from source and updates current node', async () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval').mockImplementation((cb: TimerHandler) => {
+      if (typeof cb === 'function') cb()
+      return 1 as unknown as ReturnType<typeof setInterval>
+    })
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => {})
+    getNode
+      .mockResolvedValueOnce(mockNode)
+      .mockResolvedValueOnce({
+        ...mockNode,
+        annotation: 'Updated annotation',
+        content: 'Updated content',
+        metadata: { ...mockNode.metadata, title: 'Updated title', type: 'note' },
+      })
+
     renderNodePage()
 
     const btn = await screen.findByRole('button', { name: 'Обновить описание из источника' })
     fireEvent.click(btn)
 
     await waitFor(() => {
-      expect(refreshNodeDescription).toHaveBeenCalledWith('programming/scaling/load-balancing')
+      expect(startJob).toHaveBeenCalledWith('refresh_description', 'programming/scaling/load-balancing')
+    })
+    await waitFor(() => {
+      expect(getJobStatus).toHaveBeenCalledWith('job-refresh-1')
     })
     expect(await screen.findByRole('heading', { level: 1, name: 'Updated title' })).toBeInTheDocument()
     expect(screen.getByText(/Updated annotation/)).toBeInTheDocument()
     expect(screen.getByText('Описание обновлено')).toBeInTheDocument()
+    setIntervalSpy.mockRestore()
+    clearIntervalSpy.mockRestore()
   })
 
   it('hides refresh description action when source_url is absent', async () => {
