@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
@@ -266,62 +264,13 @@ func buildNormalizationPrompt(node *kb.Node) string {
 // PostNodeNormalize обрабатывает POST /api/nodes/{path...}/normalize.
 func (h *Handler) PostNodeNormalize(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.PathValue("path"), "/normalize")
-	if path == "" {
-		writeError(w, http.StatusBadRequest, "path required")
-
-		return
-	}
-	if h.normalizeRunner == nil {
-		writeError(w, http.StatusServiceUnavailable, "node normalization unavailable")
-
-		return
-	}
-	if _, ok := h.normalizeRunner.(*cursorNodeNormalizer); ok {
-		if _, err := exec.LookPath("cursor-agent"); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "cursor-agent not found in PATH")
-
-			return
-		}
-	}
-
-	node, err := kb.GetNode(r.Context(), h.dataPath, path)
+	job, err := h.startNormalizeJob(r.Context(), path)
 	if err != nil {
-		if errors.Is(err, kb.ErrNodeNotFound) {
-			writeError(w, http.StatusNotFound, "node not found")
-
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, httpStatusFromJobErr(err), err.Error())
 
 		return
 	}
-
-	h.normalizeMu.RLock()
-	for _, op := range h.normalizeOps {
-		if op.NodePath == path && op.Status == "running" {
-			h.normalizeMu.RUnlock()
-			writeError(w, http.StatusConflict, "normalization already running for this node")
-
-			return
-		}
-	}
-	h.normalizeMu.RUnlock()
-
-	op := normalizeOperation{
-		ID:        uuid.NewString(),
-		NodePath:  path,
-		Status:    "running",
-		Stage:     "normalize",
-		StartedAt: time.Now().UTC(),
-	}
-	h.normalizeMu.Lock()
-	h.appendNormalizeLogLocked(&op, "system", "normalization started")
-	h.normalizeOps[op.ID] = op
-	h.normalizeMu.Unlock()
-
-	go h.runNodeNormalization(context.WithoutCancel(r.Context()), op, node)
-
-	writeJSON(w, op)
+	writeJSON(w, normalizeOperationFromJob(job))
 }
 
 // GetNodeNormalizeStatus обрабатывает GET /api/node-normalization/{id}.
@@ -332,15 +281,13 @@ func (h *Handler) GetNodeNormalizeStatus(w http.ResponseWriter, r *http.Request)
 
 		return
 	}
-	h.normalizeMu.RLock()
-	op, ok := h.normalizeOps[id]
-	h.normalizeMu.RUnlock()
+	job, ok := h.jobs.Get(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "operation not found")
 
 		return
 	}
-	writeJSON(w, op)
+	writeJSON(w, normalizeOperationFromJob(job))
 }
 
 // GetNodeNormalizeLogs обрабатывает GET /api/node-normalization/{id}/logs.
@@ -361,106 +308,120 @@ func (h *Handler) GetNodeNormalizeLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		after = v
 	}
-	h.normalizeMu.RLock()
-	op, ok := h.normalizeOps[id]
-	h.normalizeMu.RUnlock()
+	resp, ok := h.jobs.GetLogs(id, after)
 	if !ok {
 		writeError(w, http.StatusNotFound, "operation not found")
 
 		return
 	}
-	entries := make([]normalizeLogEntry, 0)
-	for _, e := range op.Logs {
-		if e.Offset > after {
-			entries = append(entries, e)
-		}
+	entries := make([]normalizeLogEntry, 0, len(resp.Entries))
+	for _, e := range resp.Entries {
+		entries = append(entries, normalizeLogEntry(e))
 	}
-	writeJSON(w, normalizeLogsResponse{Entries: entries, NextOffset: op.NextOffset})
+	writeJSON(w, normalizeLogsResponse{Entries: entries, NextOffset: resp.NextOffset})
 }
 
-func (h *Handler) runNodeNormalization(ctx context.Context, op normalizeOperation, node *kb.Node) {
+func (h *Handler) startNormalizeJob(ctx context.Context, path string) (Job, error) {
+	if path == "" {
+		return Job{}, errJobPathRequired
+	}
+	if h.normalizeRunner == nil {
+		return Job{}, errJobNormalizeUnavailable
+	}
+	if _, ok := h.normalizeRunner.(*cursorNodeNormalizer); ok {
+		if _, err := exec.LookPath("cursor-agent"); err != nil {
+			return Job{}, errJobCursorAgentUnavailable
+		}
+	}
+	if running, ok := h.jobs.FindRunning(jobTypeNormalize, path); ok {
+		return running, errJobNormalizeAlreadyRunning
+	}
+	node, err := kb.GetNode(ctx, h.dataPath, path)
+	if err != nil {
+		return Job{}, err
+	}
+
+	job := h.jobs.Create(jobTypeNormalize, path, "normalize", map[string]any{
+		"node_path":    path,
+		"normalize_ok": false,
+		"sync_done":    false,
+	})
+	h.jobs.SetRunning(job.ID, "normalize")
+	h.jobs.AppendLog(job.ID, "system", "normalization started")
+	go h.runNodeNormalizationJob(context.WithoutCancel(ctx), job.ID, node)
+	updated, _ := h.jobs.Get(job.ID)
+
+	return updated, nil
+}
+
+func (h *Handler) runNodeNormalizationJob(ctx context.Context, jobID string, node *kb.Node) {
 	if err := h.normalizeRunner.NormalizeNode(ctx, h.dataPath, node, func(stream, text string) {
-		h.appendNormalizeLog(op.ID, stream, text)
+		h.jobs.AppendLog(jobID, stream, text)
 	}); err != nil {
-		h.completeNormalizeOp(ctx, op.ID, "error", "normalize", err.Error(), false, false)
+		h.jobs.CompleteError(jobID, "normalize", err.Error(), map[string]any{
+			"normalize_ok": false,
+			"sync_done":    false,
+		})
+		h.jobs.AppendLog(jobID, "system", "normalization failed: "+err.Error())
 
 		return
 	}
 
-	h.updateNormalizeOpStage(op.ID, "sync")
+	h.jobs.SetStage(jobID, "sync")
 	if h.gitDisabled || h.gitCommitter == nil {
-		h.completeNormalizeOp(ctx, op.ID, "success", "done", "", true, false)
+		h.jobs.CompleteSuccess(jobID, "done", map[string]any{
+			"normalize_ok": true,
+			"sync_done":    false,
+		})
+		h.jobs.AppendLog(jobID, "system", "normalization completed")
 
 		return
 	}
 
 	if err := h.gitCommitter.Sync(ctx); err != nil {
-		h.completeNormalizeOp(ctx, op.ID, "error", "sync", fmt.Sprintf("sync error: %v", err), true, false)
+		errText := fmt.Sprintf("sync error: %v", err)
+		h.jobs.CompleteError(jobID, "sync", errText, map[string]any{
+			"normalize_ok": true,
+			"sync_done":    false,
+		})
+		h.jobs.AppendLog(jobID, "system", "normalization failed: "+errText)
 
 		return
 	}
 
-	h.completeNormalizeOp(ctx, op.ID, "success", "done", "", true, true)
-}
-
-func (h *Handler) appendNormalizeLog(id, stream, text string) {
-	h.normalizeMu.Lock()
-	defer h.normalizeMu.Unlock()
-	op, ok := h.normalizeOps[id]
-	if !ok {
-		return
-	}
-	h.appendNormalizeLogLocked(&op, stream, text)
-	h.normalizeOps[id] = op
-}
-
-func (h *Handler) appendNormalizeLogLocked(op *normalizeOperation, stream, text string) {
-	op.NextOffset++
-	op.Logs = append(op.Logs, normalizeLogEntry{
-		Offset:    op.NextOffset,
-		Stream:    stream,
-		Text:      text,
-		Timestamp: time.Now().UTC(),
+	h.jobs.CompleteSuccess(jobID, "done", map[string]any{
+		"normalize_ok": true,
+		"sync_done":    true,
 	})
-	if len(op.Logs) > 1000 {
-		op.Logs = append([]normalizeLogEntry(nil), op.Logs[len(op.Logs)-1000:]...)
-	}
+	h.jobs.AppendLog(jobID, "system", "normalization completed")
 }
 
-func (h *Handler) updateNormalizeOpStage(id, stage string) {
-	h.normalizeMu.Lock()
-	defer h.normalizeMu.Unlock()
-	op, ok := h.normalizeOps[id]
-	if !ok {
-		return
+func normalizeOperationFromJob(job Job) normalizeOperation {
+	out := normalizeOperation{
+		ID:         job.ID,
+		NodePath:   metadataString(job.Meta, "node_path", job.Target),
+		Status:     job.Status,
+		Stage:      job.Stage,
+		Error:      job.Error,
+		StartedAt:  job.StartedAt,
+		FinishedAt: job.FinishedAt,
+		NextOffset: job.NextOffset,
 	}
-	op.Stage = stage
-	h.normalizeOps[id] = op
+	out.SyncDone, _ = job.Meta["sync_done"].(bool)
+	out.NormalizeOK, _ = job.Meta["normalize_ok"].(bool)
+
+	return out
 }
 
-func (h *Handler) completeNormalizeOp(ctx context.Context, id, status, stage, errText string, normalizeOK, syncDone bool) {
-	h.normalizeMu.Lock()
-	defer h.normalizeMu.Unlock()
-	op, ok := h.normalizeOps[id]
-	if !ok {
-		return
+func metadataString(meta map[string]any, key, fallback string) string {
+	if meta == nil {
+		return fallback
 	}
-	op.Status = status
-	op.Stage = stage
-	op.Error = errText
-	op.NormalizeOK = normalizeOK
-	op.SyncDone = syncDone
-	finishedAt := time.Now().UTC()
-	op.FinishedAt = &finishedAt
-	if status == "success" {
-		h.appendNormalizeLogLocked(&op, "system", "normalization completed")
-	} else {
-		h.appendNormalizeLogLocked(&op, "system", "normalization failed: "+errText)
+	if v, ok := meta[key].(string); ok && strings.TrimSpace(v) != "" {
+		return v
 	}
-	h.normalizeOps[id] = op
-	if status == "error" {
-		clog.Error(ctx, "node normalize failed", "node_path", op.NodePath, "stage", stage, "error", errText)
-	}
+
+	return fallback
 }
 
 var _ nodeNormalizer = (*cursorNodeNormalizer)(nil)

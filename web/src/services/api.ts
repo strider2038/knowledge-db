@@ -207,7 +207,7 @@ export async function patchNodeManualProcessed(
   return res.json();
 }
 
-export async function refreshNodeDescription(path: string): Promise<Node> {
+export async function refreshNodeDescription(path: string): Promise<JobOperation> {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
   const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/refresh-description`, {
     method: 'POST',
@@ -248,6 +248,31 @@ export interface NodeNormalizationLogsResponse {
   next_offset: number;
 }
 
+export interface JobOperation {
+  id: string;
+  type: string;
+  target: string;
+  status: 'queued' | 'running' | 'success' | 'error';
+  stage: string;
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+  meta?: Record<string, unknown>;
+  next_offset: number;
+}
+
+export interface JobLogEntry {
+  offset: number;
+  stream: 'stdout' | 'stderr' | 'system';
+  text: string;
+  timestamp: string;
+}
+
+export interface JobLogsResponse {
+  entries: JobLogEntry[];
+  next_offset: number;
+}
+
 export interface NodeDumpImagesOperation {
   id: string;
   node_path: string;
@@ -275,6 +300,42 @@ export async function startNodeNormalization(path: string): Promise<NodeNormaliz
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to start normalization');
+  }
+  return res.json();
+}
+
+export async function startJob(
+  type: 'node_normalize' | 'node_dump_images' | 'refresh_description' | 'article_translate',
+  target: string,
+  options?: Record<string, unknown>,
+): Promise<JobOperation> {
+  const res = await apiFetch(`${API_URL}/api/jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, target, options: options ?? {} }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to start job');
+  }
+  return res.json();
+}
+
+export async function getJobStatus(id: string): Promise<JobOperation> {
+  const res = await apiFetch(`${API_URL}/api/jobs/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get job status');
+  }
+  return res.json();
+}
+
+export async function getJobLogs(id: string, after?: number): Promise<JobLogsResponse> {
+  const query = after !== undefined ? `?after=${encodeURIComponent(String(after))}` : '';
+  const res = await apiFetch(`${API_URL}/api/jobs/${encodeURIComponent(id)}/logs${query}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get job logs');
   }
   return res.json();
 }

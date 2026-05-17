@@ -76,6 +76,69 @@ Endpoint MUST обновлять описательные поля: `annotation`
 - **WHEN** refresh-description успешно сохраняет узел
 - **THEN** API инициирует переиндексацию этого узла тем же механизмом, который используется после изменения узлов
 
+### Requirement: Единый API фоновых jobs
+
+REST API ДОЛЖЕН (SHALL) предоставлять единый контракт для запуска и наблюдения долгих операций через:
+- `POST /api/jobs`
+- `GET /api/jobs/{id}`
+- `GET /api/jobs/{id}/logs?after=N`
+
+`POST /api/jobs` MUST принимать `{ "type": string, "target": string, "options"?: object }` и возвращать snapshot job с полями:
+`id`, `type`, `target`, `status` (`queued|running|success|error`), `stage`, `error`, `started_at`, `finished_at`, `meta`, `next_offset`.
+
+`GET /api/jobs/{id}/logs` MUST возвращать инкрементальные записи логов с полями:
+`offset`, `stream` (`system|stdout|stderr`), `text`, `timestamp`, а также `next_offset`.
+Параметр `after` MUST ограничивать выдачу только новыми записями после указанного offset.
+
+V1 MAY хранить jobs только в памяти процесса (без персистентности между рестартами).
+
+#### Сценарий: Запуск job через generic API
+
+- **WHEN** клиент вызывает `POST /api/jobs` с валидными `type` и `target`
+- **THEN** API создаёт job, возвращает snapshot со статусом `queued` или `running`
+
+#### Сценарий: Неизвестный тип job
+
+- **WHEN** клиент вызывает `POST /api/jobs` с неподдерживаемым `type`
+- **THEN** API возвращает `400 Bad Request` с диагностируемым сообщением
+
+#### Сценарий: Инкрементальные логи
+
+- **WHEN** клиент вызывает `GET /api/jobs/{id}/logs?after=N`
+- **THEN** API возвращает только записи с `offset > N` и корректный `next_offset`
+
+#### Сценарий: Переходы статуса
+
+- **WHEN** job выполняется в фоне
+- **THEN** `GET /api/jobs/{id}` отражает переходы `queued -> running -> success|error`, включая `stage` и `error` при сбое
+
+### Requirement: Job type для refresh-description
+
+REST API ДОЛЖЕН (SHALL) поддерживать запуск `refresh-description` в job-модели через `POST /api/jobs` с `type=refresh_description`.
+Выполнение job SHOULD публиковать системные этапы как минимум: `start`, `classify`, `fetch/meta`, `llm`, `retry_digest_if_needed`, `save`, `sync`, `done` (или `error`).
+
+Для профильных `link`-узлов с digest-профилями (`repository_profile`, `learning_resource_profile` и т.п.) job MUST предотвращать сохранение пустого markdown-тела: при пустом результате MUST выполнить один retry с усиленной инструкцией к LLM; при повторном пустом результате MUST завершиться `error` без мутации узла.
+
+#### Сценарий: Async refresh через jobs
+
+- **WHEN** клиент запускает `POST /api/jobs` с `type=refresh_description`
+- **THEN** обновление выполняется в фоне, прогресс доступен через `GET /api/jobs/{id}` и `GET /api/jobs/{id}/logs`
+
+#### Сценарий: Пустой digest для профильного link
+
+- **WHEN** refresh job получил пустой `content` для профильного `type=link`
+- **THEN** выполняется один retry; при повторной пустоте job завершается `error`, а файл узла не изменяется
+
+### Requirement: Legacy-совместимость async endpoint-ов
+
+Существующие endpoint-ы асинхронных операций (`node-normalization`, `node-dump-images`, текущий async-поток перевода и др.) ДОЛЖНЫ (SHALL) сохраняться как compatibility layer минимум на переходный релиз и работать поверх общего job-слоя.
+Legacy-ответы MUST сохранять прежнюю форму для старых клиентов.
+
+#### Сценарий: Старый клиент использует legacy endpoint
+
+- **WHEN** клиент вызывает legacy async endpoint
+- **THEN** операция выполняется через общий `JobManager`, а ответ возвращается в прежнем формате endpoint-а
+
 ### Requirement: Ingestion
 
 API MUST предоставлять эндпоинт POST /api/ingest для приёма текста и передачи в ingestion pipeline. Тело запроса MUST поддерживать поля: text (обязательно), source_url (опционально), source_author (опционально), type_hint (опционально). Допустимые значения type_hint: "auto", "article", "link", "note". При отсутствии или неизвестном значении type_hint MUST трактовать как "auto".
@@ -529,4 +592,3 @@ REST API SHALL предоставлять endpoint `GET /api/node-dump-images/{i
 #### Сценарий: Ошибка sync после dump images
 - **WHEN** `dump images` завершился успешно, но `sync` завершился ошибкой
 - **THEN** API возвращает ошибку шага sync с деталями
-

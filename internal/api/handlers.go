@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
@@ -42,21 +41,17 @@ type Handler struct {
 	embeddingConfig   config.Embedding
 	chatClient        chatClient
 	chatStore         chat.Store
-	normalizeMu       sync.RWMutex
-	normalizeOps      map[string]normalizeOperation
 	normalizeRunner   nodeNormalizer
-	dumpImagesMu      sync.RWMutex
-	dumpImagesOps     map[string]dumpImagesOperation
+	jobs              *JobManager
 	debugStore        debugIssueStore
 }
 
 // NewHandler создаёт Handler.
 func NewHandler(dataPath string, ingester ingestion.Ingester) *Handler {
 	return &Handler{
-		dataPath:      dataPath,
-		ingester:      ingester,
-		normalizeOps:  map[string]normalizeOperation{},
-		dumpImagesOps: map[string]dumpImagesOperation{},
+		dataPath: dataPath,
+		ingester: ingester,
+		jobs:     NewJobManager(),
 	}
 }
 
@@ -76,8 +71,7 @@ func NewHandlerWithUploads(dataPath, uploadsDir string, ingester ingestion.Inges
 		ingester:         ingester,
 		sessionStore:     store,
 		translationQueue: translationQueue,
-		normalizeOps:     map[string]normalizeOperation{},
-		dumpImagesOps:    map[string]dumpImagesOperation{},
+		jobs:             NewJobManager(),
 	}
 }
 

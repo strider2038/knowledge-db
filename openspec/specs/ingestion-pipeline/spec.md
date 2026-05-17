@@ -318,6 +318,16 @@ LLM-оркестратор ДОЛЖЕН (SHALL) генерировать markdow
 
 Инструмент `create_node` ДОЛЖЕН (SHALL) поддерживать поля `source_kind` и `content_profile` наряду с существующими метаданными. При создании узла pipeline MUST записывать эти поля во frontmatter, если они были определены классификацией или LLM-оркестратором. Поле `content` MUST содержать digest body для профильных link/note узлов.
 
+### Requirement: Refresh-description как наблюдаемая async job-операция
+
+Пайплайн обновления описания узла из источника ДОЛЖЕН (SHALL) быть совместим с job-моделью выполнения и публиковать наблюдаемые этапы выполнения в операционный лог (`start`, `classify`, `fetch/meta`, `llm`, `retry_digest_if_needed`, `save`, `sync`, `done|error`).
+Это требование относится к orchestration-поведению refresh и не изменяет схему frontmatter.
+
+#### Сценарий: Пошаговый refresh с логами
+
+- **WHEN** запускается refresh-description для узла с `source_url`
+- **THEN** pipeline публикует этапы выполнения и диагностические сообщения в job-лог до финального статуса
+
 #### Scenario: create_node для repository profile
 
 - **WHEN** LLM вызывает `create_node` для репозитория

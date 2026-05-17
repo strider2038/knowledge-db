@@ -6,11 +6,11 @@ import {
   type NodeNormalizationLogEntry,
   getNodeDumpImagesLogs,
   getNodeDumpImagesStatus,
+  getJobStatus,
+  getNode,
   getNodeNormalizationLogs,
   getNodeNormalizationStatus,
-  getTranslateStatus,
-  postTranslate,
-  refreshNodeDescription,
+  startJob,
   startNodeDumpImages,
   startNodeNormalization,
 } from '@/services/api'
@@ -179,24 +179,14 @@ export function NodeActionBar({
   const handleTranslate = () => {
     setTranslating(true)
     setTranslateError(null)
-    postTranslate(basePath)
-      .then((status) => {
-        if (status.status === 'done') {
-          setTranslating(false)
-          onNodeChanged(node)
-          return
-        }
-        if (status.status === 'failed') {
-          setTranslating(false)
-          setTranslateError(status.error ?? 'Ошибка перевода')
-          return
-        }
+    startJob('article_translate', basePath)
+      .then((job) => {
         const interval = setInterval(() => {
-          getTranslateStatus(basePath).then((s) => {
-            if (s.status === 'done' || s.status === 'failed') {
+          getJobStatus(job.id).then((s) => {
+            if (s.status === 'success' || s.status === 'error') {
               clearInterval(interval)
               setTranslating(false)
-              if (s.status === 'failed') setTranslateError(s.error ?? 'Ошибка перевода')
+              if (s.status === 'error') setTranslateError(s.error ?? 'Ошибка перевода')
               onNodeChanged(node)
             }
           }).catch(() => {
@@ -204,7 +194,7 @@ export function NodeActionBar({
             setTranslating(false)
             setTranslateError('Ошибка при проверке статуса')
           })
-        }, 2500)
+        }, 1500)
       })
       .catch((err) => {
         setTranslating(false)
@@ -220,11 +210,27 @@ export function NodeActionBar({
     setRefreshing(true)
     setRefreshError(null)
     setRefreshSuccess(false)
-    refreshNodeDescription(basePath)
-      .then((updated) => {
-        setRefreshing(false)
-        setRefreshSuccess(true)
-        onNodeChanged(updated)
+    startJob('refresh_description', basePath)
+      .then((job) => {
+        const interval = setInterval(() => {
+          getJobStatus(job.id).then(async (s) => {
+            if (s.status === 'success' || s.status === 'error') {
+              clearInterval(interval)
+              setRefreshing(false)
+              if (s.status === 'error') {
+                setRefreshError(s.error ?? 'Не удалось обновить описание')
+                return
+              }
+              setRefreshSuccess(true)
+              const updated = await getNode(basePath)
+              onNodeChanged(updated)
+            }
+          }).catch(() => {
+            clearInterval(interval)
+            setRefreshing(false)
+            setRefreshError('Не удалось обновить описание')
+          })
+        }, 1500)
       })
       .catch((err) => {
         setRefreshing(false)
@@ -247,6 +253,11 @@ export function NodeActionBar({
         setNormalizeOpID(op.id)
         setNormalizeStage(op.stage)
       })
+      .catch(async () => {
+        const job = await startJob('node_normalize', basePath)
+        setNormalizeOpID(job.id)
+        setNormalizeStage(job.stage)
+      })
       .catch((err) => {
         setNormalizing(false)
         setNormalizeError(err instanceof Error ? err.message : 'Не удалось запустить нормализацию')
@@ -265,6 +276,11 @@ export function NodeActionBar({
       .then((op) => {
         setDumpImagesOpID(op.id)
         setDumpImagesStage(op.stage)
+      })
+      .catch(async () => {
+        const job = await startJob('node_dump_images', basePath)
+        setDumpImagesOpID(job.id)
+        setDumpImagesStage(job.stage)
       })
       .catch((err) => {
         setDumpingImages(false)
