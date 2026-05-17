@@ -57,7 +57,9 @@ describe('MarkdownContent', () => {
         }
       />
     )
-    expect(screen.getByRole('table')).toBeInTheDocument()
+    const table = screen.getByRole('table')
+    expect(table).toBeInTheDocument()
+    expect(table.parentElement).toHaveClass('overflow-x-auto')
     expect(screen.getByText('A')).toBeInTheDocument()
     expect(screen.getByText('1')).toBeInTheDocument()
   })

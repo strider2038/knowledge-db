@@ -10,6 +10,7 @@ import {
   rehypeHighlightAliases,
   rehypeHighlightLanguages,
 } from '@/lib/highlight'
+import { cn } from '@/lib/utils'
 
 interface MarkdownContentProps {
   content: string
@@ -82,6 +83,13 @@ export function MarkdownContent({ content, nodePath }: MarkdownContentProps) {
           }
           return <CodeBlock preProps={props}>{children}</CodeBlock>
         },
+        table: ({ children, className, ...props }) => (
+          <div className="my-4 w-full min-w-0 overflow-x-auto overscroll-x-contain">
+            <table {...props} className={cn(className)}>
+              {children}
+            </table>
+          </div>
+        ),
       }}
     >
       {content}
