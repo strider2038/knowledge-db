@@ -97,7 +97,7 @@ func (m *JobManager) Create(jobType, target, stage string, meta map[string]any) 
 	m.jobs[job.ID] = job
 	m.mu.Unlock()
 
-	return job
+	return cloneJob(job)
 }
 
 func (m *JobManager) Get(id string) (Job, bool) {
@@ -105,7 +105,7 @@ func (m *JobManager) Get(id string) (Job, bool) {
 	defer m.mu.RUnlock()
 	job, ok := m.jobs[id]
 
-	return job, ok
+	return cloneJob(job), ok
 }
 
 func (m *JobManager) SetRunning(id, stage string) {
@@ -210,7 +210,7 @@ func (m *JobManager) FindRunning(jobType, target string) (Job, bool) {
 	defer m.mu.RUnlock()
 	for _, job := range m.jobs {
 		if job.Type == jobType && job.Target == target && (job.Status == jobStatusQueued || job.Status == jobStatusRunning) {
-			return job, true
+			return cloneJob(job), true
 		}
 	}
 
@@ -225,6 +225,15 @@ func cloneMeta(meta map[string]any) map[string]any {
 	maps.Copy(out, meta)
 
 	return out
+}
+
+func cloneJob(job Job) Job {
+	job.Meta = cloneMeta(job.Meta)
+	if job.Logs != nil {
+		job.Logs = append([]JobLogEntry(nil), job.Logs...)
+	}
+
+	return job
 }
 
 func mergeMeta(dst map[string]any, patch map[string]any) {
