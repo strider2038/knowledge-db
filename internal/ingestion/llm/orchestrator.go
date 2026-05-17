@@ -220,6 +220,7 @@ func (o *OpenAIOrchestrator) processResponse(
 			if err != nil {
 				return nil, nil, errors.Errorf("parse create_node args: %w", err)
 			}
+			applyStrictTypeHint(input, result)
 			clog.Info(ctx, "ingest: llm create_node",
 				"theme", result.ThemePath,
 				"slug", result.Slug,
@@ -247,6 +248,7 @@ func (o *OpenAIOrchestrator) processResponse(
 			applyProfileFallback(input, result)
 
 			applyCanonicalSourceURL(ctx, input, result)
+			o.ensureArticleContent(ctx, result, fetchCache)
 
 			return result, nil, nil
 
@@ -493,6 +495,67 @@ func applyProfileFallback(input ProcessInput, result *ProcessResult) {
 	}
 	if result.Type == "" && input.RecommendedType != "" {
 		result.Type = input.RecommendedType
+	}
+}
+
+func applyStrictTypeHint(input ProcessInput, result *ProcessResult) {
+	if result == nil {
+		return
+	}
+
+	switch input.TypeHint {
+	case "article", "link", "note":
+		result.Type = input.TypeHint
+	}
+}
+
+func (o *OpenAIOrchestrator) ensureArticleContent(
+	ctx context.Context,
+	result *ProcessResult,
+	fetchCache map[string]*fetcher.FetchResult,
+) {
+	if result == nil || result.Type != "article" {
+		return
+	}
+	if strings.TrimSpace(result.SourceURL) == "" {
+		return
+	}
+
+	if cached, ok := fetchCache[result.SourceURL]; ok && cached != nil && cached.Content != "" {
+		clog.Info(ctx, "ingest: article content restored from fetch cache", "url", result.SourceURL, "content_len", len(cached.Content))
+		result.Content = cached.Content
+		if result.Title == "" && cached.Title != "" {
+			result.Title = cached.Title
+		}
+		if result.SourceAuthor == "" && cached.Author != "" {
+			result.SourceAuthor = cached.Author
+		}
+		if result.SourceDate == nil && cached.SourceDate != nil {
+			result.SourceDate = cached.SourceDate
+		}
+
+		return
+	}
+
+	if o.contentFetcher == nil {
+		return
+	}
+
+	fetched, err := o.contentFetcher.Fetch(ctx, result.SourceURL)
+	if err != nil || fetched == nil || fetched.Content == "" {
+		return
+	}
+
+	clog.Info(ctx, "ingest: article content fetched directly", "url", result.SourceURL, "content_len", len(fetched.Content))
+	result.Content = fetched.Content
+	if result.Title == "" && fetched.Title != "" {
+		result.Title = fetched.Title
+	}
+	if result.SourceAuthor == "" && fetched.Author != "" {
+		result.SourceAuthor = fetched.Author
+	}
+	if result.SourceDate == nil && fetched.SourceDate != nil {
+		result.SourceDate = fetched.SourceDate
 	}
 }
 

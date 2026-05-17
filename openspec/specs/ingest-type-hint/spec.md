@@ -6,7 +6,7 @@
 
 ### Requirement: Подсказка типа в IngestRequest
 
-Система ДОЛЖНА (SHALL) поддерживать опциональное поле TypeHint в IngestRequest. Допустимые значения: пустая строка или "auto" (автоопределение), "article", "link", "note". При TypeHint = "" или "auto" оркестратор MUST определять тип по содержимому текста. При TypeHint = "article", "link" или "note" оркестратор MUST использовать указанный тип при вызове create_node.
+Система ДОЛЖНА (SHALL) поддерживать опциональное поле TypeHint в IngestRequest. Допустимые значения: пустая строка или "auto" (автоопределение), "article", "link", "note". При TypeHint = "" или "auto" оркестратор MUST определять тип по содержимому текста. При TypeHint = "article", "link" или "note" оркестратор MUST использовать указанный тип при вызове create_node и MUST применять его к итоговому результату ingestion, даже если LLM вернул другой `type` в аргументах create_node.
 
 #### Сценарий: TypeHint = auto
 
@@ -27,6 +27,11 @@
 
 - **WHEN** IngestText вызывается с TypeHint = "note"
 - **THEN** оркестратор создаёт узел с type=note
+
+#### Сценарий: Конфликт TypeHint и ответа LLM
+
+- **WHEN** IngestText вызывается с TypeHint = "article", а LLM в create_node возвращает `type=note`
+- **THEN** итоговый узел создаётся с `type=article`
 
 ### Requirement: Передача type_hint через API
 

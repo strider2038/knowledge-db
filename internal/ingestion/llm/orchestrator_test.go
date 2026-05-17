@@ -30,9 +30,11 @@ func (m *mockResponsesClient) New(_ context.Context, params responses.ResponseNe
 type mockContentFetcher struct {
 	result *fetcher.FetchResult
 	err    error
+	calls  int
 }
 
 func (m *mockContentFetcher) Fetch(_ context.Context, _ string) (*fetcher.FetchResult, error) {
+	m.calls++
 	return m.result, m.err
 }
 
@@ -336,6 +338,110 @@ func TestOpenAIOrchestrator_WhenTypeHint_ExpectInInstructions(t *testing.T) {
 	require.Len(t, mockClient.calls, 1)
 	instructions := mockClient.calls[0].Instructions.Or("")
 	assert.Contains(t, instructions, "Пользователь указал тип: article")
+}
+
+func TestOpenAIOrchestrator_WhenTypeHintConflictsWithLLM_ExpectTypeHintWins(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"openai"},
+		"annotation": "A note",
+		"theme_path": "ai/tools",
+		"slug":       "harness-engineering",
+		"type":       "note",
+		"content":    "Summary",
+		"title":      "Harness Engineering",
+		"source_url": "https://openai.com/ru-RU/index/harness-engineering/",
+	}
+	mockClient := &mockResponsesClient{
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
+	}
+	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", nil)
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text:     "https://openai.com/ru-RU/index/harness-engineering/",
+		TypeHint: "article",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "article", result.Type)
+}
+
+func TestOpenAIOrchestrator_WhenForcedArticleAndEmptyContent_ExpectFetchBySourceURL(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"openai"},
+		"annotation": "A note",
+		"theme_path": "ai/tools",
+		"slug":       "harness-engineering",
+		"type":       "note",
+		"content":    "",
+		"title":      "Harness Engineering",
+		"source_url": "https://openai.com/ru-RU/index/harness-engineering/",
+	}
+	mockClient := &mockResponsesClient{
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
+	}
+	mockFetcher := &mockContentFetcher{
+		result: &fetcher.FetchResult{
+			Title:   "Harness Engineering",
+			Content: "# Harness Engineering\n\nFull article text.",
+			Author:  "OpenAI",
+		},
+	}
+	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", mockFetcher)
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text:     "https://openai.com/ru-RU/index/harness-engineering/",
+		TypeHint: "article",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "article", result.Type)
+	assert.Equal(t, "# Harness Engineering\n\nFull article text.", result.Content)
+	assert.Equal(t, "OpenAI", result.SourceAuthor)
+	assert.Equal(t, 1, mockFetcher.calls)
+}
+
+func TestOpenAIOrchestrator_WhenForcedArticleAndTruncatedPreview_ExpectFetchBySourceURL(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"openai"},
+		"annotation": "A note",
+		"theme_path": "ai/tools",
+		"slug":       "harness-engineering",
+		"type":       "note",
+		"content":    "Преамбула\n\n[...контент усечён для анализа аннотации...]",
+		"title":      "Harness Engineering",
+		"source_url": "https://openai.com/ru-RU/index/harness-engineering/",
+	}
+	mockClient := &mockResponsesClient{
+		response: buildCreateNodeResponse(t, "resp1", "call1", createNodeArgs),
+	}
+	mockFetcher := &mockContentFetcher{
+		result: &fetcher.FetchResult{
+			Title:   "Harness Engineering",
+			Content: "# Harness Engineering\n\nFull article text.",
+			Author:  "OpenAI",
+		},
+	}
+	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", mockFetcher)
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text:     "https://openai.com/ru-RU/index/harness-engineering/",
+		TypeHint: "article",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "article", result.Type)
+	assert.Equal(t, "# Harness Engineering\n\nFull article text.", result.Content)
+	assert.Equal(t, "OpenAI", result.SourceAuthor)
+	assert.Equal(t, 1, mockFetcher.calls)
 }
 
 func TestOpenAIOrchestrator_WhenEmptySourceURLAndWrongLLMSourceURL_ExpectURLFromMessageText(t *testing.T) {
