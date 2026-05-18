@@ -194,17 +194,63 @@ export async function patchNodeManualProcessed(
   path: string,
   manual_processed: boolean
 ): Promise<Node> {
+  return patchNodeMetadata(path, { manual_processed });
+}
+
+export interface PatchNodeMetadataRequest {
+  manual_processed?: boolean;
+  title?: string;
+  keywords?: string[];
+}
+
+export async function patchNodeMetadata(
+  path: string,
+  payload: PatchNodeMetadataRequest
+): Promise<Node> {
   const encoded = path.split('/').map(encodeURIComponent).join('/');
   const res = await apiFetch(`${API_URL}/api/nodes/${encoded}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ manual_processed }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to update node');
   }
   return res.json();
+}
+
+export async function getKeywordSuggestions(): Promise<string[]> {
+  const keywordCounts = new Map<string, number>();
+  const pageSize = 200;
+  let offset = 0;
+  let total = 0;
+  do {
+    const response = await getNodesWithParams({
+      path: '',
+      recursive: true,
+      limit: pageSize,
+      offset,
+    });
+    total = response.total;
+    for (const node of response.nodes) {
+      const keywords = node.keywords ?? [];
+      for (const rawKeyword of keywords) {
+        const keyword = rawKeyword.trim();
+        if (!keyword) continue;
+        keywordCounts.set(keyword, (keywordCounts.get(keyword) ?? 0) + 1);
+      }
+    }
+    offset += response.nodes.length;
+    if (response.nodes.length === 0) break;
+  } while (offset < total);
+
+  return Array.from(keywordCounts.entries())
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([keyword]) => keyword);
 }
 
 export async function refreshNodeDescription(path: string): Promise<JobOperation> {

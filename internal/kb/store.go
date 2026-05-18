@@ -447,27 +447,55 @@ func (s *Store) GetNode(ctx context.Context, basePath, nodePath string) (*Node, 
 // PatchNodeManualProcessed устанавливает или снимает флаг manual_processed в frontmatter узла.
 // При value=false ключ удаляется из YAML (семантика «не отмечено» как при отсутствии ключа).
 func (s *Store) PatchNodeManualProcessed(ctx context.Context, basePath, nodePath string, value bool) error {
+	return s.PatchNodeMetadata(ctx, basePath, nodePath, PatchNodeMetadataParams{
+		ManualProcessed: &value,
+	})
+}
+
+type PatchNodeMetadataParams struct {
+	ManualProcessed *bool
+	Title           *string
+	Keywords        *[]string
+}
+
+func (s *Store) PatchNodeMetadata(ctx context.Context, basePath, nodePath string, params PatchNodeMetadataParams) error {
 	_ = ctx
+	if params.ManualProcessed == nil && params.Title == nil && params.Keywords == nil {
+		return errors.Errorf("patch node metadata: no fields to update")
+	}
 	basePath = filepath.Clean(basePath)
 	stemPath := filepath.Join(basePath, filepath.FromSlash(nodePath))
 	if !s.isNode(stemPath) {
-		return errors.Errorf("patch node manual_processed: %w", ErrNodeNotFound)
+		return errors.Errorf("patch node metadata: %w", ErrNodeNotFound)
 	}
 	matter, _, content, err := parseNodeFile(s.fs, stemPath)
 	if err != nil {
-		return errors.Errorf("patch node manual_processed: %w", err)
+		return errors.Errorf("patch node metadata: %w", err)
 	}
-	if value {
-		matter["manual_processed"] = true
-	} else {
-		delete(matter, "manual_processed")
+	if params.ManualProcessed != nil {
+		if *params.ManualProcessed {
+			matter["manual_processed"] = true
+		} else {
+			delete(matter, "manual_processed")
+		}
+	}
+	if params.Title != nil {
+		title := strings.TrimSpace(*params.Title)
+		if title == "" {
+			delete(matter, "title")
+		} else {
+			matter["title"] = title
+		}
+	}
+	if params.Keywords != nil {
+		matter["keywords"] = sanitizeKeywords(*params.Keywords)
 	}
 	if msg := ValidateFrontmatter(matter); msg != "" {
-		return errors.Errorf("patch node manual_processed: invalid frontmatter: %s", msg)
+		return errors.Errorf("patch node metadata: invalid frontmatter: %s", msg)
 	}
 	fmBytes, err := FormatFrontmatter(matter)
 	if err != nil {
-		return errors.Errorf("patch node manual_processed: %w", err)
+		return errors.Errorf("patch node metadata: %w", err)
 	}
 	var fileContent []byte
 	fileContent = append(fileContent, fmBytes...)
@@ -479,15 +507,37 @@ func (s *Store) PatchNodeManualProcessed(ctx context.Context, basePath, nodePath
 	mdPath := stemPath + ".md"
 	tmpPath := mdPath + ".tmp"
 	if err := afero.WriteFile(s.fs, tmpPath, fileContent, 0o644); err != nil {
-		return errors.Errorf("patch node manual_processed: write: %w", err)
+		return errors.Errorf("patch node metadata: write: %w", err)
 	}
 	if err := s.fs.Rename(tmpPath, mdPath); err != nil {
 		_ = s.fs.Remove(tmpPath)
 
-		return errors.Errorf("patch node manual_processed: rename: %w", err)
+		return errors.Errorf("patch node metadata: rename: %w", err)
 	}
 
 	return nil
+}
+
+func sanitizeKeywords(keywords []string) []string {
+	if len(keywords) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(keywords))
+	out := make([]string, 0, len(keywords))
+	for _, keyword := range keywords {
+		normalized := strings.TrimSpace(keyword)
+		if normalized == "" {
+			continue
+		}
+		key := strings.ToLower(normalized)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, normalized)
+	}
+
+	return out
 }
 
 // DeleteNode удаляет узел: файл .md и директорию вложений (если существует).

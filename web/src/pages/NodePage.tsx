@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import {
-  getNode,
-  patchNodeManualProcessed,
-  type Node,
-} from '../services/api'
+import { getNode, patchNodeManualProcessed, type Node } from '../services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { ContentOutline, ContentOutlineFloating } from '@/components/ContentOutline'
 import { extractHeadings } from '@/lib/headings'
-import { ExternalLink, FileQuestion } from 'lucide-react'
+import { dedupeKeywords } from '@/lib/keywords'
 import {
   Tooltip,
   TooltipContent,
@@ -19,8 +15,11 @@ import {
 import { cn } from '@/lib/utils'
 import { getTypeBadgeColor } from '@/lib/type-styles'
 import { NodeActionBar } from '@/components/NodeActionBar'
+import { TitleEditDialog } from '@/components/TitleEditDialog'
+import { KeywordsEditDialog } from '@/components/KeywordsEditDialog'
 import { useGitStatus } from '@/hooks/useGitStatus'
 import { DebugIssueDialog } from '@/components/DebugIssueDialog'
+import { ExternalLink, FileQuestion, Pencil } from 'lucide-react'
 
 function formatDate(value: unknown): string {
   if (!value || typeof value !== 'string') return '—'
@@ -58,6 +57,8 @@ export function NodePage() {
   const [error, setError] = useState<string | null>(null)
   const [manualSaving, setManualSaving] = useState(false)
   const [manualError, setManualError] = useState<string | null>(null)
+  const [titleDialogOpen, setTitleDialogOpen] = useState(false)
+  const [keywordsDialogOpen, setKeywordsDialogOpen] = useState(false)
 
   const basePath = path.includes('.') ? path.replace(/\.[a-z]{2}$/, '') : path
   const isTranslation = path !== basePath
@@ -183,7 +184,7 @@ export function NodePage() {
   const sourceUrl = meta.source_url as string | undefined
   const sourceAuthor = meta.source_author as string | undefined
   const sourceDate = meta.source_date as string | undefined
-  const keywords = (meta.keywords as string[] | undefined) ?? []
+  const keywords = dedupeKeywords((meta.keywords as string[] | undefined) ?? [])
   const hasSourceAttribution = !!(sourceUrl || sourceAuthor || sourceDate)
 
   const segments = basePath.split('/').filter(Boolean)
@@ -248,7 +249,19 @@ export function NodePage() {
         />
       )}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-        <h1 className="text-2xl font-semibold leading-snug">{title}</h1>
+        <div className="flex items-start gap-1.5">
+          <h1 className="text-2xl font-semibold leading-snug">{title}</h1>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => setTitleDialogOpen(true)}
+            aria-label="Редактировать заголовок"
+          >
+            <Pencil className="size-4" />
+          </Button>
+        </div>
         <DebugIssueDialog
           page="node"
           title={`Node issue: ${node.path}`}
@@ -277,21 +290,31 @@ export function NodePage() {
         <span>{created}</span>
         <span>·</span>
         <span>{updated}</span>
-        {keywords.length > 0 && (
-          <>
-            <span>·</span>
-            <span className="flex flex-wrap gap-1">
-              {keywords.map((kw) => (
-                <span
-                  key={kw}
-                  className="rounded-full bg-muted px-2 py-0.5 text-xs"
-                >
-                  {kw}
-                </span>
-              ))}
-            </span>
-          </>
-        )}
+        <span>·</span>
+        <span className="flex flex-wrap items-center gap-1">
+          {keywords.length > 0 ? (
+            keywords.map((kw) => (
+              <span
+                key={kw}
+                className="rounded-full bg-muted px-2 py-0.5 text-xs"
+              >
+                {kw}
+              </span>
+            ))
+          ) : (
+            <span className="text-xs italic">без ключевых слов</span>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            onClick={() => setKeywordsDialogOpen(true)}
+            aria-label="Редактировать ключевые слова"
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        </span>
       </div>
       {hasSourceAttribution && (
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
@@ -363,6 +386,20 @@ export function NodePage() {
           </CardContent>
         </Card>
       )}
+      <TitleEditDialog
+        open={titleDialogOpen}
+        onOpenChange={setTitleDialogOpen}
+        nodePath={node.path}
+        initialTitle={(meta.title as string | undefined) ?? ''}
+        onSaved={handleNodeUpdated}
+      />
+      <KeywordsEditDialog
+        open={keywordsDialogOpen}
+        onOpenChange={setKeywordsDialogOpen}
+        nodePath={node.path}
+        initialKeywords={keywords}
+        onSaved={handleNodeUpdated}
+      />
         </div>
       </div>
     </div>

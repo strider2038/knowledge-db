@@ -355,12 +355,56 @@ func TestPatchNode_WhenClearsManualProcessed_ExpectOK(t *testing.T) {
 	})
 }
 
+func TestPatchNode_WhenUpdatesTitle_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"title":"Go from zero to hero"}`),
+		apitest.WithJSONContentType())
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata", "title").IsString().EqualTo("Go from zero to hero")
+	})
+}
+
+func TestPatchNode_WhenClearsTitle_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"title":"   "}`),
+		apitest.WithJSONContentType())
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata", "title").DoesNotExist()
+	})
+}
+
+func TestPatchNode_WhenUpdatesKeywords_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/scaling/node2",
+		strings.NewReader(`{"keywords":["load","ingress","ingress"," "]}`),
+		apitest.WithJSONContentType())
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata", "keywords").IsArray().WithLength(2)
+		json.Node("metadata", "keywords", 0).IsString().EqualTo("load")
+		json.Node("metadata", "keywords", 1).IsString().EqualTo("ingress")
+	})
+}
+
 func TestPatchNode_WhenExtraField_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
 	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"manual_processed":true,"title":"x"}`),
+		strings.NewReader(`{"manual_processed":true,"unexpected":"x"}`),
 		apitest.WithJSONContentType())
 
 	resp.IsBadRequest()
@@ -372,6 +416,17 @@ func TestPatchNode_WhenManualProcessedNotBool_Expect400(t *testing.T) {
 
 	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
 		strings.NewReader(`{"manual_processed":"yes"}`),
+		apitest.WithJSONContentType())
+
+	resp.IsBadRequest()
+}
+
+func TestPatchNode_WhenKeywordsContainNonString_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"keywords":["ok",1]}`),
 		apitest.WithJSONContentType())
 
 	resp.IsBadRequest()

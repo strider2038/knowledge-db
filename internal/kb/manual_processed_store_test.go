@@ -33,3 +33,81 @@ Hello`,
 	require.NoError(t, err)
 	assert.False(t, kb.ManualProcessedEffective(node.Metadata))
 }
+
+func TestPatchNodeMetadata_WhenUpdatesTitleAndKeywords_ExpectSanitizedValues(t *testing.T) {
+	t.Parallel()
+
+	store, base := seedMemFS(map[string]string{
+		"topic/node.md": `---
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+title: "Old title"
+---
+
+Hello`,
+	})
+	ctx := context.Background()
+	keywords := []string{"go", "  kubernetes ", "go", ""}
+	title := "  New title  "
+
+	require.NoError(t, store.PatchNodeMetadata(ctx, base, "topic/node", kb.PatchNodeMetadataParams{
+		Title:    &title,
+		Keywords: &keywords,
+	}))
+
+	node, err := store.GetNode(ctx, base, "topic/node")
+	require.NoError(t, err)
+	assert.Equal(t, "New title", node.Metadata["title"])
+	assert.Equal(t, []any{"go", "kubernetes"}, node.Metadata["keywords"])
+}
+
+func TestPatchNodeMetadata_WhenClearsTitle_ExpectFieldRemoved(t *testing.T) {
+	t.Parallel()
+
+	store, base := seedMemFS(map[string]string{
+		"topic/node.md": `---
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+title: "Old title"
+---
+
+Hello`,
+	})
+	ctx := context.Background()
+	title := "   "
+
+	require.NoError(t, store.PatchNodeMetadata(ctx, base, "topic/node", kb.PatchNodeMetadataParams{
+		Title: &title,
+	}))
+
+	node, err := store.GetNode(ctx, base, "topic/node")
+	require.NoError(t, err)
+	_, hasTitle := node.Metadata["title"]
+	assert.False(t, hasTitle)
+}
+
+func TestPatchNodeMetadata_WhenKeywordsDifferByCase_ExpectDeduped(t *testing.T) {
+	t.Parallel()
+
+	store, base := seedMemFS(map[string]string{
+		"topic/node.md": `---
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+---
+
+Hello`,
+	})
+	ctx := context.Background()
+	keywords := []string{"Go", "go", "K8s"}
+
+	require.NoError(t, store.PatchNodeMetadata(ctx, base, "topic/node", kb.PatchNodeMetadataParams{
+		Keywords: &keywords,
+	}))
+
+	node, err := store.GetNode(ctx, base, "topic/node")
+	require.NoError(t, err)
+	assert.Equal(t, []any{"Go", "K8s"}, node.Metadata["keywords"])
+}

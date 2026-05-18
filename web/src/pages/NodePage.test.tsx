@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMetadata, getKeywordSuggestions, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -33,6 +33,15 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, startJob, get
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
     })),
+    patchNodeMetadata: vi.fn().mockImplementation(async (_path: string, payload: { title?: string; keywords?: string[] }) => ({
+      ...mockNode,
+      metadata: {
+        ...mockNode.metadata,
+        ...(payload.title !== undefined ? { title: payload.title } : {}),
+        ...(payload.keywords !== undefined ? { keywords: payload.keywords } : {}),
+      },
+    })),
+    getKeywordSuggestions: vi.fn().mockResolvedValue(['go', 'kubernetes', 'scaling']),
     startJob: vi.fn().mockResolvedValue({
       id: 'job-refresh-1',
       type: 'refresh_description',
@@ -106,6 +115,8 @@ vi.mock('react-router-dom', async (importOriginal) => {
 vi.mock('../services/api', () => ({
   getNode,
   patchNodeManualProcessed,
+  patchNodeMetadata,
+  getKeywordSuggestions,
   startJob,
   getJobStatus,
   startNodeNormalization,
@@ -146,6 +157,17 @@ describe('NodePage', () => {
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
     }))
+    patchNodeMetadata.mockReset()
+    patchNodeMetadata.mockImplementation(async (_path: string, payload: { title?: string; keywords?: string[] }) => ({
+      ...mockNode,
+      metadata: {
+        ...mockNode.metadata,
+        ...(payload.title !== undefined ? { title: payload.title } : {}),
+        ...(payload.keywords !== undefined ? { keywords: payload.keywords } : {}),
+      },
+    }))
+    getKeywordSuggestions.mockReset()
+    getKeywordSuggestions.mockResolvedValue(['go', 'kubernetes', 'scaling'])
     startJob.mockReset()
     startJob.mockResolvedValue({
       id: 'job-refresh-1',
@@ -253,6 +275,95 @@ describe('NodePage', () => {
     expect(screen.getAllByText('load-balancing').length).toBeGreaterThan(0)
     expect(screen.getAllByText('scaling').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Сообщить о проблеме' })).toBeInTheDocument()
+  })
+
+  it('edits title via dialog', async () => {
+    renderNodePage()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать заголовок' }))
+    fireEvent.change(screen.getByPlaceholderText('Введите заголовок'), {
+      target: { value: 'New Load Balancing Title' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => {
+      expect(patchNodeMetadata).toHaveBeenCalledWith(
+        'programming/scaling/load-balancing',
+        { title: 'New Load Balancing Title' }
+      )
+    })
+    expect(await screen.findByRole('heading', { level: 1, name: 'New Load Balancing Title' })).toBeInTheDocument()
+  })
+
+  it('keeps title dialog open and shows error when save fails', async () => {
+    patchNodeMetadata.mockRejectedValueOnce(new Error('Server error'))
+    renderNodePage()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать заголовок' }))
+    fireEvent.change(screen.getByPlaceholderText('Введите заголовок'), {
+      target: { value: 'Broken title' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(await screen.findByText('Server error')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Редактировать заголовок' })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Введите заголовок')).toHaveValue('Broken title')
+  })
+
+  it('shows empty keywords state with edit button', async () => {
+    getNode.mockResolvedValue({
+      ...mockNode,
+      metadata: {
+        ...mockNode.metadata,
+        keywords: undefined,
+      },
+    })
+    renderNodePage()
+
+    expect(await screen.findByText('без ключевых слов')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Редактировать ключевые слова' })).toBeInTheDocument()
+  })
+
+  it('removes last keyword chip on Backspace in empty input', async () => {
+    renderNodePage()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать ключевые слова' }))
+    const input = await screen.findByPlaceholderText('Новый тег')
+    fireEvent.keyDown(input, { key: 'Backspace' })
+
+    expect(screen.queryByLabelText('Удалить тег scaling')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Удалить тег load-balancing')).toBeInTheDocument()
+  })
+
+  it('edits keywords via dialog with suggestions', async () => {
+    patchNodeMetadata.mockImplementation(async (_path: string, payload: { keywords?: string[] }) => ({
+      ...mockNode,
+      metadata: {
+        ...mockNode.metadata,
+        keywords: payload.keywords ?? mockNode.metadata.keywords,
+      },
+    }))
+    renderNodePage()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать ключевые слова' }))
+    await waitFor(() => {
+      expect(getKeywordSuggestions).toHaveBeenCalled()
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'kubernetes' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => {
+      expect(patchNodeMetadata).toHaveBeenCalledWith(
+        'programming/scaling/load-balancing',
+        { keywords: ['load-balancing', 'scaling', 'kubernetes'] }
+      )
+    })
+    expect(await screen.findByText('kubernetes')).toBeInTheDocument()
   })
 
   it('back button navigates to / when state is absent', async () => {
