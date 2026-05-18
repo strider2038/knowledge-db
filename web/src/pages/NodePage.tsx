@@ -532,6 +532,9 @@ export function NodePage() {
             placeholder="Введите заголовок"
             className="h-10 rounded-md border border-input bg-background px-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
+          {metadataError ? (
+            <p className="text-sm text-destructive">{metadataError}</p>
+          ) : null}
           <DialogFooter>
             <Button
               variant="outline"

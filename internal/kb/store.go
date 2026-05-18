@@ -529,10 +529,11 @@ func sanitizeKeywords(keywords []string) []string {
 		if normalized == "" {
 			continue
 		}
-		if _, exists := seen[normalized]; exists {
+		key := strings.ToLower(normalized)
+		if _, exists := seen[key]; exists {
 			continue
 		}
-		seen[normalized] = struct{}{}
+		seen[key] = struct{}{}
 		out = append(out, normalized)
 	}
 

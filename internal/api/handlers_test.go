@@ -369,6 +369,20 @@ func TestPatchNode_WhenUpdatesTitle_ExpectOK(t *testing.T) {
 	})
 }
 
+func TestPatchNode_WhenClearsTitle_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"title":"   "}`),
+		apitest.WithJSONContentType())
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata").NotContainsKey("title")
+	})
+}
+
 func TestPatchNode_WhenUpdatesKeywords_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)

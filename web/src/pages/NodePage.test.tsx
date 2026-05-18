@@ -296,6 +296,48 @@ describe('NodePage', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'New Load Balancing Title' })).toBeInTheDocument()
   })
 
+  it('keeps title dialog open and shows error when save fails', async () => {
+    patchNodeMetadata.mockRejectedValueOnce(new Error('Server error'))
+    renderNodePage()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать заголовок' }))
+    fireEvent.change(screen.getByPlaceholderText('Введите заголовок'), {
+      target: { value: 'Broken title' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(await screen.findByText('Server error')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Редактировать заголовок' })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Введите заголовок')).toHaveValue('Broken title')
+  })
+
+  it('shows empty keywords state with edit button', async () => {
+    getNode.mockResolvedValue({
+      ...mockNode,
+      metadata: {
+        ...mockNode.metadata,
+        keywords: undefined,
+      },
+    })
+    renderNodePage()
+
+    expect(await screen.findByText('без ключевых слов')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Редактировать ключевые слова' })).toBeInTheDocument()
+  })
+
+  it('removes last keyword chip on Backspace in empty input', async () => {
+    renderNodePage()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Load Balancing' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать ключевые слова' }))
+    const input = await screen.findByPlaceholderText('Новый тег')
+    fireEvent.keyDown(input, { key: 'Backspace' })
+
+    expect(screen.queryByLabelText('Удалить тег scaling')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Удалить тег load-balancing')).toBeInTheDocument()
+  })
+
   it('edits keywords via dialog with suggestions', async () => {
     patchNodeMetadata.mockImplementation(async (_path: string, payload: { keywords?: string[] }) => ({
       ...mockNode,
