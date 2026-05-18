@@ -379,7 +379,7 @@ func TestPatchNode_WhenClearsTitle_ExpectOK(t *testing.T) {
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
-		json.Node("metadata").NotContainsKey("title")
+		json.Node("metadata", "title").DoesNotExist()
 	})
 }
 

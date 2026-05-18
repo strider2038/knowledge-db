@@ -1,36 +1,25 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import {
-  getKeywordSuggestions,
-  getNode,
-  patchNodeMetadata,
-  patchNodeManualProcessed,
-  type Node,
-} from '../services/api'
+import { getNode, patchNodeManualProcessed, type Node } from '../services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import { ContentOutline, ContentOutlineFloating } from '@/components/ContentOutline'
 import { extractHeadings } from '@/lib/headings'
+import { dedupeKeywords } from '@/lib/keywords'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { getTypeBadgeColor } from '@/lib/type-styles'
 import { NodeActionBar } from '@/components/NodeActionBar'
+import { TitleEditDialog } from '@/components/TitleEditDialog'
+import { KeywordsEditDialog } from '@/components/KeywordsEditDialog'
 import { useGitStatus } from '@/hooks/useGitStatus'
 import { DebugIssueDialog } from '@/components/DebugIssueDialog'
-import { ExternalLink, FileQuestion, Pencil, Plus, X } from 'lucide-react'
+import { ExternalLink, FileQuestion, Pencil } from 'lucide-react'
 
 function formatDate(value: unknown): string {
   if (!value || typeof value !== 'string') return '—'
@@ -57,24 +46,6 @@ const markdownContentClass = cn(
   '[&_p:has(>img:only-child)_img]:block [&_p:has(>img:only-child)_img]:my-4'
 )
 
-function normalizeKeyword(value: string): string {
-  return value.trim()
-}
-
-function dedupeKeywords(values: string[]): string[] {
-  const seen = new Set<string>()
-  const result: string[] = []
-  for (const value of values) {
-    const normalized = normalizeKeyword(value)
-    if (!normalized) continue
-    const key = normalized.toLocaleLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(normalized)
-  }
-  return result
-}
-
 export function NodePage() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -86,15 +57,8 @@ export function NodePage() {
   const [error, setError] = useState<string | null>(null)
   const [manualSaving, setManualSaving] = useState(false)
   const [manualError, setManualError] = useState<string | null>(null)
-  const [metadataSaving, setMetadataSaving] = useState(false)
-  const [metadataError, setMetadataError] = useState<string | null>(null)
   const [titleDialogOpen, setTitleDialogOpen] = useState(false)
   const [keywordsDialogOpen, setKeywordsDialogOpen] = useState(false)
-  const [titleDraft, setTitleDraft] = useState('')
-  const [keywordInput, setKeywordInput] = useState('')
-  const [keywordsDraft, setKeywordsDraft] = useState<string[]>([])
-  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([])
-  const [loadingKeywordSuggestions, setLoadingKeywordSuggestions] = useState(false)
 
   const basePath = path.includes('.') ? path.replace(/\.[a-z]{2}$/, '') : path
   const isTranslation = path !== basePath
@@ -117,38 +81,6 @@ export function NodePage() {
       .catch(() => setOriginalNode(null))
   }, [isTranslation, basePath])
 
-  useEffect(() => {
-    if (!node) return
-    const nextTitle = (node.metadata?.title as string | undefined) ?? ''
-    const nextKeywords = dedupeKeywords((node.metadata?.keywords as string[] | undefined) ?? [])
-    setTitleDraft(nextTitle)
-    setKeywordsDraft(nextKeywords)
-  }, [node])
-
-  useEffect(() => {
-    if (!keywordsDialogOpen) return
-    if (keywordSuggestions.length > 0) return
-    let active = true
-    setLoadingKeywordSuggestions(true)
-    getKeywordSuggestions()
-      .then((keywords) => {
-        if (!active) return
-        setKeywordSuggestions(keywords)
-      })
-      .catch(() => {
-        if (!active) return
-        setKeywordSuggestions([])
-      })
-      .finally(() => {
-        if (active) {
-          setLoadingKeywordSuggestions(false)
-        }
-      })
-    return () => {
-      active = false
-    }
-  }, [keywordsDialogOpen, keywordSuggestions.length])
-
   const handleManualProcessedToggle = async (next: boolean) => {
     if (!node) return
     setManualError(null)
@@ -169,59 +101,6 @@ export function NodePage() {
       setManualSaving(false)
     }
   }
-
-  const saveNodeMetadata = async (payload: { title?: string; keywords?: string[] }) => {
-    if (!node) return false
-    setMetadataSaving(true)
-    setMetadataError(null)
-    try {
-      const updated = await patchNodeMetadata(node.path, payload)
-      setNode(updated)
-      await refreshGitStatus().catch(() => {})
-      return true
-    } catch (err) {
-      setMetadataError(err instanceof Error ? err.message : 'Не удалось сохранить')
-      return false
-    } finally {
-      setMetadataSaving(false)
-    }
-  }
-
-  const handleTitleSave = async () => {
-    const saved = await saveNodeMetadata({ title: titleDraft })
-    if (saved) {
-      setTitleDialogOpen(false)
-    }
-  }
-
-  const addKeyword = (rawKeyword: string) => {
-    const keyword = normalizeKeyword(rawKeyword)
-    if (!keyword) return
-    setKeywordsDraft((prev) => {
-      if (prev.some((item) => item.toLocaleLowerCase() === keyword.toLocaleLowerCase())) {
-        return prev
-      }
-      return [...prev, keyword]
-    })
-    setKeywordInput('')
-  }
-
-  const handleKeywordsSave = async () => {
-    const normalizedKeywords = dedupeKeywords(keywordsDraft)
-    const saved = await saveNodeMetadata({ keywords: normalizedKeywords })
-    if (saved) {
-      setKeywordsDraft(normalizedKeywords)
-      setKeywordsDialogOpen(false)
-    }
-  }
-
-  const filteredKeywordSuggestions = useMemo(() => {
-    const query = keywordInput.trim().toLocaleLowerCase()
-    return keywordSuggestions
-      .filter((keyword) => !keywordsDraft.some((item) => item.toLocaleLowerCase() === keyword.toLocaleLowerCase()))
-      .filter((keyword) => (query ? keyword.toLocaleLowerCase().includes(query) : true))
-      .slice(0, 8)
-  }, [keywordInput, keywordSuggestions, keywordsDraft])
 
   const handleNodeChanged = () => {
     if (!path) return
@@ -377,10 +256,7 @@ export function NodePage() {
             variant="ghost"
             size="icon"
             className="size-7"
-            onClick={() => {
-              setMetadataError(null)
-              setTitleDialogOpen(true)
-            }}
+            onClick={() => setTitleDialogOpen(true)}
             aria-label="Редактировать заголовок"
           >
             <Pencil className="size-4" />
@@ -401,9 +277,6 @@ export function NodePage() {
       </div>
       {manualError ? (
         <p className="text-sm text-destructive">{manualError}</p>
-      ) : null}
-      {metadataError ? (
-        <p className="text-sm text-destructive">{metadataError}</p>
       ) : null}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         <span
@@ -436,12 +309,7 @@ export function NodePage() {
             variant="ghost"
             size="icon"
             className="size-6"
-            onClick={() => {
-              setMetadataError(null)
-              setKeywordInput('')
-              setKeywordsDraft(keywords)
-              setKeywordsDialogOpen(true)
-            }}
+            onClick={() => setKeywordsDialogOpen(true)}
             aria-label="Редактировать ключевые слова"
           >
             <Pencil className="size-3.5" />
@@ -518,129 +386,20 @@ export function NodePage() {
           </CardContent>
         </Card>
       )}
-      <Dialog open={titleDialogOpen} onOpenChange={setTitleDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Редактировать заголовок</DialogTitle>
-            <DialogDescription>
-              Измените отображаемый title в frontmatter. Пустое значение удалит поле.
-            </DialogDescription>
-          </DialogHeader>
-          <input
-            value={titleDraft}
-            onChange={(event) => setTitleDraft(event.target.value)}
-            placeholder="Введите заголовок"
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          />
-          {metadataError ? (
-            <p className="text-sm text-destructive">{metadataError}</p>
-          ) : null}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setTitleDialogOpen(false)}
-              disabled={metadataSaving}
-            >
-              Отмена
-            </Button>
-            <Button onClick={() => void handleTitleSave()} disabled={metadataSaving}>
-              {metadataSaving ? 'Сохранение...' : 'Сохранить'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={keywordsDialogOpen} onOpenChange={setKeywordsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Редактировать ключевые слова</DialogTitle>
-            <DialogDescription>
-              Используйте Enter или запятую для добавления тега. Выбирайте из существующих
-              ключевиков ниже.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {keywordsDraft.length > 0 ? (
-                keywordsDraft.map((keyword) => (
-                  <span
-                    key={keyword}
-                    className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs"
-                  >
-                    {keyword}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setKeywordsDraft((prev) => prev.filter((item) => item !== keyword))
-                      }
-                      aria-label={`Удалить тег ${keyword}`}
-                      className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
-                ))
-              ) : (
-                <p className="text-xs text-muted-foreground">Пока не добавлено ни одного тега</p>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <input
-                value={keywordInput}
-                onChange={(event) => setKeywordInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ',') {
-                    event.preventDefault()
-                    addKeyword(keywordInput)
-                    return
-                  }
-                  if (event.key === 'Backspace' && !keywordInput.trim()) {
-                    setKeywordsDraft((prev) => prev.slice(0, -1))
-                  }
-                }}
-                placeholder="Новый тег"
-                className="h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              />
-              <Button type="button" variant="outline" onClick={() => addKeyword(keywordInput)}>
-                <Plus className="size-4" />
-                Добавить
-              </Button>
-            </div>
-            {loadingKeywordSuggestions ? (
-              <p className="text-xs text-muted-foreground">Загружаем подсказки...</p>
-            ) : filteredKeywordSuggestions.length > 0 ? (
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">Подсказки:</p>
-                <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto">
-                  {filteredKeywordSuggestions.map((keyword) => (
-                    <button
-                      key={keyword}
-                      type="button"
-                      onClick={() => addKeyword(keyword)}
-                      className="rounded-full border px-2 py-0.5 text-xs text-foreground transition-colors hover:bg-accent"
-                    >
-                      {keyword}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">Подсказок нет, можно ввести вручную.</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setKeywordsDialogOpen(false)}
-              disabled={metadataSaving}
-            >
-              Отмена
-            </Button>
-            <Button onClick={() => void handleKeywordsSave()} disabled={metadataSaving}>
-              {metadataSaving ? 'Сохранение...' : 'Сохранить'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TitleEditDialog
+        open={titleDialogOpen}
+        onOpenChange={setTitleDialogOpen}
+        nodePath={node.path}
+        initialTitle={(meta.title as string | undefined) ?? ''}
+        onSaved={handleNodeUpdated}
+      />
+      <KeywordsEditDialog
+        open={keywordsDialogOpen}
+        onOpenChange={setKeywordsDialogOpen}
+        nodePath={node.path}
+        initialKeywords={keywords}
+        onSaved={handleNodeUpdated}
+      />
         </div>
       </div>
     </div>
