@@ -28,6 +28,7 @@ const (
 	patchFieldManualProcessed = "manual_processed"
 	patchFieldTitle           = "title"
 	patchFieldKeywords        = "keywords"
+	patchFieldLabels          = "labels"
 )
 
 // Handler — HTTP handlers для API.
@@ -318,7 +319,7 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 	params := kb.PatchNodeMetadataParams{}
 	for key := range raw {
 		switch key {
-		case patchFieldManualProcessed, patchFieldTitle, patchFieldKeywords:
+		case patchFieldManualProcessed, patchFieldTitle, patchFieldKeywords, patchFieldLabels:
 		default:
 			writeError(w, http.StatusBadRequest, "unsupported field: "+key)
 
@@ -352,12 +353,26 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 		}
 		params.Keywords = &value
 	}
-	if params.ManualProcessed == nil && params.Title == nil && params.Keywords == nil {
+	if rawVal, ok := raw[patchFieldLabels]; ok {
+		var value []string
+		if err := json.Unmarshal(rawVal, &value); err != nil {
+			writeError(w, http.StatusBadRequest, "labels must be an array of strings")
+
+			return
+		}
+		params.Labels = &value
+	}
+	if params.ManualProcessed == nil && params.Title == nil && params.Keywords == nil && params.Labels == nil {
 		writeError(w, http.StatusBadRequest, "body must contain at least one field")
 
 		return
 	}
 	if err := kb.PatchNodeMetadata(r.Context(), h.dataPath, path, params); err != nil {
+		if errors.Is(err, kb.ErrInvalidLabels) {
+			writeError(w, http.StatusBadRequest, "invalid labels")
+
+			return
+		}
 		if errors.Is(err, kb.ErrNodeNotFound) {
 			clog.Debug(r.Context(), "patch node: not found", "path", path)
 			writeError(w, http.StatusNotFound, "node not found")
@@ -380,6 +395,18 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 		h.syncWorker.Send(index.SingleNodeEvent{Path: path})
 	}
 	writeJSON(w, node)
+}
+
+// GetLabelSuggestions обрабатывает GET /api/label-suggestions.
+func (h *Handler) GetLabelSuggestions(w http.ResponseWriter, r *http.Request) {
+	labels, err := kb.ListLabelSuggestions(r.Context(), h.dataPath, 500)
+	if err != nil {
+		clog.Errorf(r.Context(), "list label suggestions: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	writeJSON(w, map[string]any{"labels": labels})
 }
 
 // GetTree обрабатывает GET /api/tree.
@@ -465,6 +492,13 @@ func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid manual_processed, expected true or false")
 
 		return
+	}
+	if labelsParam := q.Get("labels"); labelsParam != "" {
+		for part := range strings.SplitSeq(labelsParam, ",") {
+			if s := strings.TrimSpace(part); s != "" {
+				opts.Labels = append(opts.Labels, s)
+			}
+		}
 	}
 
 	nodes, total, err := kb.ListNodesWithOptions(r.Context(), h.dataPath, opts)

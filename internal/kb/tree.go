@@ -36,6 +36,11 @@ func PatchNodeMetadata(ctx context.Context, basePath, nodePath string, params Pa
 	return NewStore(afero.NewOsFs()).PatchNodeMetadata(ctx, basePath, nodePath, params)
 }
 
+// ListLabelSuggestions возвращает уникальные метки узлов в базе.
+func ListLabelSuggestions(ctx context.Context, basePath string, limit int) ([]string, error) {
+	return NewStore(afero.NewOsFs()).ListLabelSuggestions(ctx, basePath, limit)
+}
+
 // DeleteNode удаляет узел из базы знаний (файл .md и вложения).
 func DeleteNode(ctx context.Context, basePath, nodePath string) error {
 	return NewStore(afero.NewOsFs()).DeleteNode(ctx, basePath, nodePath)

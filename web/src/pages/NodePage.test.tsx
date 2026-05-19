@@ -2,13 +2,13 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMetadata, getKeywordSuggestions, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMetadata, getKeywordSuggestions, getLabelSuggestions, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -22,6 +22,7 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMeta
       source_author: 'Author Name',
       source_date: '2024-01-10',
       keywords: ['load-balancing', 'scaling'],
+      labels: ['favorite'],
       manual_processed: false,
     },
   }
@@ -33,15 +34,17 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMeta
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
     })),
-    patchNodeMetadata: vi.fn().mockImplementation(async (_path: string, payload: { title?: string; keywords?: string[] }) => ({
+    patchNodeMetadata: vi.fn().mockImplementation(async (_path: string, payload: { title?: string; keywords?: string[]; labels?: string[] }) => ({
       ...mockNode,
       metadata: {
         ...mockNode.metadata,
         ...(payload.title !== undefined ? { title: payload.title } : {}),
         ...(payload.keywords !== undefined ? { keywords: payload.keywords } : {}),
+        ...(payload.labels !== undefined ? { labels: payload.labels } : {}),
       },
     })),
     getKeywordSuggestions: vi.fn().mockResolvedValue(['go', 'kubernetes', 'scaling']),
+    getLabelSuggestions: vi.fn().mockResolvedValue(['favorite', 'review']),
     startJob: vi.fn().mockResolvedValue({
       id: 'job-refresh-1',
       type: 'refresh_description',
@@ -117,6 +120,7 @@ vi.mock('../services/api', () => ({
   patchNodeManualProcessed,
   patchNodeMetadata,
   getKeywordSuggestions,
+  getLabelSuggestions,
   startJob,
   getJobStatus,
   startNodeNormalization,
@@ -322,7 +326,8 @@ describe('NodePage', () => {
     })
     renderNodePage()
 
-    expect(await screen.findByText('без ключевых слов')).toBeInTheDocument()
+    const keywordSection = await screen.findByText('Ключевые слова:')
+    expect(keywordSection.parentElement?.textContent).toContain('нет')
     expect(screen.getByRole('button', { name: 'Редактировать ключевые слова' })).toBeInTheDocument()
   })
 
@@ -364,6 +369,35 @@ describe('NodePage', () => {
       )
     })
     expect(await screen.findByText('kubernetes')).toBeInTheDocument()
+  })
+
+  it('edits labels via dialog with suggestions', async () => {
+    patchNodeMetadata.mockImplementation(async (_path: string, payload: { labels?: string[] }) => ({
+      ...mockNode,
+      metadata: {
+        ...mockNode.metadata,
+        labels: payload.labels ?? mockNode.metadata.labels,
+      },
+    }))
+    renderNodePage()
+
+    expect(await screen.findByText('favorite')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать метки' }))
+    await waitFor(() => {
+      expect(getLabelSuggestions).toHaveBeenCalled()
+    })
+
+    const dialog = await screen.findByRole('dialog', { name: 'Редактировать метки' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'review' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => {
+      expect(patchNodeMetadata).toHaveBeenCalledWith(
+        'programming/scaling/load-balancing',
+        { labels: ['favorite', 'review'] }
+      )
+    })
+    expect(await screen.findByText('review')).toBeInTheDocument()
   })
 
   it('back button navigates to / when state is absent', async () => {

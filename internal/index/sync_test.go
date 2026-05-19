@@ -157,6 +157,29 @@ func TestBuildNodeEmbeddingText_WhenProfileLink_ExpectBodyIncluded(t *testing.T)
 	assert.Contains(t, text, "Digest-only term")
 }
 
+func TestComputeContentHash_WhenOnlyLabelsChange_ExpectUnchanged(t *testing.T) {
+	t.Parallel()
+
+	node := testNode("Title", "Annotation", []string{"kw"}, "article", "Body")
+	hashBefore := computeContentHash(node)
+	node.Metadata["labels"] = []string{"favorite", "review"}
+	hashAfter := computeContentHash(node)
+
+	assert.Equal(t, hashBefore, hashAfter)
+}
+
+func TestBuildNodeEmbeddingText_WhenLabelsPresent_ExpectExcluded(t *testing.T) {
+	t.Parallel()
+
+	node := testNode("Title", "Annotation", []string{"kw"}, "note", "Body")
+	node.Metadata["labels"] = []string{"favorite"}
+
+	text := buildNodeEmbeddingText(node, "note")
+
+	assert.NotContains(t, text, "favorite")
+	assert.Contains(t, text, "kw")
+}
+
 func TestBuildNodeSearchDocument_WhenNote_ExpectSearchMetadata(t *testing.T) {
 	t.Parallel()
 

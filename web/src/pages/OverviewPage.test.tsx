@@ -19,6 +19,7 @@ vi.mock('../services/api', () => ({
     path: '',
     children: [{ name: 'topic', path: 'topic', children: [] }],
   }),
+  getLabelSuggestions: vi.fn().mockResolvedValue(['favorite', 'review']),
   getNodesWithParams: vi.fn().mockResolvedValue({
     nodes: [
       {
@@ -27,6 +28,7 @@ vi.mock('../services/api', () => ({
         type: 'article',
         created: '2024-01-01T00:00:00Z',
         source_url: 'https://example.com',
+        labels: ['favorite'],
         manual_processed: false,
       },
     ],
@@ -138,6 +140,24 @@ describe('OverviewPage', () => {
       const p = lastMainListCall(getNodes)
       expect(p?.manual_processed).toBe(true)
     })
+  })
+
+  it('when URL has labels filter, passes labels to getNodesWithParams', async () => {
+    const { getNodesWithParams } = await import('../services/api')
+    const getNodes = vi.mocked(getNodesWithParams)
+    renderOverview('/?labels=favorite,review')
+    await screen.findByText('Node 1')
+    await waitFor(() => {
+      const p = lastMainListCall(getNodes)
+      expect(p?.labels).toEqual(['favorite', 'review'])
+    })
+  })
+
+  it('renders label chips in table', async () => {
+    renderOverview()
+    await screen.findByText('Node 1')
+    const chips = await screen.findAllByText('favorite')
+    expect(chips.length).toBeGreaterThanOrEqual(1)
   })
 
   it('when user selects «Все» after filtered, omits manual_processed from main list params', async () => {
