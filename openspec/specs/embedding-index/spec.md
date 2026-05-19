@@ -63,7 +63,7 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 ### Requirement: Embedding-индекс для нод
 
-Система ДОЛЖНА (SHALL) генерировать и хранить embedding для каждой ноды. Текст для embedding SHALL формироваться: `title + " " + annotation + " " + keywords` — для всех типов; для `note` — дополнительно `+ " " + body`; для `link` — дополнительно `+ " " + body`, если узел содержит `content_profile` и непустое markdown-тело. Embedding MUST храниться как BLOB (little-endian float32 array) в таблице embeddings. Система MUST хранить content_hash (hash от title+annotation+keywords+type+source_kind+content_profile) и body_hash (hash от body) для определения изменений. При индексации ноды система MUST обновлять searchable text записи для keyword/FTS поиска. Searchable text MUST включать `source_kind`, `content_profile` и body для `note` и профильных `link` узлов. Система MUST создавать chunks для `article`, а также для `note` и `link` узлов с digest body, если body достаточно длинное для chunking.
+Система ДОЛЖНА (SHALL) генерировать и хранить embedding для каждой ноды. Текст для embedding SHALL формироваться: `title + " " + annotation + " " + keywords` — для всех типов; для `note` — дополнительно `+ " " + body`; для `link` — дополнительно `+ " " + body`, если узел содержит `content_profile` и непустое markdown-тело. Поле `labels` MUST NOT входить в текст embedding и MUST NOT входить в searchable text для смыслового/keyword поиска по контенту. Embedding MUST храниться как BLOB (little-endian float32 array) в таблице embeddings. Система MUST хранить content_hash (hash от title+annotation+keywords+type+source_kind+content_profile; **без** labels) и body_hash (hash от body) для определения изменений. При индексации ноды система MUST обновлять searchable text записи для keyword/FTS поиска. Searchable text MUST включать `source_kind`, `content_profile` и body для `note` и профильных `link` узлов. Система MUST создавать chunks для `article`, а также для `note` и `link` узлов с digest body, если body достаточно длинное для chunking.
 
 #### Scenario: Индексация новой ноды
 
@@ -94,6 +94,11 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 - **WHEN** нода `type=link` не содержит `content_profile` и имеет пустое тело
 - **THEN** индексирование продолжает использовать title, annotation и keywords без ошибки
+
+#### Scenario: Изменение только labels
+
+- **WHEN** у узла изменилось только поле labels во frontmatter
+- **THEN** content_hash не меняется и переиндексация embedding не выполняется
 
 ### Requirement: SyncWorker — синхронизация индекса
 
