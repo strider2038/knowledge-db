@@ -1,5 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { Filter, Plus, Search, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronDown, Filter, Plus, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -7,6 +7,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -29,9 +31,6 @@ const TYPE_LABELS: Record<(typeof NODE_TYPES)[number], string> = {
   note: 'заметка',
 }
 
-const selectClassName =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-
 const searchClassName =
   'h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
 
@@ -53,25 +52,58 @@ export interface OverviewFiltersProps {
   onClearAllFilters: () => void
 }
 
-function FilterSection({
-  title,
-  description,
-  children,
-}: {
-  title: string
-  description?: string
-  children: ReactNode
-}) {
+function ToolbarDivider({ className }: { className?: string }) {
   return (
-    <section className="space-y-2">
-      <div className="space-y-0.5">
-        <h3 className="text-sm font-medium leading-none">{title}</h3>
-        {description ? (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-      {children}
-    </section>
+    <span
+      className={cn('hidden text-muted-foreground/40 sm:inline', className)}
+      aria-hidden
+    >
+      |
+    </span>
+  )
+}
+
+function ManualProcessedFilterDropdown({
+  value,
+  onChange,
+}: {
+  value: '' | 'true' | 'false'
+  onChange: (value: '' | 'true' | 'false') => void
+}) {
+  const triggerLabel =
+    value === 'true'
+      ? 'Проверено'
+      : value === 'false'
+        ? 'Не проверено'
+        : 'Проверка'
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={cn('h-8 gap-1', value !== '' && 'border-primary/50 bg-primary/5')}
+          aria-label="Фильтр по ручной проверке"
+        >
+          {triggerLabel}
+          <ChevronDown className="size-3.5 opacity-60" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-44">
+        <DropdownMenuRadioGroup
+          value={value === '' ? 'all' : value}
+          onValueChange={(next) =>
+            onChange(next === 'all' ? '' : (next as 'true' | 'false'))
+          }
+        >
+          <DropdownMenuRadioItem value="all">Все записи</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="true">Проверено вручную</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="false">Не проверено</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -81,10 +113,17 @@ function LabelFilterPicker({
   onAddLabelFilter,
   onRemoveLabelFilter,
   onToggleLabelSuggestion,
+  showChips = true,
 }: Pick<
   OverviewFiltersProps,
-  'labelFilter' | 'labelSuggestions' | 'onAddLabelFilter' | 'onRemoveLabelFilter' | 'onToggleLabelSuggestion'
->) {
+  | 'labelFilter'
+  | 'labelSuggestions'
+  | 'onAddLabelFilter'
+  | 'onRemoveLabelFilter'
+  | 'onToggleLabelSuggestion'
+> & {
+  showChips?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -109,18 +148,20 @@ function LabelFilterPicker({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {labelFilter.map((label) => (
-        <button
-          key={label}
-          type="button"
-          onClick={() => onRemoveLabelFilter(label)}
-          className={cn(getLabelChipClass(label), 'gap-1 pr-1.5')}
-          title="Снять фильтр"
-        >
-          {label}
-          <X className="size-3 opacity-70" aria-hidden />
-        </button>
-      ))}
+      {showChips
+        ? labelFilter.map((label) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onRemoveLabelFilter(label)}
+              className={cn(getLabelChipClass(label), 'gap-1 pr-1.5')}
+              title="Снять фильтр по метке"
+            >
+              {label}
+              <X className="size-3 opacity-70" aria-hidden />
+            </button>
+          ))
+        : null}
       <DropdownMenu open={open} onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
@@ -128,7 +169,8 @@ function LabelFilterPicker({
             variant="outline"
             size="sm"
             className="h-7 gap-1 border-dashed px-2 text-muted-foreground"
-            aria-label="Добавить метку в фильтр"
+            aria-label="Добавить метку в фильтр. Несколько меток объединяются по AND."
+            title="Фильтр по меткам (AND): на узле должны быть все выбранные"
           >
             <Plus className="size-3.5" />
             <span className="text-xs">Метка</span>
@@ -197,7 +239,7 @@ function LabelFilterPicker({
             <>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                Выбрано: {labelFilter.length} (все должны быть на узле)
+                Выбрано: {labelFilter.length} (AND)
               </DropdownMenuLabel>
             </>
           ) : null}
@@ -207,7 +249,7 @@ function LabelFilterPicker({
   )
 }
 
-function OverviewFiltersPanel({
+function FiltersToolbar({
   typeFilter,
   onToggleType,
   manualProcessedFilter,
@@ -217,6 +259,10 @@ function OverviewFiltersPanel({
   onAddLabelFilter,
   onRemoveLabelFilter,
   onToggleLabelSuggestion,
+  showLabelChips = true,
+  showClear = false,
+  onClearAllFilters,
+  className,
 }: Pick<
   OverviewFiltersProps,
   | 'typeFilter'
@@ -228,56 +274,56 @@ function OverviewFiltersPanel({
   | 'onAddLabelFilter'
   | 'onRemoveLabelFilter'
   | 'onToggleLabelSuggestion'
->) {
+  | 'onClearAllFilters'
+> & {
+  showLabelChips?: boolean
+  showClear?: boolean
+  className?: string
+}) {
   return (
-    <div className="flex flex-col gap-5">
-      <FilterSection title="Тип контента">
-        <div className="flex flex-wrap gap-1.5">
-          {NODE_TYPES.map((t) => {
-            const isActive = typeFilter.includes(t)
-            return (
-              <Button
-                key={t}
-                type="button"
-                variant="outline"
-                size="sm"
-                className={getTypeButtonClass(t, isActive)}
-                onClick={() => onToggleType(t)}
-              >
-                {TYPE_LABELS[t]}
-              </Button>
-            )
-          })}
-        </div>
-      </FilterSection>
-
-      <FilterSection title="Ручная проверка">
-        <select
-          value={manualProcessedFilter}
-          onChange={(e) =>
-            onManualProcessedChange(e.target.value as '' | 'true' | 'false')
-          }
-          className={selectClassName}
-          aria-label="Фильтр по ручной проверке"
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {NODE_TYPES.map((t) => {
+          const isActive = typeFilter.includes(t)
+          return (
+            <Button
+              key={t}
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn('h-8', getTypeButtonClass(t, isActive))}
+              onClick={() => onToggleType(t)}
+            >
+              {TYPE_LABELS[t]}
+            </Button>
+          )
+        })}
+      </div>
+      <ToolbarDivider />
+      <ManualProcessedFilterDropdown
+        value={manualProcessedFilter}
+        onChange={onManualProcessedChange}
+      />
+      <ToolbarDivider />
+      <LabelFilterPicker
+        labelFilter={labelFilter}
+        labelSuggestions={labelSuggestions}
+        onAddLabelFilter={onAddLabelFilter}
+        onRemoveLabelFilter={onRemoveLabelFilter}
+        onToggleLabelSuggestion={onToggleLabelSuggestion}
+        showChips={showLabelChips}
+      />
+      {showClear ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-xs text-muted-foreground"
+          onClick={onClearAllFilters}
         >
-          <option value="">Все записи</option>
-          <option value="true">Проверено вручную</option>
-          <option value="false">Не проверено</option>
-        </select>
-      </FilterSection>
-
-      <FilterSection
-        title="Метки"
-        description="Показываются узлы, у которых есть все выбранные метки (AND)."
-      >
-        <LabelFilterPicker
-          labelFilter={labelFilter}
-          labelSuggestions={labelSuggestions}
-          onAddLabelFilter={onAddLabelFilter}
-          onRemoveLabelFilter={onRemoveLabelFilter}
-          onToggleLabelSuggestion={onToggleLabelSuggestion}
-        />
-      </FilterSection>
+          Сбросить
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -285,15 +331,19 @@ function OverviewFiltersPanel({
 function ActiveFiltersSummary({
   typeFilter,
   manualProcessedFilter,
+  labelFilter,
   onToggleType,
   onManualProcessedChange,
+  onRemoveLabelFilter,
   onClearAllFilters,
 }: Pick<
   OverviewFiltersProps,
   | 'typeFilter'
   | 'manualProcessedFilter'
+  | 'labelFilter'
   | 'onToggleType'
   | 'onManualProcessedChange'
+  | 'onRemoveLabelFilter'
   | 'onClearAllFilters'
 >) {
   return (
@@ -333,6 +383,17 @@ function ActiveFiltersSummary({
           <X className="size-3" aria-hidden />
         </button>
       ) : null}
+      {labelFilter.map((label) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => onRemoveLabelFilter(label)}
+          className={cn(getLabelChipClass(label), 'gap-1 pr-1.5')}
+        >
+          {label}
+          <X className="size-3 opacity-70" aria-hidden />
+        </button>
+      ))}
       <Button
         type="button"
         variant="ghost"
@@ -368,10 +429,8 @@ export function OverviewFilters({
     labelFilter.length
 
   const hasSecondaryFilters = activeFilterCount > 0
-  const hasNonLabelFilters =
-    typeFilter.length > 0 || manualProcessedFilter !== ''
 
-  const panelProps = {
+  const toolbarProps = {
     typeFilter,
     onToggleType,
     manualProcessedFilter,
@@ -381,10 +440,11 @@ export function OverviewFilters({
     onAddLabelFilter,
     onRemoveLabelFilter,
     onToggleLabelSuggestion,
+    onClearAllFilters,
   }
 
   return (
-    <div className="mb-4 space-y-3">
+    <div className="mb-4 space-y-2">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1">
           <Search
@@ -426,7 +486,11 @@ export function OverviewFilters({
               <SheetTitle>Фильтры</SheetTitle>
             </SheetHeader>
             <div className="flex-1 overflow-y-auto p-4">
-              <OverviewFiltersPanel {...panelProps} />
+              <FiltersToolbar
+                {...toolbarProps}
+                showLabelChips
+                className="flex-col items-stretch gap-3"
+              />
             </div>
             {hasSecondaryFilters ? (
               <div className="border-t p-4">
@@ -447,38 +511,15 @@ export function OverviewFilters({
         </Sheet>
       </div>
 
-      {hasNonLabelFilters ? (
-        <ActiveFiltersSummary
-          typeFilter={typeFilter}
-          manualProcessedFilter={manualProcessedFilter}
-          onToggleType={onToggleType}
-          onManualProcessedChange={onManualProcessedChange}
-          onClearAllFilters={onClearAllFilters}
-        />
-      ) : null}
+      <div className="hidden md:block">
+        <FiltersToolbar {...toolbarProps} showLabelChips showClear={hasSecondaryFilters} />
+      </div>
 
-      {labelFilter.length > 0 && !filtersSheetOpen ? (
+      {hasSecondaryFilters && !filtersSheetOpen ? (
         <div className="md:hidden">
-          <LabelFilterPicker
-            labelFilter={labelFilter}
-            labelSuggestions={labelSuggestions}
-            onAddLabelFilter={onAddLabelFilter}
-            onRemoveLabelFilter={onRemoveLabelFilter}
-            onToggleLabelSuggestion={onToggleLabelSuggestion}
-          />
+          <ActiveFiltersSummary {...toolbarProps} />
         </div>
       ) : null}
-
-      <div className="hidden rounded-lg border border-border/60 bg-muted/20 p-3 md:block">
-        <OverviewFiltersPanel {...panelProps} />
-        {hasSecondaryFilters ? (
-          <div className="mt-3 flex justify-end border-t border-border/60 pt-3">
-            <Button type="button" variant="ghost" size="sm" onClick={onClearAllFilters}>
-              Сбросить все фильтры
-            </Button>
-          </div>
-        ) : null}
-      </div>
     </div>
   )
 }

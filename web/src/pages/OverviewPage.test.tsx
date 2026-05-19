@@ -133,8 +133,12 @@ describe('OverviewPage', () => {
     await screen.findByText('Node 1')
     getNodes.mockClear()
 
-    const select = screen.getByLabelText('Фильтр по ручной проверке')
-    fireEvent.change(select, { target: { value: 'true' } })
+    const trigger = screen.getByLabelText('Фильтр по ручной проверке')
+    fireEvent.pointerDown(trigger)
+    fireEvent.click(trigger)
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'Проверено вручную' }))
+    })
 
     await waitFor(() => {
       const p = lastMainListCall(getNodes)
@@ -167,8 +171,12 @@ describe('OverviewPage', () => {
     await screen.findByText('Node 1')
 
     getNodes.mockClear()
-    const select = screen.getByLabelText('Фильтр по ручной проверке')
-    fireEvent.change(select, { target: { value: '' } })
+    const trigger = screen.getByLabelText('Фильтр по ручной проверке')
+    fireEvent.pointerDown(trigger)
+    fireEvent.click(trigger)
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'Все записи' }))
+    })
 
     await waitFor(() => {
       const p = lastMainListCall(getNodes)
