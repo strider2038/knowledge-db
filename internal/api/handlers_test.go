@@ -308,6 +308,65 @@ func TestListNodes_WhenManualProcessedInvalid_Expect400(t *testing.T) {
 	resp.IsBadRequest()
 }
 
+func TestListNodes_WhenLabelsFilterAND_ExpectFiltered(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	patch := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"labels":["favorite","review"]}`),
+		apitest.WithJSONContentType())
+	patch.IsOK()
+
+	patch2 := apitest.HandlePATCH(t, handler, "/api/nodes/programming/scaling/node2",
+		strings.NewReader(`{"labels":["favorite"]}`),
+		apitest.WithJSONContentType())
+	patch2.IsOK()
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&labels=favorite,review")
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("total").IsInteger().EqualTo(1)
+		json.Node("nodes", 0, "path").IsString().EqualTo("programming/node1")
+	})
+}
+
+func TestGetLabelSuggestions_WhenLabelsExist_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	apitest.HandlePATCH(t, handler, "/api/nodes/ai/node4",
+		strings.NewReader(`{"labels":["zebra","Alpha"]}`),
+		apitest.WithJSONContentType()).IsOK()
+
+	resp := apitest.HandleGET(t, handler, "/api/label-suggestions")
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("labels").IsArray()
+	})
+}
+
+func TestPatchNode_WhenInvalidLabels_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"labels":["bad,comma"]}`),
+		apitest.WithJSONContentType())
+
+	resp.IsBadRequest()
+}
+
+func TestGetNode_WhenNoLabels_ExpectEmptyArrayInMetadata(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes/programming/scaling/node3")
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata", "labels").IsArray().WithLength(0)
+	})
+}
+
 func TestGetNode_WhenNoManualProcessed_ExpectFalseInMetadata(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
@@ -427,6 +486,33 @@ func TestPatchNode_WhenKeywordsContainNonString_Expect400(t *testing.T) {
 
 	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
 		strings.NewReader(`{"keywords":["ok",1]}`),
+		apitest.WithJSONContentType())
+
+	resp.IsBadRequest()
+}
+
+func TestPatchNode_WhenUpdatesLabels_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"labels":["Favorite","favorite","review"]}`),
+		apitest.WithJSONContentType())
+
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("metadata", "labels").IsArray().WithLength(2)
+		json.Node("metadata", "labels", 0).IsString().EqualTo("Favorite")
+		json.Node("metadata", "labels", 1).IsString().EqualTo("review")
+	})
+}
+
+func TestPatchNode_WhenLabelsNotArray_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerForRecursive(t)
+
+	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
+		strings.NewReader(`{"labels":"favorite"}`),
 		apitest.WithJSONContentType())
 
 	resp.IsBadRequest()

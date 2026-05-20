@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronRight, ExternalLink, FolderTree } from 'luci
 import {
   getTree,
   getNodesWithParams,
+  getLabelSuggestions,
   type TreeNode,
   type NodeListItem,
 } from '../services/api'
@@ -28,8 +29,9 @@ import {
 import { cn } from '@/lib/utils'
 import {
   getTypeBadgeColor,
-  getTypeButtonClass,
 } from '@/lib/type-styles'
+import { getLabelChipClass } from '@/lib/label-styles'
+import { OverviewFilters } from '@/components/OverviewFilters'
 import {
   Sheet,
   SheetContent,
@@ -38,7 +40,6 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 
-const NODE_TYPES = ['article', 'link', 'note'] as const
 const DEFAULT_LIMIT = 50
 
 function branchHasMatchingNodes(nodePaths: Set<string>, branchPath: string): boolean {
@@ -78,6 +79,15 @@ export function OverviewPage() {
     rawManualProcessed === 'true' || rawManualProcessed === 'false'
       ? rawManualProcessed
       : ''
+  const labelFilterStr = searchParams.get('labels') ?? ''
+  const labelFilter = useMemo(
+    () =>
+      labelFilterStr
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [labelFilterStr]
+  )
   const q = searchParams.get('q') ?? ''
   const sort = (searchParams.get('sort') ?? 'title') as
     | 'title'
@@ -96,6 +106,7 @@ export function OverviewPage() {
   const [error, setError] = useState<string | null>(null)
   // Пути узлов по типу для фильтрации дерева (path="" — вся база, без учёта выбранной ветки)
   const [treeFilterPaths, setTreeFilterPaths] = useState<Set<string>>(new Set())
+  const [labelSuggestions, setLabelSuggestions] = useState<string[]>([])
 
   const updateParams = useCallback(
     (updates: Record<string, string | undefined>) => {
@@ -122,6 +133,12 @@ export function OverviewPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    getLabelSuggestions()
+      .then(setLabelSuggestions)
+      .catch(() => setLabelSuggestions([]))
+  }, [])
+
   const typeFilterStr = typeFilter.join(',')
   useEffect(() => {
     let cancelled = false
@@ -140,6 +157,7 @@ export function OverviewPage() {
             : manualProcessedFilter === 'false'
               ? false
               : undefined,
+        labels: labelFilter.length > 0 ? labelFilter : undefined,
         limit: DEFAULT_LIMIT,
         offset: (page - 1) * DEFAULT_LIMIT,
         sort,
@@ -169,6 +187,7 @@ export function OverviewPage() {
     typeFilterStr,
     typeFilter.length,
     manualProcessedFilter,
+    labelFilter,
     page,
     sort,
     order,
@@ -177,7 +196,7 @@ export function OverviewPage() {
   // При включённом фильтре по типу или ручной проверке — загружаем пути по всей базе (path="") для фильтрации дерева.
   // Так дерево не скрывает соседние ветки при выборе конкретного узла.
   useEffect(() => {
-    if (typeFilter.length === 0 && manualProcessedFilter === '') {
+    if (typeFilter.length === 0 && manualProcessedFilter === '' && labelFilter.length === 0) {
       queueMicrotask(() => setTreeFilterPaths(new Set()))
       return
     }
@@ -192,6 +211,7 @@ export function OverviewPage() {
           : manualProcessedFilter === 'false'
             ? false
             : undefined,
+      labels: labelFilter.length > 0 ? labelFilter : undefined,
       limit: 10000,
       offset: 0,
     })
@@ -206,7 +226,49 @@ export function OverviewPage() {
     return () => {
       cancelled = true
     }
-  }, [typeFilterStr, typeFilter.length, manualProcessedFilter])
+  }, [typeFilterStr, typeFilter.length, manualProcessedFilter, labelFilter])
+
+  const addLabelFilter = useCallback(
+    (raw: string) => {
+      const next = raw.trim()
+      if (!next || next.includes(',')) return
+      if (labelFilter.some((l) => l.toLocaleLowerCase() === next.toLocaleLowerCase())) return
+      updateParams({ labels: [...labelFilter, next].join(','), page: '1' })
+    },
+    [labelFilter, updateParams]
+  )
+
+  const removeLabelFilter = useCallback(
+    (label: string) => {
+      const next = labelFilter.filter((l) => l !== label)
+      updateParams({ labels: next.length > 0 ? next.join(',') : undefined, page: '1' })
+    },
+    [labelFilter, updateParams]
+  )
+
+  const toggleLabelFilterSuggestion = useCallback(
+    (label: string) => {
+      const idx = labelFilter.findIndex(
+        (l) => l.toLocaleLowerCase() === label.toLocaleLowerCase()
+      )
+      if (idx >= 0) {
+        const next = labelFilter.filter((_, i) => i !== idx)
+        updateParams({ labels: next.length > 0 ? next.join(',') : undefined, page: '1' })
+        return
+      }
+      updateParams({ labels: [...labelFilter, label].join(','), page: '1' })
+    },
+    [labelFilter, updateParams]
+  )
+
+  const clearAllFilters = useCallback(() => {
+    updateParams({
+      type: undefined,
+      manual_processed: undefined,
+      labels: undefined,
+      page: '1',
+    })
+  }, [updateParams])
 
   const filteredTree = useMemo(() => {
     if (!tree || treeFilterPaths.size === 0) return tree
@@ -410,50 +472,25 @@ export function OverviewPage() {
         </Sheet>
       </div>
       <main className="min-w-0 flex-1 overflow-auto p-4">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <input
-            type="search"
-            placeholder="Поиск по названию, ключевым словам..."
-            value={q}
-            onChange={(e) => updateParams({ q: e.target.value || undefined, page: '1' })}
-            className="rounded border px-3 py-1.5 text-sm w-64"
-          />
-          <div className="flex gap-1">
-            {NODE_TYPES.map((t) => {
-              const isActive = typeFilter.includes(t)
-              return (
-                <Button
-                  key={t}
-                  variant="outline"
-                  size="sm"
-                  className={getTypeButtonClass(t, isActive)}
-                  onClick={() => toggleType(t)}
-                >
-                  {t === 'article' ? 'статья' : t === 'link' ? 'ссылка' : 'заметка'}
-                </Button>
-              )
-            })}
-          </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="whitespace-nowrap">Проверка</span>
-            <select
-              value={manualProcessedFilter}
-              onChange={(e) => {
-                const v = e.target.value
-                updateParams({
-                  manual_processed: v === '' ? undefined : v,
-                  page: '1',
-                })
-              }}
-              className="rounded border border-input bg-background px-2 py-1.5 text-sm shadow-sm"
-              aria-label="Фильтр по ручной проверке"
-            >
-              <option value="">Все</option>
-              <option value="true">Проверено вручную</option>
-              <option value="false">Не проверено</option>
-            </select>
-          </label>
-        </div>
+        <OverviewFilters
+          q={q}
+          onSearchChange={(value) => updateParams({ q: value || undefined, page: '1' })}
+          typeFilter={typeFilter}
+          onToggleType={toggleType}
+          manualProcessedFilter={manualProcessedFilter}
+          onManualProcessedChange={(value) =>
+            updateParams({
+              manual_processed: value === '' ? undefined : value,
+              page: '1',
+            })
+          }
+          labelFilter={labelFilter}
+          labelSuggestions={labelSuggestions}
+          onAddLabelFilter={addLabelFilter}
+          onRemoveLabelFilter={removeLabelFilter}
+          onToggleLabelSuggestion={toggleLabelFilterSuggestion}
+          onClearAllFilters={clearAllFilters}
+        />
         <Card>
           <CardHeader>
             <CardTitle>Узлы</CardTitle>
@@ -487,6 +524,7 @@ export function OverviewPage() {
                           Тип {sort === 'type' && (order === 'asc' ? '↑' : '↓')}
                         </button>
                       </TableHead>
+                      <TableHead className="hidden lg:table-cell">Метки</TableHead>
                       <TableHead className="hidden md:table-cell">
                         <button
                           type="button"
@@ -571,6 +609,15 @@ export function OverviewPage() {
                           >
                             {n.type}
                           </span>
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          <div className="flex max-w-xs flex-wrap gap-1">
+                            {(n.labels ?? []).map((label) => (
+                              <span key={label} className={getLabelChipClass(label)}>
+                                {label}
+                              </span>
+                            ))}
+                          </div>
                         </TableCell>
                         <TableCell className="hidden text-muted-foreground text-sm md:table-cell">
                           {n.created ? new Date(n.created).toLocaleDateString() : '—'}

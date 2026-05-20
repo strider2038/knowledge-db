@@ -310,6 +310,9 @@ func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts 
 		if opts.ManualProcessed != nil && manualOK != *opts.ManualProcessed {
 			return nil
 		}
+		if len(opts.Labels) > 0 && !NodeHasAllLabels(meta, opts.Labels) {
+			return nil
+		}
 
 		title := ""
 		if t, ok := meta["title"].(string); ok && t != "" {
@@ -385,6 +388,7 @@ func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts 
 			Translations:    translations,
 			Annotation:      annotation,
 			Keywords:        keywords,
+			Labels:          LabelsEffective(meta),
 			ManualProcessed: manualOK,
 		})
 
@@ -456,11 +460,12 @@ type PatchNodeMetadataParams struct {
 	ManualProcessed *bool
 	Title           *string
 	Keywords        *[]string
+	Labels          *[]string
 }
 
 func (s *Store) PatchNodeMetadata(ctx context.Context, basePath, nodePath string, params PatchNodeMetadataParams) error {
 	_ = ctx
-	if params.ManualProcessed == nil && params.Title == nil && params.Keywords == nil {
+	if params.ManualProcessed == nil && params.Title == nil && params.Keywords == nil && params.Labels == nil {
 		return errors.Errorf("patch node metadata: no fields to update")
 	}
 	basePath = filepath.Clean(basePath)
@@ -489,6 +494,17 @@ func (s *Store) PatchNodeMetadata(ctx context.Context, basePath, nodePath string
 	}
 	if params.Keywords != nil {
 		matter["keywords"] = sanitizeKeywords(*params.Keywords)
+	}
+	if params.Labels != nil {
+		normalized, err := NormalizeLabels(*params.Labels)
+		if err != nil {
+			return errors.Errorf("patch node metadata: %w", err)
+		}
+		if len(normalized) == 0 {
+			delete(matter, "labels")
+		} else {
+			matter["labels"] = normalized
+		}
 	}
 	if msg := ValidateFrontmatter(matter); msg != "" {
 		return errors.Errorf("patch node metadata: invalid frontmatter: %s", msg)

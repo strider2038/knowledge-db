@@ -61,6 +61,7 @@ export interface NodeListItem {
   translations?: string[];
   annotation?: string;
   keywords?: string[];
+  labels: string[];
   manual_processed: boolean;
 }
 
@@ -71,6 +72,8 @@ export interface GetNodesParams {
   type?: string;
   /** When true/false, filters GET /api/nodes by manual_processed. */
   manual_processed?: boolean;
+  /** Comma-separated in query; server applies AND semantics. */
+  labels?: string[];
   limit?: number;
   offset?: number;
   sort?: string;
@@ -174,6 +177,9 @@ export async function getNodesWithParams(
   } else if (params.manual_processed === false) {
     searchParams.set('manual_processed', 'false');
   }
+  if (params.labels && params.labels.length > 0) {
+    searchParams.set('labels', params.labels.join(','));
+  }
   if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
   if (params.offset !== undefined) searchParams.set('offset', String(params.offset));
   if (params.sort) searchParams.set('sort', params.sort);
@@ -201,6 +207,14 @@ export interface PatchNodeMetadataRequest {
   manual_processed?: boolean;
   title?: string;
   keywords?: string[];
+  labels?: string[];
+}
+
+export async function getLabelSuggestions(): Promise<string[]> {
+  const res = await apiFetch(`${API_URL}/api/label-suggestions`);
+  if (!res.ok) throw new Error('Failed to load label suggestions');
+  const data = (await res.json()) as { labels?: string[] };
+  return data.labels ?? [];
 }
 
 export async function patchNodeMetadata(

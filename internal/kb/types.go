@@ -25,6 +25,7 @@ type NodeListItem struct {
 	Translations    []string `json:"translations,omitempty"`
 	Annotation      string   `json:"annotation,omitempty"`
 	Keywords        []string `json:"keywords,omitempty"`
+	Labels          []string `json:"labels"`
 	ManualProcessed bool     `json:"manual_processed"`
 }
 
@@ -40,6 +41,8 @@ type ListNodesOptions struct {
 	Offset    int      // смещение
 	// ManualProcessed — если не nil, только узлы с совпадающим флагом (GET /api/nodes?manual_processed=).
 	ManualProcessed *bool
+	// Labels — если не пусто, только узлы, содержащие все перечисленные метки (AND).
+	Labels []string
 }
 
 // ValidationError — ошибка валидации с путём.

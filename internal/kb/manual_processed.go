@@ -21,10 +21,11 @@ func ManualProcessedEffective(meta map[string]any) bool {
 // NormalizeNodeMetadataForAPI returns a shallow copy of meta with normalized manual_processed (bool).
 func NormalizeNodeMetadataForAPI(meta map[string]any) map[string]any {
 	if meta == nil {
-		return map[string]any{"manual_processed": false}
+		return map[string]any{"manual_processed": false, "labels": []string{}}
 	}
 	out := maps.Clone(meta)
 	out["manual_processed"] = ManualProcessedEffective(meta)
+	out["labels"] = LabelsEffective(meta)
 
 	return out
 }
