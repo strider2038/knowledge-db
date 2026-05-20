@@ -318,8 +318,9 @@ func seedSearchIndex(t *testing.T, store index.Store) {
 	ctx := context.Background()
 	embID, err := store.InsertEmbedding(ctx, []float32{1, 0, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "articles/sqlite", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, indexSqlite.TestNodeID("articles/sqlite"), "articles/sqlite", "h1", "bh1", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID:     indexSqlite.TestNodeID("articles/sqlite"),
 		Path:       "articles/sqlite",
 		Title:      "SQLite",
 		Type:       "article",
@@ -328,14 +329,15 @@ func seedSearchIndex(t *testing.T, store index.Store) {
 	}))
 	chunkEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertChunks(ctx, "articles/sqlite", []index.Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, indexSqlite.TestNodeID("articles/sqlite"), "articles/sqlite", []index.Chunk{
 		{NodePath: "articles/sqlite", ChunkIndex: 0, Heading: "Search", Content: "sqlite local retrieval chunk", EmbeddingID: chunkEmbID},
 	}))
 
 	embID, err = store.InsertEmbedding(ctx, []float32{0, 1, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "notes/local", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNode(ctx, indexSqlite.TestNodeID("notes/local"), "notes/local", "h2", "bh2", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID:     indexSqlite.TestNodeID("notes/local"),
 		Path:       "notes/local",
 		Title:      "Local Note",
 		Type:       "note",

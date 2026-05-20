@@ -44,8 +44,8 @@ lang: ru
 
 [[my-article|Original]]
 `
-	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.md"), []byte(originalContent), 0o644)
-	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.ru.md"), []byte(translationContent), 0o644)
+	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.md"), []byte(testFrontmatterPrefix(originalContent, "theme/my-article.md")), 0o644)
+	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.ru.md"), []byte(testFrontmatterPrefix(translationContent, "theme/my-article.ru.md")), 0o644)
 
 	// Add translations to original
 	originalWithTranslations := `---
@@ -60,7 +60,7 @@ Content here.
 
 [[my-article.ru|Русский перевод]]
 `
-	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.md"), []byte(originalWithTranslations), 0o644)
+	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.md"), []byte(testFrontmatterPrefix(originalWithTranslations, "theme/my-article.md")), 0o644)
 
 	store := kb.NewStore(fs)
 	violations, err := store.Validate(ctx, base)
@@ -93,8 +93,8 @@ lang: ru
 ---
 # Оригинал
 `
-	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.md"), []byte(originalContent), 0o644)
-	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.ru.md"), []byte(translationContent), 0o644)
+	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.md"), []byte(testFrontmatterPrefix(originalContent, "theme/my-article.md")), 0o644)
+	_ = afero.WriteFile(fs, filepath.Join(themeDir, "my-article.ru.md"), []byte(testFrontmatterPrefix(translationContent, "theme/my-article.ru.md")), 0o644)
 
 	store := kb.NewStore(fs)
 	violations, err := store.Validate(ctx, base)
@@ -133,8 +133,8 @@ lang: ru
 
 [[article|Original]]
 `
-	_ = os.WriteFile(filepath.Join(themeDir, "article.md"), []byte(originalContent), 0o644)
-	_ = os.WriteFile(filepath.Join(themeDir, "article.ru.md"), []byte(translationContent), 0o644)
+	_ = os.WriteFile(filepath.Join(themeDir, "article.md"), []byte(testFrontmatterPrefix(originalContent, "theme/article.md")), 0o644)
+	_ = os.WriteFile(filepath.Join(themeDir, "article.ru.md"), []byte(testFrontmatterPrefix(translationContent, "theme/article.ru.md")), 0o644)
 
 	violations, err := kb.Validate(ctx, base)
 
@@ -166,8 +166,8 @@ lang: ru
 ---
 # Оригинал
 `
-	_ = os.WriteFile(filepath.Join(themeDir, "article.md"), []byte(originalContent), 0o644)
-	_ = os.WriteFile(filepath.Join(themeDir, "article.ru.md"), []byte(translationContent), 0o644)
+	_ = os.WriteFile(filepath.Join(themeDir, "article.md"), []byte(testFrontmatterPrefix(originalContent, "theme/article.md")), 0o644)
+	_ = os.WriteFile(filepath.Join(themeDir, "article.ru.md"), []byte(testFrontmatterPrefix(translationContent, "theme/article.ru.md")), 0o644)
 
 	violations, err := kb.Validate(ctx, base)
 

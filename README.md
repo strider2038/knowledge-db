@@ -64,6 +64,25 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb serve
 ./kb init --path /path/to/data --example
 ```
 
+### Апгрейд на версию с UUID v7 (`id` в frontmatter)
+
+После обновления бинарника для существующей базы:
+
+```bash
+# 1. Резервная копия базы знаний
+cp -a /path/to/data /path/to/data.bak
+
+# 2. Присвоить id всем узлам без поля id (сначала dry-run)
+./kb migrate-node-ids --path /path/to/data --dry-run
+./kb migrate-node-ids --path /path/to/data
+
+# 3. Запустить сервер и пересобрать embedding-index (схема index.db меняется)
+KB_DATA_PATH=/path/to/data ./kb serve
+# POST /api/index/rebuild через UI или curl
+```
+
+Старый `index.db` (path PK) при старте мигрируется на схему `node_id` PK; при несовместимости данные индекса сбрасываются — нужен rebuild.
+
 ## Команды Taskfile
 
 

@@ -77,6 +77,7 @@ func (s *Store) UpdateNode(ctx context.Context, basePath, nodePath string, param
 	annotation, _ := params.Frontmatter["annotation"].(string)
 
 	return &Node{
+		ID:         NodeIDFromMetadata(params.Frontmatter),
 		Path:       filepath.ToSlash(nodePath),
 		Annotation: annotation,
 		Content:    params.Content,

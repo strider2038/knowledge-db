@@ -20,8 +20,9 @@ func setupRetrievalStore(t *testing.T) *Store {
 
 	embID, err := store.InsertEmbedding(ctx, []float32{1, 0, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "articles/sqlite", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("articles/sqlite"), "articles/sqlite", "h1", "bh1", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("articles/sqlite"),
 		Path:       "articles/sqlite",
 		Title:      "SQLite",
 		Type:       "article",
@@ -30,14 +31,15 @@ func setupRetrievalStore(t *testing.T) *Store {
 	}))
 	chunkEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertChunks(ctx, "articles/sqlite", []index.Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("articles/sqlite"), "articles/sqlite", []index.Chunk{
 		{NodePath: "articles/sqlite", ChunkIndex: 0, Heading: "Search", Content: "sqlite local retrieval chunk", EmbeddingID: chunkEmbID},
 	}))
 
 	embID, err = store.InsertEmbedding(ctx, []float32{0, 1, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "notes/local", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("notes/local"), "notes/local", "h2", "bh2", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("notes/local"),
 		Path:            "notes/local",
 		Title:           "Local Note",
 		Type:            "note",
@@ -121,7 +123,7 @@ SQLite body.
 
 	embID, err := store.InsertEmbedding(context.Background(), []float32{1, 0, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(context.Background(), "articles/sqlite", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(context.Background(), TestNodeID("articles/sqlite"), "articles/sqlite", "h1", "bh1", embID))
 
 	provider := &mockProvider{vectors: [][]float32{{1, 0, 0}}}
 	service := index.NewRetrievalService(store, provider)
@@ -213,8 +215,9 @@ func TestRetrievalService_Retrieve_WhenManyVectorChunks_ExpectChunkCap(t *testin
 
 	nodeEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "articles/many-chunks", "h1", "bh1", nodeEmbID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("articles/many-chunks"), "articles/many-chunks", "h1", "bh1", nodeEmbID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("articles/many-chunks"),
 		Path:  "articles/many-chunks",
 		Title: "Many Chunks",
 		Type:  "article",
@@ -232,7 +235,7 @@ func TestRetrievalService_Retrieve_WhenManyVectorChunks_ExpectChunkCap(t *testin
 			EmbeddingID: chunkEmbID,
 		})
 	}
-	require.NoError(t, store.UpsertChunks(ctx, "articles/many-chunks", chunks))
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("articles/many-chunks"), "articles/many-chunks", chunks))
 
 	service := index.NewRetrievalService(store, &mockProvider{vectors: [][]float32{{1, 0}}})
 	results, err := service.Retrieve(ctx, index.RetrievalOptions{Query: "semantic", Limit: 5})
@@ -255,8 +258,9 @@ func TestRetrievalService_Retrieve_WhenExactTokenAndVectorNoise_ExpectKeywordFir
 
 	ragEmbID, err := store.InsertEmbedding(ctx, []float32{0, 1}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "ai/rag/rag-alternatives", "h1", "bh1", ragEmbID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("ai/rag/rag-alternatives"), "ai/rag/rag-alternatives", "h1", "bh1", ragEmbID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("ai/rag/rag-alternatives"),
 		Path:     "ai/rag/rag-alternatives",
 		Title:    "RAG budget",
 		Type:     "note",
@@ -265,8 +269,9 @@ func TestRetrievalService_Retrieve_WhenExactTokenAndVectorNoise_ExpectKeywordFir
 
 	jiraEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "programming/jira-alternatives", "h2", "bh2", jiraEmbID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("programming/jira-alternatives"), "programming/jira-alternatives", "h2", "bh2", jiraEmbID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("programming/jira-alternatives"),
 		Path:     "programming/jira-alternatives",
 		Title:    "Jira alternatives",
 		Type:     "article",
@@ -285,7 +290,7 @@ func TestRetrievalService_Retrieve_WhenExactTokenAndVectorNoise_ExpectKeywordFir
 			EmbeddingID: chunkEmbID,
 		})
 	}
-	require.NoError(t, store.UpsertChunks(ctx, "programming/jira-alternatives", chunks))
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("programming/jira-alternatives"), "programming/jira-alternatives", chunks))
 
 	service := index.NewRetrievalService(store, &mockProvider{vectors: [][]float32{{1, 0}}})
 	results, err := service.Retrieve(ctx, index.RetrievalOptions{
@@ -307,12 +312,13 @@ func TestRetrievalService_Retrieve_WhenVectorResultHasExactTokenPath_ExpectBoost
 
 	ragEmbID, err := store.InsertEmbedding(ctx, []float32{0.8, 0.2}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "ai/rag/rag-budget", "h1", "bh1", ragEmbID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("ai/rag/rag-budget"), "ai/rag/rag-budget", "h1", "bh1", ragEmbID))
 
 	jiraEmbID, err := store.InsertEmbedding(ctx, []float32{1, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "programming/jira-alternatives", "h2", "bh2", jiraEmbID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("programming/jira-alternatives"), "programming/jira-alternatives", "h2", "bh2", jiraEmbID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("programming/jira-alternatives"),
 		Path:     "programming/jira-alternatives",
 		Title:    "Jira alternatives",
 		Type:     "article",

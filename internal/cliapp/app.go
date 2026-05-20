@@ -20,6 +20,7 @@ func New() *cli.Command {
 			dumpImagesCmd(),
 			expandUrlsCmd(),
 			reindexLinksCmd(),
+			migrateNodeIDsCmd(),
 		},
 	}
 }

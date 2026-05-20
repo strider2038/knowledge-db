@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	stderrors "errors"
 	"fmt"
 	"math"
 	"path/filepath"
@@ -125,22 +126,108 @@ func (s *Store) DeleteEmbedding(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *Store) UpsertNode(ctx context.Context, path, contentHash, bodyHash string, nodeEmbeddingID int64) error {
+func (s *Store) UpsertNode(ctx context.Context, nodeID, path, contentHash, bodyHash string, nodeEmbeddingID int64) error {
 	err := s.execContext(ctx, `
-		INSERT INTO indexed_nodes (path, content_hash, body_hash, indexed_at, node_embedding_id)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
-		ON CONFLICT(path) DO UPDATE SET
+		INSERT INTO indexed_nodes (node_id, path, content_hash, body_hash, indexed_at, node_embedding_id)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+		ON CONFLICT(node_id) DO UPDATE SET
+			path = excluded.path,
 			content_hash = excluded.content_hash,
 			body_hash = excluded.body_hash,
 			indexed_at = CURRENT_TIMESTAMP,
 			node_embedding_id = excluded.node_embedding_id`,
-		path, contentHash, bodyHash, nodeEmbeddingID,
+		nodeID, path, contentHash, bodyHash, nodeEmbeddingID,
 	)
 	if err != nil {
 		return errors.Errorf("upsert node: %w", err)
 	}
 
 	return nil
+}
+
+func (s *Store) UpsertNodeSourceURL(ctx context.Context, nodeID, sourceURL string) error {
+	sourceURL = strings.TrimSpace(sourceURL)
+	if sourceURL == "" {
+		return nil
+	}
+	err := s.execContext(ctx, `
+		INSERT INTO node_source_urls (node_id, source_url) VALUES (?, ?)
+		ON CONFLICT(node_id) DO UPDATE SET source_url = excluded.source_url`,
+		nodeID, sourceURL,
+	)
+	if err != nil {
+		return errors.Errorf("upsert node source url: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) GetNodeByID(ctx context.Context, nodeID string) (*index.IndexedNode, error) {
+	var node index.IndexedNode
+	err := s.QueryRowContext(ctx, `
+		SELECT node_id, path, content_hash, body_hash, indexed_at, node_embedding_id
+		FROM indexed_nodes WHERE node_id = ?`, nodeID,
+	).Scan(&node.NodeID, &node.Path, &node.ContentHash, &node.BodyHash, &node.IndexedAt, &node.NodeEmbeddingID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &node, nil
+}
+
+func (s *Store) UpdateNodePath(ctx context.Context, nodeID, newPath string) error {
+	err := s.execContext(ctx, `UPDATE indexed_nodes SET path = ? WHERE node_id = ?`, newPath, nodeID)
+	if err != nil {
+		return errors.Errorf("update node path: %w", err)
+	}
+	if err := s.execContext(ctx, `UPDATE node_search SET path = ? WHERE node_id = ?`, newPath, nodeID); err != nil {
+		return errors.Errorf("update node search path: %w", err)
+	}
+	if err := s.execContext(ctx, `UPDATE chunks SET node_path = ? WHERE node_id = ?`, newPath, nodeID); err != nil {
+		return errors.Errorf("update chunks path: %w", err)
+	}
+	if err := s.execContext(ctx, `UPDATE chunk_search SET node_path = ? WHERE node_id = ?`, newPath, nodeID); err != nil {
+		return errors.Errorf("update chunk search path: %w", err)
+	}
+	if s.KeywordIndexMode() == index.KeywordIndexModeFTS5 {
+		// FTS rows are keyed by path/node_path; rebuild on next index touch is acceptable after move.
+		_ = s.execContext(ctx, `DELETE FROM node_search_fts WHERE path IN (SELECT path FROM node_search WHERE node_id = ?)`, nodeID)
+		_ = s.execContext(ctx, `DELETE FROM chunk_search_fts WHERE node_path = ?`, newPath)
+	}
+
+	return nil
+}
+
+func (s *Store) FindBySourceURL(ctx context.Context, normalizedURL string) (*index.NodeSourceMatch, error) {
+	normalizedURL = strings.TrimSpace(strings.ToLower(normalizedURL))
+	if normalizedURL == "" {
+		return nil, sql.ErrNoRows
+	}
+	var match index.NodeSourceMatch
+	err := s.QueryRowContext(ctx, `
+		SELECT u.node_id, n.path
+		FROM node_source_urls u
+		JOIN indexed_nodes n ON n.node_id = u.node_id
+		WHERE u.source_url = ?`, normalizedURL,
+	).Scan(&match.NodeID, &match.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	return &match, nil
+}
+
+func (s *Store) DeleteNodeByID(ctx context.Context, nodeID string) error {
+	node, err := s.GetNodeByID(ctx, nodeID)
+	if err != nil {
+		if stderrors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+
+		return errors.Errorf("delete node by id: %w", err)
+	}
+
+	return s.deleteNodeRecord(ctx, node.NodeID, node.Path)
 }
 
 func (s *Store) UpsertNodeSearch(ctx context.Context, doc index.NodeSearchDocument) error {
@@ -156,9 +243,10 @@ func (s *Store) UpsertNodeSearch(ctx context.Context, doc index.NodeSearchDocume
 
 	err := s.execContext(ctx, `
 		INSERT INTO node_search (
-			path, title, type, aliases, annotation, keywords, source_url, manual_processed, body, searchable_text
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(path) DO UPDATE SET
+			node_id, path, title, type, aliases, annotation, keywords, source_url, manual_processed, body, searchable_text
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(node_id) DO UPDATE SET
+			path = excluded.path,
 			title = excluded.title,
 			type = excluded.type,
 			aliases = excluded.aliases,
@@ -168,7 +256,7 @@ func (s *Store) UpsertNodeSearch(ctx context.Context, doc index.NodeSearchDocume
 			manual_processed = excluded.manual_processed,
 			body = excluded.body,
 			searchable_text = excluded.searchable_text`,
-		doc.Path, doc.Title, doc.Type, aliases, doc.Annotation, keywords, doc.SourceURL, manualProcessed, doc.Body, searchableText,
+		doc.NodeID, doc.Path, doc.Title, doc.Type, aliases, doc.Annotation, keywords, doc.SourceURL, manualProcessed, doc.Body, searchableText,
 	)
 	if err != nil {
 		return errors.Errorf("upsert node search: %w", err)
@@ -193,10 +281,27 @@ func (s *Store) UpsertNodeSearch(ctx context.Context, doc index.NodeSearchDocume
 }
 
 func (s *Store) DeleteNode(ctx context.Context, path string) error {
-	if err := s.DeleteChunks(ctx, path); err != nil {
+	node, err := s.GetNodeByPath(ctx, path)
+	if err != nil {
+		if stderrors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+
+		return errors.Errorf("delete node: %w", err)
+	}
+
+	return s.deleteNodeRecord(ctx, node.NodeID, node.Path)
+}
+
+//nolint:funcorder // internal delete helper grouped with DeleteNode
+func (s *Store) deleteNodeRecord(ctx context.Context, nodeID, path string) error {
+	if err := s.DeleteChunks(ctx, nodeID, path); err != nil {
 		return err
 	}
-	if err := s.execContext(ctx, `DELETE FROM node_search WHERE path = ?`, path); err != nil {
+	if err := s.execContext(ctx, `DELETE FROM node_source_urls WHERE node_id = ?`, nodeID); err != nil {
+		return errors.Errorf("delete node source url: %w", err)
+	}
+	if err := s.execContext(ctx, `DELETE FROM node_search WHERE node_id = ?`, nodeID); err != nil {
 		return errors.Errorf("delete node search: %w", err)
 	}
 	if s.KeywordIndexMode() == index.KeywordIndexModeFTS5 {
@@ -205,7 +310,7 @@ func (s *Store) DeleteNode(ctx context.Context, path string) error {
 		}
 	}
 
-	err := s.execContext(ctx, `DELETE FROM indexed_nodes WHERE path = ?`, path)
+	err := s.execContext(ctx, `DELETE FROM indexed_nodes WHERE node_id = ?`, nodeID)
 	if err != nil {
 		return errors.Errorf("delete node: %w", err)
 	}
@@ -216,9 +321,9 @@ func (s *Store) DeleteNode(ctx context.Context, path string) error {
 func (s *Store) GetNodeByPath(ctx context.Context, path string) (*index.IndexedNode, error) {
 	var node index.IndexedNode
 	err := s.QueryRowContext(ctx, `
-		SELECT path, content_hash, body_hash, indexed_at, node_embedding_id
+		SELECT node_id, path, content_hash, body_hash, indexed_at, node_embedding_id
 		FROM indexed_nodes WHERE path = ?`, path,
-	).Scan(&node.Path, &node.ContentHash, &node.BodyHash, &node.IndexedAt, &node.NodeEmbeddingID)
+	).Scan(&node.NodeID, &node.Path, &node.ContentHash, &node.BodyHash, &node.IndexedAt, &node.NodeEmbeddingID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +333,7 @@ func (s *Store) GetNodeByPath(ctx context.Context, path string) (*index.IndexedN
 
 func (s *Store) ListAllIndexed(ctx context.Context) ([]index.IndexedNode, error) {
 	rows, err := s.QueryContext(ctx, `
-		SELECT path, content_hash, body_hash, indexed_at, node_embedding_id
+		SELECT node_id, path, content_hash, body_hash, indexed_at, node_embedding_id
 		FROM indexed_nodes`)
 	if err != nil {
 		return nil, errors.Errorf("list indexed nodes: %w", err)
@@ -238,7 +343,7 @@ func (s *Store) ListAllIndexed(ctx context.Context) ([]index.IndexedNode, error)
 	var nodes []index.IndexedNode
 	for rows.Next() {
 		var node index.IndexedNode
-		if err := rows.Scan(&node.Path, &node.ContentHash, &node.BodyHash, &node.IndexedAt, &node.NodeEmbeddingID); err != nil {
+		if err := rows.Scan(&node.NodeID, &node.Path, &node.ContentHash, &node.BodyHash, &node.IndexedAt, &node.NodeEmbeddingID); err != nil {
 			return nil, errors.Errorf("scan indexed node: %w", err)
 		}
 		nodes = append(nodes, node)
@@ -247,22 +352,23 @@ func (s *Store) ListAllIndexed(ctx context.Context) ([]index.IndexedNode, error)
 	return nodes, rows.Err()
 }
 
-func (s *Store) UpsertChunks(ctx context.Context, nodePath string, chunks []index.Chunk) error {
-	if err := s.DeleteChunks(ctx, nodePath); err != nil {
+func (s *Store) UpsertChunks(ctx context.Context, nodeID, nodePath string, chunks []index.Chunk) error {
+	if err := s.DeleteChunks(ctx, nodeID, nodePath); err != nil {
 		return err
 	}
 
 	for _, c := range chunks {
 		err := s.execContext(ctx, `
-			INSERT INTO chunks (node_path, chunk_index, heading, content, embedding_id)
-			VALUES (?, ?, ?, ?, ?)`,
-			nodePath, c.ChunkIndex, c.Heading, c.Content, c.EmbeddingID,
+			INSERT INTO chunks (node_id, node_path, chunk_index, heading, content, embedding_id)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			nodeID, nodePath, c.ChunkIndex, c.Heading, c.Content, c.EmbeddingID,
 		)
 		if err != nil {
 			return errors.Errorf("insert chunk: %w", err)
 		}
 
 		if err := s.UpsertChunkSearch(ctx, index.ChunkSearchDocument{
+			NodeID:     nodeID,
 			NodePath:   nodePath,
 			ChunkIndex: c.ChunkIndex,
 			Heading:    c.Heading,
@@ -278,13 +384,14 @@ func (s *Store) UpsertChunks(ctx context.Context, nodePath string, chunks []inde
 func (s *Store) UpsertChunkSearch(ctx context.Context, doc index.ChunkSearchDocument) error {
 	searchableText := index.JoinSearchText(doc.NodePath, doc.Heading, doc.Content)
 	err := s.execContext(ctx, `
-		INSERT INTO chunk_search (node_path, chunk_index, heading, content, searchable_text)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(node_path, chunk_index) DO UPDATE SET
+		INSERT INTO chunk_search (node_id, node_path, chunk_index, heading, content, searchable_text)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(node_id, chunk_index) DO UPDATE SET
+			node_path = excluded.node_path,
 			heading = excluded.heading,
 			content = excluded.content,
 			searchable_text = excluded.searchable_text`,
-		doc.NodePath, doc.ChunkIndex, doc.Heading, doc.Content, searchableText,
+		doc.NodeID, doc.NodePath, doc.ChunkIndex, doc.Heading, doc.Content, searchableText,
 	)
 	if err != nil {
 		return errors.Errorf("upsert chunk search: %w", err)
@@ -307,8 +414,8 @@ func (s *Store) UpsertChunkSearch(ctx context.Context, doc index.ChunkSearchDocu
 	return nil
 }
 
-func (s *Store) DeleteChunks(ctx context.Context, nodePath string) error {
-	if err := s.execContext(ctx, `DELETE FROM chunk_search WHERE node_path = ?`, nodePath); err != nil {
+func (s *Store) DeleteChunks(ctx context.Context, nodeID, nodePath string) error {
+	if err := s.execContext(ctx, `DELETE FROM chunk_search WHERE node_id = ?`, nodeID); err != nil {
 		return errors.Errorf("delete chunk search: %w", err)
 	}
 	if s.KeywordIndexMode() == index.KeywordIndexModeFTS5 {
@@ -317,7 +424,7 @@ func (s *Store) DeleteChunks(ctx context.Context, nodePath string) error {
 		}
 	}
 
-	err := s.execContext(ctx, `DELETE FROM chunks WHERE node_path = ?`, nodePath)
+	err := s.execContext(ctx, `DELETE FROM chunks WHERE node_id = ?`, nodeID)
 	if err != nil {
 		return errors.Errorf("delete chunks: %w", err)
 	}
@@ -327,7 +434,7 @@ func (s *Store) DeleteChunks(ctx context.Context, nodePath string) error {
 
 func (s *Store) ListChunksByNode(ctx context.Context, nodePath string) ([]index.Chunk, error) {
 	rows, err := s.QueryContext(ctx, `
-		SELECT id, node_path, chunk_index, heading, content, embedding_id
+		SELECT id, node_id, node_path, chunk_index, heading, content, embedding_id
 		FROM chunks WHERE node_path = ? ORDER BY chunk_index`, nodePath,
 	)
 	if err != nil {
@@ -338,7 +445,7 @@ func (s *Store) ListChunksByNode(ctx context.Context, nodePath string) ([]index.
 	var chunks []index.Chunk
 	for rows.Next() {
 		var c index.Chunk
-		if err := rows.Scan(&c.ID, &c.NodePath, &c.ChunkIndex, &c.Heading, &c.Content, &c.EmbeddingID); err != nil {
+		if err := rows.Scan(&c.ID, &c.NodeID, &c.NodePath, &c.ChunkIndex, &c.Heading, &c.Content, &c.EmbeddingID); err != nil {
 			return nil, errors.Errorf("scan chunk: %w", err)
 		}
 		chunks = append(chunks, c)
@@ -373,7 +480,7 @@ func (s *Store) GetAllChunkEmbeddings(ctx context.Context) ([]index.ChunkEmbeddi
 
 func (s *Store) GetAllNodeEmbeddings(ctx context.Context) ([]index.NodeEmbedding, error) {
 	rows, err := s.QueryContext(ctx, `
-		SELECT n.path, e.vector
+		SELECT n.node_id, n.path, e.vector
 		FROM indexed_nodes n
 		JOIN embeddings e ON n.node_embedding_id = e.id`)
 	if err != nil {
@@ -385,7 +492,7 @@ func (s *Store) GetAllNodeEmbeddings(ctx context.Context) ([]index.NodeEmbedding
 	for rows.Next() {
 		var ne index.NodeEmbedding
 		var blob []byte
-		if err := rows.Scan(&ne.Path, &blob); err != nil {
+		if err := rows.Scan(&ne.NodeID, &ne.Path, &blob); err != nil {
 			return nil, errors.Errorf("scan node embedding: %w", err)
 		}
 		ne.Vector = decodeVector(blob)
@@ -438,6 +545,9 @@ func (s *Store) ClearAll(ctx context.Context) error {
 	if err := s.execContext(ctx, `DELETE FROM chunks`); err != nil {
 		return errors.Errorf("clear chunks: %w", err)
 	}
+	if err := s.execContext(ctx, `DELETE FROM node_source_urls`); err != nil {
+		return errors.Errorf("clear node source urls: %w", err)
+	}
 	if err := s.execContext(ctx, `DELETE FROM indexed_nodes`); err != nil {
 		return errors.Errorf("clear nodes: %w", err)
 	}
@@ -456,73 +566,6 @@ func (s *Store) execContext(ctx context.Context, query string, args ...any) erro
 	_, err := s.db.ExecContext(ctx, query, args...)
 
 	return err
-}
-
-func (s *Store) migrate() error {
-	ctx := context.Background()
-	_, err := s.db.ExecContext(ctx, "PRAGMA journal_mode=WAL")
-	if err != nil {
-		return errors.Errorf("set WAL mode: %w", err)
-	}
-
-	schema := `
-	CREATE TABLE IF NOT EXISTS embeddings (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		vector BLOB NOT NULL,
-		model TEXT NOT NULL,
-		dimensions INTEGER NOT NULL
-	);
-	CREATE TABLE IF NOT EXISTS indexed_nodes (
-		path TEXT PRIMARY KEY,
-		content_hash TEXT NOT NULL,
-		body_hash TEXT NOT NULL DEFAULT '',
-		indexed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		node_embedding_id INTEGER NOT NULL,
-		FOREIGN KEY (node_embedding_id) REFERENCES embeddings(id) ON DELETE CASCADE
-	);
-	CREATE TABLE IF NOT EXISTS chunks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		node_path TEXT NOT NULL,
-		chunk_index INTEGER NOT NULL,
-		heading TEXT NOT NULL DEFAULT '',
-		content TEXT NOT NULL,
-		embedding_id INTEGER NOT NULL,
-		UNIQUE(node_path, chunk_index),
-		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE,
-		FOREIGN KEY (embedding_id) REFERENCES embeddings(id) ON DELETE CASCADE
-	);
-	CREATE TABLE IF NOT EXISTS node_search (
-		path TEXT PRIMARY KEY,
-		title TEXT NOT NULL DEFAULT '',
-		type TEXT NOT NULL DEFAULT '',
-		aliases TEXT NOT NULL DEFAULT '',
-		annotation TEXT NOT NULL DEFAULT '',
-		keywords TEXT NOT NULL DEFAULT '',
-		source_url TEXT NOT NULL DEFAULT '',
-		manual_processed INTEGER NOT NULL DEFAULT 0,
-		body TEXT NOT NULL DEFAULT '',
-		searchable_text TEXT NOT NULL DEFAULT '',
-		FOREIGN KEY (path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
-	);
-	CREATE TABLE IF NOT EXISTS chunk_search (
-		node_path TEXT NOT NULL,
-		chunk_index INTEGER NOT NULL,
-		heading TEXT NOT NULL DEFAULT '',
-		content TEXT NOT NULL DEFAULT '',
-		searchable_text TEXT NOT NULL DEFAULT '',
-		PRIMARY KEY (node_path, chunk_index),
-		FOREIGN KEY (node_path) REFERENCES indexed_nodes(path) ON DELETE CASCADE
-	);`
-
-	if _, err := s.db.ExecContext(ctx, schema); err != nil {
-		return errors.Errorf("create schema: %w", err)
-	}
-
-	if err := s.migrateFTS(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (s *Store) migrateFTS() error {

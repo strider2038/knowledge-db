@@ -137,8 +137,9 @@ annotation: "Skills for Claude Code agents."
 	t.Cleanup(func() { require.NoError(t, indexStore.Close()) })
 	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "test")
 	require.NoError(t, err)
-	require.NoError(t, indexStore.UpsertNode(ctx, "ai/agentic-coding/skills/openclaw-skills", "hash", "body", embID))
+	require.NoError(t, indexStore.UpsertNode(ctx, sqlite.TestNodeID("ai/agentic-coding/skills/openclaw-skills"), "ai/agentic-coding/skills/openclaw-skills", "hash", "body", embID))
 	require.NoError(t, indexStore.UpsertNodeSearch(ctx, kbindex.NodeSearchDocument{
+		NodeID:     sqlite.TestNodeID("ai/agentic-coding/skills/openclaw-skills"),
 		Path:       "ai/agentic-coding/skills/openclaw-skills",
 		Title:      "OpenClaw Skills",
 		Type:       "link",

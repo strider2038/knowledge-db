@@ -9,6 +9,7 @@ type TreeNode struct {
 
 // Node — узел базы знаний (папка со статьёй).
 type Node struct {
+	ID         string         `json:"id"`
 	Path       string         `json:"path"`
 	Annotation string         `json:"annotation"`
 	Content    string         `json:"content"`
@@ -17,6 +18,7 @@ type Node struct {
 
 // NodeListItem — элемент списка узлов для обзора (метаданные без content).
 type NodeListItem struct {
+	ID              string   `json:"id"`
 	Path            string   `json:"path"`
 	Title           string   `json:"title"`
 	Type            string   `json:"type"`

@@ -130,6 +130,34 @@ func splitArticlePath(path string) (string, string) {
 	return path[:idx], path[idx+1:]
 }
 
+// GetNodeByID обрабатывает GET /api/nodes/by-id/{id}.
+func (h *Handler) GetNodeByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id required")
+
+		return
+	}
+	if !kb.ValidateNodeID(id) {
+		writeError(w, http.StatusBadRequest, "invalid id")
+
+		return
+	}
+	node, err := kb.GetNodeByID(r.Context(), h.dataPath, id)
+	if err != nil {
+		if errors.Is(err, kb.ErrNodeNotFound) {
+			writeError(w, http.StatusNotFound, "node not found")
+
+			return
+		}
+		clog.Errorf(r.Context(), "get node by id: %w", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+
+		return
+	}
+	writeJSON(w, node)
+}
+
 // GetNode обрабатывает GET /api/nodes/{path...}.
 func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
@@ -245,9 +273,12 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.SingleNodeEvent{Path: nodePath})
-		h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
+	if h.syncWorker != nil && node.ID != "" {
+		h.syncWorker.Send(index.NodeMovedEvent{
+			NodeID:  node.ID,
+			OldPath: nodePath,
+			NewPath: node.Path,
+		})
 	}
 	writeJSON(w, node)
 }
@@ -424,7 +455,20 @@ func (h *Handler) GetTree(w http.ResponseWriter, r *http.Request) {
 // ListNodes обрабатывает GET /api/nodes (список узлов по path query).
 // При recursive=true возвращает {nodes: NodeListItem[], total: number}.
 // При recursive=false — обратная совместимость: {nodes: TreeNode[]}.
+func rejectListNodesByIDQuery(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Query().Get("id") == "" {
+		return false
+	}
+	writeError(w, http.StatusBadRequest, "use GET /api/nodes/by-id/{id} to fetch a node by id")
+
+	return true
+}
+
+//nolint:gocognit // list handler: recursive vs flat response and multiple query filters
 func (h *Handler) ListNodes(w http.ResponseWriter, r *http.Request) {
+	if rejectListNodesByIDQuery(w, r) {
+		return
+	}
 	q := r.URL.Query()
 	path := q.Get("path")
 	recursive, _ := strconv.ParseBool(q.Get("recursive"))

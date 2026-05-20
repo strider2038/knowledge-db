@@ -28,6 +28,15 @@ type SingleNodeEvent struct {
 
 func (SingleNodeEvent) syncEventType() {}
 
+// NodeMovedEvent — обновление path в индексе без потери embeddings.
+type NodeMovedEvent struct {
+	NodeID  string
+	OldPath string
+	NewPath string
+}
+
+func (NodeMovedEvent) syncEventType() {}
+
 // GitSyncDiffEvent — diff после git pull (пока заглушка, использует FullReconcile).
 type GitSyncDiffEvent struct{}
 
@@ -119,6 +128,11 @@ func (w *SyncWorker) handleEvent(ctx context.Context, event SyncEvent) {
 	case SingleNodeEvent:
 		logger.Debug("sync: processing single node", "path", e.Path)
 		w.processSingleNode(ctx, e.Path)
+	case NodeMovedEvent:
+		logger.Info("sync: node moved", "node_id", e.NodeID, "old_path", e.OldPath, "new_path", e.NewPath)
+		if err := w.store.UpdateNodePath(ctx, e.NodeID, e.NewPath); err != nil {
+			clog.Errorf(ctx, "sync: update node path: %w", err)
+		}
 	case GitSyncDiffEvent:
 		logger.Info("sync: git diff event, starting full reconcile")
 		w.runFullReconcile(ctx)
@@ -150,17 +164,24 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 		return
 	}
 
-	contentHash := computeContentHash(node)
-	bodyHash := computeBodyHash(node.Content)
-
-	existing, err := w.store.GetNodeByPath(ctx, path)
-	if err == nil && existing.ContentHash == contentHash && existing.BodyHash == bodyHash {
-		logger.Debug("sync: node unchanged, skipping", "path", path)
+	nodeID := kb.NodeIDFromMetadata(node.Metadata)
+	if nodeID == "" {
+		logger.Warn("sync: skip node without id", "path", path)
 
 		return
 	}
 
-	logger.Debug("sync: node changed or new, indexing", "path", path)
+	contentHash := computeContentHash(node)
+	bodyHash := computeBodyHash(node.Content)
+
+	existing, err := w.store.GetNodeByID(ctx, nodeID)
+	if err == nil && existing.ContentHash == contentHash && existing.BodyHash == bodyHash && existing.Path == path {
+		logger.Debug("sync: node unchanged, skipping", "path", path, "node_id", nodeID)
+
+		return
+	}
+
+	logger.Debug("sync: node changed or new, indexing", "path", path, "node_id", nodeID)
 
 	nodeType, _ := node.Metadata["type"].(string)
 	embeddingText := buildNodeEmbeddingText(node, nodeType)
@@ -178,23 +199,30 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 		return
 	}
 
-	if err := w.store.UpsertNode(ctx, path, contentHash, bodyHash, embID); err != nil {
+	if err := w.store.UpsertNode(ctx, nodeID, path, contentHash, bodyHash, embID); err != nil {
 		clog.Errorf(ctx, "sync: upsert node %s: %w", path, err)
 
 		return
 	}
-	if err := w.store.UpsertNodeSearch(ctx, buildNodeSearchDocument(node, nodeType)); err != nil {
+	searchDoc := buildNodeSearchDocument(node, nodeType)
+	searchDoc.NodeID = nodeID
+	if err := w.store.UpsertNodeSearch(ctx, searchDoc); err != nil {
 		clog.Errorf(ctx, "sync: upsert node search %s: %w", path, err)
 
 		return
 	}
+	if sourceURL, _ := node.Metadata["source_url"].(string); sourceURL != "" {
+		if err := w.store.UpsertNodeSourceURL(ctx, nodeID, kb.NormalizeSourceURLForDedup(sourceURL)); err != nil {
+			clog.Errorf(ctx, "sync: upsert node source url %s: %w", path, err)
+		}
+	}
 
-	logger.Info("sync: node indexed", "path", path, "type", nodeType)
+	logger.Info("sync: node indexed", "path", path, "node_id", nodeID, "type", nodeType)
 
 	if shouldChunkBody(node, nodeType) {
 		clog.Debug(ctx, "sync: processing body chunks", "path", path)
-		w.processChunks(ctx, path, node.Content)
-	} else if err := w.store.DeleteChunks(ctx, path); err != nil {
+		w.processChunks(ctx, nodeID, path, node.Content)
+	} else if err := w.store.DeleteChunks(ctx, nodeID, path); err != nil {
 		clog.Errorf(ctx, "sync: delete chunks for %s: %w", path, err)
 	}
 
@@ -205,7 +233,7 @@ func shouldChunkBody(node *kb.Node, nodeType string) bool {
 	return (nodeType == "article" || shouldIndexBody(node, nodeType)) && strings.TrimSpace(node.Content) != ""
 }
 
-func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
+func (w *SyncWorker) processChunks(ctx context.Context, nodeID, nodePath, body string) {
 	logger := clog.FromContext(ctx)
 	textChunks := ChunkText(body)
 	if len(textChunks) == 0 {
@@ -235,6 +263,7 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
 			return
 		}
 		chunks[i] = Chunk{
+			NodeID:      nodeID,
 			NodePath:    nodePath,
 			ChunkIndex:  i,
 			Heading:     tc.Heading,
@@ -243,7 +272,7 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodePath, body string) {
 		}
 	}
 
-	if err := w.store.UpsertChunks(ctx, nodePath, chunks); err != nil {
+	if err := w.store.UpsertChunks(ctx, nodeID, nodePath, chunks); err != nil {
 		clog.Errorf(ctx, "sync: upsert chunks for %s: %w", nodePath, err)
 	}
 
@@ -408,6 +437,7 @@ func buildNodeSearchDocument(node *kb.Node, nodeType string) NodeSearchDocument 
 	}
 
 	return NodeSearchDocument{
+		NodeID:          kb.NodeIDFromMetadata(node.Metadata),
 		Path:            node.Path,
 		Title:           title,
 		Type:            nodeType,

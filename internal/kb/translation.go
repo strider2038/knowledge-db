@@ -26,6 +26,18 @@ func (s *Store) CreateTranslationFile(
 		return errors.Errorf("create translation file: mkdir: %w", err)
 	}
 
+	if _, ok := frontmatter["translation_of_id"]; !ok {
+		origStem := filepath.Join(basePath, filepath.FromSlash(themePath), slug)
+		if origMeta, _, _, parseErr := parseNodeFile(s.fs, origStem); parseErr == nil {
+			if origID := NodeIDFromMetadata(origMeta); origID != "" {
+				frontmatter["translation_of_id"] = origID
+			}
+		}
+	}
+	if err := EnsureNodeID(frontmatter); err != nil {
+		return errors.Errorf("create translation file: %w", err)
+	}
+
 	fmBytes, err := FormatFrontmatter(frontmatter)
 	if err != nil {
 		return errors.Errorf("create translation file: %w", err)

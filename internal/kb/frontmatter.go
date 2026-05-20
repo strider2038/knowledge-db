@@ -70,6 +70,11 @@ func ValidateFrontmatter(matter map[string]any) string {
 	if matter == nil {
 		return "frontmatter required"
 	}
+	if id := NodeIDFromMetadata(matter); id == "" {
+		return "frontmatter: id required"
+	} else if !ValidateNodeID(id) {
+		return "frontmatter: id must be a valid UUID"
+	}
 	if _, ok := matter["keywords"]; !ok {
 		return "frontmatter: keywords required"
 	}

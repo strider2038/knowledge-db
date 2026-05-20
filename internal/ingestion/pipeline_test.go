@@ -13,12 +13,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/strider2038/knowledge-db/internal/index/sqlite"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/fetcher"
 	"github.com/strider2038/knowledge-db/internal/ingestion/git"
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
+
+const pipelineTestNodeID = "018f0000-0000-7000-8000-000000000099"
+
+func testNodeYAML(body string) string {
+	if strings.Contains(body, "id:") {
+		return body
+	}
+
+	return strings.Replace(body, "---\n", "---\nid: \""+pipelineTestNodeID+"\"\n", 1)
+}
 
 // mockOrchestrator — мок LLMOrchestrator.
 type mockOrchestrator struct {
@@ -380,6 +391,124 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 	assert.Equal(t, "Иван Петров", node.Metadata["source_author"])
 }
 
+func TestPipelineIngester_IngestURL_WhenDuplicateSourceURL_ExpectSameIDAndPath(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	articleURL := srv.URL + "/article/dedup"
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	existing, err := store.CreateNode(ctx, base, kb.CreateNodeParams{
+		ThemePath: "go/concurrency",
+		Slug:      "goroutine-leak",
+		Frontmatter: map[string]any{
+			"keywords":   []string{"goroutines"},
+			"created":    now,
+			"updated":    now,
+			"type":       "article",
+			"title":      "Original Title",
+			"source_url": articleURL,
+		},
+		Content: "# Original\n\nOld body.",
+	})
+	require.NoError(t, err)
+
+	indexStore, err := sqlite.NewStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = indexStore.Close() })
+	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	normURL := kb.NormalizeSourceURLForDedup(articleURL)
+	require.NoError(t, indexStore.UpsertNode(ctx, existing.ID, existing.Path, "h1", "bh1", embID))
+	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, existing.ID, normURL))
+
+	f := &mockFetcher{
+		result: &fetcher.FetchResult{
+			Title:   "Goroutine Leaks Updated",
+			Content: "# Goroutine Leaks\n\nNew content.",
+		},
+	}
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"goroutines", "leak"},
+			Annotation: "Updated annotation",
+			ThemePath:  "other/theme",
+			Slug:       "other-slug",
+			Type:       "article",
+			Content:    "# Goroutine Leaks\n\nNew content.",
+			Title:      "Goroutine Leaks Updated",
+			SourceURL:  articleURL,
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, false, nil, nil, nil)
+	pipeline.SetPlacementIndexStore(indexStore)
+
+	node, err := pipeline.IngestURL(ctx, articleURL)
+	require.NoError(t, err)
+	assert.Equal(t, existing.ID, node.ID)
+	assert.Equal(t, existing.Path, node.Path)
+	assert.Equal(t, "Updated annotation", node.Annotation)
+
+	all, err := store.ListAllNodes(ctx, base)
+	require.NoError(t, err)
+	assert.Len(t, all, 1)
+}
+
+func TestPipelineIngester_IngestText_WhenNodeIDSet_ExpectUpdateExisting(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	existing, err := store.CreateNode(ctx, base, kb.CreateNodeParams{
+		ThemePath: "topic",
+		Slug:      "note",
+		Frontmatter: map[string]any{
+			"keywords": []string{"old"},
+			"created":  now,
+			"updated":  now,
+			"type":     "note",
+			"title":    "Old Title",
+		},
+		Content: "Old body",
+	})
+	require.NoError(t, err)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"new"},
+			Annotation: "New annotation",
+			ThemePath:  "other",
+			Slug:       "other-slug",
+			Type:       "note",
+			Content:    "New body",
+			Title:      "New Title",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:   "Refresh note",
+		NodeID: existing.ID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, existing.ID, node.ID)
+	assert.Equal(t, existing.Path, node.Path)
+	assert.Equal(t, "New annotation", node.Annotation)
+	assert.Contains(t, node.Content, "New body")
+}
+
 type mockTranslator struct {
 	translateFunc func(ctx context.Context, content string) (string, error)
 }
@@ -557,7 +686,7 @@ func TestPipelineIngester_RefreshDescription_WhenRepository_ExpectStableFieldsPr
 	fs := afero.NewMemMapFs()
 	base := testBasePath
 	require.NoError(t, fs.MkdirAll(filepath.Join(base, "go/packages"), 0o755))
-	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "go/packages/runnable.md"), []byte(`---
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "go/packages/runnable.md"), []byte(testNodeYAML(`---
 title: Old Runnable
 aliases: [Old Runnable]
 keywords: [old]
@@ -571,7 +700,7 @@ source_author: "Existing Author"
 ---
 
 Old body
-`), 0o644))
+`)), 0o644))
 	store := kb.NewStore(fs)
 
 	orc := &mockOrchestrator{
@@ -665,7 +794,7 @@ func TestPipelineIngester_RefreshDescription_WhenNewsLink_ExpectTypeCorrectedToB
 	fs := afero.NewMemMapFs()
 	base := testBasePath
 	require.NoError(t, fs.MkdirAll(filepath.Join(base, "news"), 0o755))
-	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "news/release.md"), []byte(`---
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "news/release.md"), []byte(testNodeYAML(`---
 title: Old Release
 keywords: [old]
 created: "2024-01-01T00:00:00Z"
@@ -676,7 +805,7 @@ source_url: "https://techcrunch.com/release"
 ---
 
 Old body
-`), 0o644))
+`)), 0o644))
 	store := kb.NewStore(fs)
 	orc := &mockOrchestrator{
 		result: &llm.ProcessResult{
@@ -707,7 +836,7 @@ func TestPipelineIngester_RefreshDescription_WhenLearningResourceLink_ExpectDige
 	fs := afero.NewMemMapFs()
 	base := testBasePath
 	require.NoError(t, fs.MkdirAll(filepath.Join(base, "ai/ai-bots"), 0o755))
-	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "ai/ai-bots/granola-ai-notepad.md"), []byte(`---
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "ai/ai-bots/granola-ai-notepad.md"), []byte(testNodeYAML(`---
 title: Granola
 keywords: [ai, notes]
 created: "2024-01-01T00:00:00Z"
@@ -719,7 +848,7 @@ content_profile: "learning_resource_profile"
 ---
 
 Old body
-`), 0o644))
+`)), 0o644))
 	store := kb.NewStore(fs)
 	orc := &mockOrchestrator{
 		result: &llm.ProcessResult{

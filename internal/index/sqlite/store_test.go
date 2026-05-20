@@ -96,6 +96,54 @@ func TestStore_DeleteEmbedding_ExpectRemoved(t *testing.T) {
 	assert.Empty(t, records)
 }
 
+func TestStore_UpdateNodePath_WhenMoved_ExpectPathUpdatedAndEmbeddingKept(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	embID, err := store.InsertEmbedding(ctx, []float32{0.1, 0.2}, "model")
+	require.NoError(t, err)
+	nodeID := TestNodeID("old/path")
+	require.NoError(t, store.UpsertNode(ctx, nodeID, "old/path", "hash1", "bh1", embID))
+
+	require.NoError(t, store.UpdateNodePath(ctx, nodeID, "new/path"))
+
+	byID, err := store.GetNodeByID(ctx, nodeID)
+	require.NoError(t, err)
+	assert.Equal(t, "new/path", byID.Path)
+	assert.Equal(t, embID, byID.NodeEmbeddingID)
+
+	_, err = store.GetNodeByPath(ctx, "old/path")
+	require.Error(t, err)
+
+	byPath, err := store.GetNodeByPath(ctx, "new/path")
+	require.NoError(t, err)
+	assert.Equal(t, nodeID, byPath.NodeID)
+}
+
+func TestStore_FindBySourceURL_WhenIndexed_ExpectMatch(t *testing.T) {
+	t.Parallel()
+
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	nodeID := TestNodeID("articles/example")
+	require.NoError(t, store.UpsertNode(ctx, nodeID, "articles/example", "h1", "bh1", embID))
+	normalized := "https://example.com/article"
+	require.NoError(t, store.UpsertNodeSourceURL(ctx, nodeID, normalized))
+
+	match, err := store.FindBySourceURL(ctx, normalized)
+	require.NoError(t, err)
+	assert.Equal(t, nodeID, match.NodeID)
+	assert.Equal(t, "articles/example", match.Path)
+
+	_, err = store.FindBySourceURL(ctx, "https://other.example/x")
+	require.Error(t, err)
+}
+
 func TestStore_UpsertNode_ExpectCreated(t *testing.T) {
 	t.Parallel()
 
@@ -105,7 +153,7 @@ func TestStore_UpsertNode_ExpectCreated(t *testing.T) {
 	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
 
-	err = store.UpsertNode(ctx, "topic/node", "hash1", "hash2", embID)
+	err = store.UpsertNode(ctx, TestNodeID("topic/node"), "topic/node", "hash1", "hash2", embID)
 	require.NoError(t, err)
 
 	node, err := store.GetNodeByPath(ctx, "topic/node")
@@ -124,9 +172,10 @@ func TestStore_UpsertNodeSearch_ExpectSearchableTextStored(t *testing.T) {
 
 	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "topic/node", "hash1", "hash2", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("topic/node"), "topic/node", "hash1", "hash2", embID))
 
 	err = store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("topic/node"),
 		Path:            "topic/node",
 		Title:           "SQLite Search",
 		Type:            "note",
@@ -178,7 +227,8 @@ func TestStore_SearchVocabulary_ExpectCuratedTermsWithLimits(t *testing.T) {
 	} {
 		embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 		require.NoError(t, err)
-		require.NoError(t, store.UpsertNode(ctx, doc.Path, "hash", "body", embID))
+		doc.NodeID = TestNodeID(doc.Path)
+		require.NoError(t, store.UpsertNode(ctx, doc.NodeID, doc.Path, "hash", "body", embID))
 		require.NoError(t, store.UpsertNodeSearch(ctx, doc))
 	}
 
@@ -207,13 +257,13 @@ func TestStore_UpsertNode_WhenExists_ExpectUpdated(t *testing.T) {
 	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
 
-	err = store.UpsertNode(ctx, "topic/node", "hash1", "bhash1", embID)
+	err = store.UpsertNode(ctx, TestNodeID("topic/node"), "topic/node", "hash1", "bhash1", embID)
 	require.NoError(t, err)
 
 	embID2, err := store.InsertEmbedding(ctx, []float32{0.2}, "model")
 	require.NoError(t, err)
 
-	err = store.UpsertNode(ctx, "topic/node", "hash2", "bhash2", embID2)
+	err = store.UpsertNode(ctx, TestNodeID("topic/node"), "topic/node", "hash2", "bhash2", embID2)
 	require.NoError(t, err)
 
 	node, err := store.GetNodeByPath(ctx, "topic/node")
@@ -232,7 +282,7 @@ func TestStore_DeleteNode_ExpectRemoved(t *testing.T) {
 	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
 
-	err = store.UpsertNode(ctx, "topic/node", "hash1", "bhash1", embID)
+	err = store.UpsertNode(ctx, TestNodeID("topic/node"), "topic/node", "hash1", "bhash1", embID)
 	require.NoError(t, err)
 
 	err = store.DeleteNode(ctx, "topic/node")
@@ -249,8 +299,8 @@ func TestStore_ListAllIndexed_ExpectAllNodes(t *testing.T) {
 	ctx := context.Background()
 
 	embID, _ := store.InsertEmbedding(ctx, []float32{0.1}, "model")
-	require.NoError(t, store.UpsertNode(ctx, "a/b", "h1", "bh1", embID))
-	require.NoError(t, store.UpsertNode(ctx, "c/d", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("a/b"), "a/b", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("c/d"), "c/d", "h2", "bh2", embID))
 
 	nodes, err := store.ListAllIndexed(ctx)
 	require.NoError(t, err)
@@ -264,7 +314,7 @@ func TestStore_Chunks_ExpectCRUD(t *testing.T) {
 	ctx := context.Background()
 
 	embID, _ := store.InsertEmbedding(ctx, []float32{0.1}, "model")
-	require.NoError(t, store.UpsertNode(ctx, "topic/node", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("topic/node"), "topic/node", "h1", "bh1", embID))
 
 	chunkEmbID, _ := store.InsertEmbedding(ctx, []float32{0.5}, "model")
 	chunks := []index.Chunk{
@@ -272,7 +322,7 @@ func TestStore_Chunks_ExpectCRUD(t *testing.T) {
 		{NodePath: "topic/node", ChunkIndex: 1, Heading: "Details", Content: "details text", EmbeddingID: chunkEmbID},
 	}
 
-	err := store.UpsertChunks(ctx, "topic/node", chunks)
+	err := store.UpsertChunks(ctx, TestNodeID("topic/node"), "topic/node", chunks)
 	require.NoError(t, err)
 
 	result, err := store.ListChunksByNode(ctx, "topic/node")
@@ -294,14 +344,14 @@ func TestStore_UpsertChunks_WhenReplaced_ExpectOldRemoved(t *testing.T) {
 	ctx := context.Background()
 
 	embID, _ := store.InsertEmbedding(ctx, []float32{0.1}, "model")
-	require.NoError(t, store.UpsertNode(ctx, "topic/node", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("topic/node"), "topic/node", "h1", "bh1", embID))
 
 	chunkEmbID, _ := store.InsertEmbedding(ctx, []float32{0.5}, "model")
-	require.NoError(t, store.UpsertChunks(ctx, "topic/node", []index.Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("topic/node"), "topic/node", []index.Chunk{
 		{NodePath: "topic/node", ChunkIndex: 0, Heading: "Old", Content: "old", EmbeddingID: chunkEmbID},
 	}))
 
-	require.NoError(t, store.UpsertChunks(ctx, "topic/node", []index.Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("topic/node"), "topic/node", []index.Chunk{
 		{NodePath: "topic/node", ChunkIndex: 0, Heading: "New", Content: "new", EmbeddingID: chunkEmbID},
 	}))
 
@@ -333,9 +383,10 @@ func TestStore_ClearAll_ExpectEmpty(t *testing.T) {
 	ctx := context.Background()
 
 	embID, _ := store.InsertEmbedding(ctx, []float32{0.1}, "model")
-	require.NoError(t, store.UpsertNode(ctx, "a/b", "h1", "bh1", embID))
-	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{Path: "a/b", Title: "Title"}))
-	require.NoError(t, store.UpsertChunks(ctx, "a/b", []index.Chunk{
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("a/b"), "a/b", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("a/b"),Path: "a/b", Title: "Title"}))
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("a/b"), "a/b", []index.Chunk{
 		{NodePath: "a/b", ChunkIndex: 0, Heading: "Heading", Content: "content", EmbeddingID: embID},
 	}))
 

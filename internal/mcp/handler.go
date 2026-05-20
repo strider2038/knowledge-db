@@ -35,7 +35,8 @@ type semanticSearchInput struct {
 }
 
 type getNoteInput struct {
-	Path           string `json:"path" jsonschema:"Knowledge-base node path, for example topic/node"`
+	Path           string `json:"path,omitempty" jsonschema:"Knowledge-base node path, for example topic/node"`
+	ID             string `json:"id,omitempty" jsonschema:"Stable node UUID; alternative to path"`
 	IncludeContent *bool  `json:"include_content,omitempty" jsonschema:"Whether to include full note content in response, default true"`
 	MaxChars       int    `json:"max_chars,omitempty" jsonschema:"Optional max content length in characters"`
 }
@@ -55,6 +56,7 @@ type toolResultItem struct {
 }
 
 type getNoteResult struct {
+	ID         string   `json:"id,omitempty"`
 	Path       string   `json:"path"`
 	Title      string   `json:"title"`
 	Type       string   `json:"type,omitempty"`
@@ -217,19 +219,31 @@ func (s *searchServices) getNote(ctx context.Context, input getNoteInput) (getNo
 		return getNoteResult{}, errGetNoteUnavailable
 	}
 	path := strings.TrimSpace(input.Path)
-	if path == "" {
+	id := strings.TrimSpace(input.ID)
+	if path == "" && id == "" {
 		return getNoteResult{}, errPathRequired
 	}
 
-	node, err := kb.GetNode(ctx, dataPath, path)
+	var node *kb.Node
+	var err error
+	switch {
+	case id != "":
+		node, err = kb.GetNodeByID(ctx, dataPath, id)
+	default:
+		node, err = kb.GetNode(ctx, dataPath, path)
+	}
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
-			return getNoteResult{}, fmt.Errorf("%w: %s", errNodeNotFound, path)
+			ref := path
+			if ref == "" {
+				ref = id
+			}
+
+			return getNoteResult{}, fmt.Errorf("%w: %s", errNodeNotFound, ref)
 		}
 
 		return getNoteResult{}, fmt.Errorf("get_note: %w", err)
 	}
-
 	includeContent := input.IncludeContent == nil || *input.IncludeContent
 	content := ""
 	truncated := false
@@ -237,6 +251,7 @@ func (s *searchServices) getNote(ctx context.Context, input getNoteInput) (getNo
 		content, truncated = truncateContent(node.Content, input.MaxChars)
 	}
 	result := getNoteResult{
+		ID:         node.ID,
 		Path:       node.Path,
 		Title:      node.Path,
 		Annotation: node.Annotation,

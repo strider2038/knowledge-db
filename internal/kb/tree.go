@@ -26,6 +26,11 @@ func GetNode(ctx context.Context, basePath, nodePath string) (*Node, error) {
 	return NewStore(afero.NewOsFs()).GetNode(ctx, basePath, nodePath)
 }
 
+// GetNodeByID читает узел по стабильному frontmatter id.
+func GetNodeByID(ctx context.Context, basePath, nodeID string) (*Node, error) {
+	return NewStore(afero.NewOsFs()).GetNodeByID(ctx, basePath, nodeID)
+}
+
 // PatchNodeManualProcessed обновляет флаг manual_processed в файле узла.
 func PatchNodeManualProcessed(ctx context.Context, basePath, nodePath string, value bool) error {
 	return NewStore(afero.NewOsFs()).PatchNodeManualProcessed(ctx, basePath, nodePath, value)

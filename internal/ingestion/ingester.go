@@ -12,6 +12,7 @@ type IngestRequest struct {
 	SourceURL    string // опционально — метаданные источника
 	SourceAuthor string // опционально
 	TypeHint     string // опционально: auto, article, link, note
+	NodeID       string // опционально — обновить существующий узел по id
 }
 
 // Ingester — интерфейс pipeline добавления записей в базу.

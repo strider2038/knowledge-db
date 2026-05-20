@@ -52,6 +52,7 @@ type ProcessResult struct {
 	SourceDate     *time.Time
 	Content        string
 	Title          string
+	NodeID         string // optional: explicit update target (set by pipeline, not LLM)
 }
 
 // responsesClient — внутренний интерфейс для тестирования.
