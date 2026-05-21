@@ -6,43 +6,43 @@ import (
 
 	"github.com/muonsoft/clog"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
-	"github.com/strider2038/knowledge-db/internal/googleoauth"
 	"github.com/strider2038/knowledge-db/internal/oauthcommon"
+	"github.com/strider2038/knowledge-db/internal/yandexoauth"
 )
 
-func googleOAuthConfigFromApp(cfg *config.Config) googleoauth.Config {
-	return googleoauth.Config{
-		ClientID:      cfg.Auth.GoogleClientID,
-		ClientSecret:  cfg.Auth.GoogleClientSecret,
-		RedirectURL:   cfg.Auth.GoogleRedirectURL,
+func yandexOAuthConfigFromApp(cfg *config.Config) yandexoauth.Config {
+	return yandexoauth.Config{
+		ClientID:      cfg.Auth.YandexClientID,
+		ClientSecret:  cfg.Auth.YandexClientSecret,
+		RedirectURL:   cfg.Auth.YandexRedirectURL,
 		StateSecret:   cfg.Auth.OAuthStateSecret,
 		AllowedEmails: cfg.Auth.AuthAllowedEmails,
 	}
 }
 
-// GoogleOAuthStart handles GET /api/auth/google: redirect to Google with signed state.
-func (h *AuthHandler) GoogleOAuthStart(w http.ResponseWriter, r *http.Request) {
-	if !h.cfg.Auth.GoogleAuthConfigured() {
+// YandexOAuthStart handles GET /api/auth/yandex: redirect to Yandex with signed state.
+func (h *AuthHandler) YandexOAuthStart(w http.ResponseWriter, r *http.Request) {
+	if !h.cfg.Auth.YandexAuthConfigured() {
 		w.WriteHeader(http.StatusNotFound)
 
 		return
 	}
 	returnPath := oauthcommon.SanitizeReturnPath(r.URL.Query().Get("redirect"))
-	st, err := oauthcommon.SignState(h.googleClient.Config.StateSecret, returnPath, time.Now())
+	st, err := oauthcommon.SignState(h.yandexClient.Config.StateSecret, returnPath, time.Now())
 	if err != nil {
-		clog.Errorf(r.Context(), "auth google: sign state: %v", err)
+		clog.Errorf(r.Context(), "auth yandex: sign state: %v", err)
 		writeError(w, http.StatusInternalServerError, "oauth state error")
 
 		return
 	}
-	loc := h.googleClient.AuthorizationURL(st)
+	loc := h.yandexClient.AuthorizationURL(st)
 	http.Redirect(w, r, loc, http.StatusFound)
 }
 
-// GoogleOAuthCallback handles GET /api/auth/google/callback.
-func (h *AuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	const provider = "google"
-	if !h.cfg.Auth.GoogleAuthConfigured() {
+// YandexOAuthCallback handles GET /api/auth/yandex/callback.
+func (h *AuthHandler) YandexOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	const provider = "yandex"
+	if !h.cfg.Auth.YandexAuthConfigured() {
 		w.WriteHeader(http.StatusNotFound)
 
 		return
@@ -60,35 +60,35 @@ func (h *AuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	returnPath, err := oauthcommon.VerifyState(h.googleClient.Config.StateSecret, state)
+	returnPath, err := oauthcommon.VerifyState(h.yandexClient.Config.StateSecret, state)
 	if err != nil {
-		clog.Warn(r.Context(), "auth google: invalid state", "err", err)
+		clog.Warn(r.Context(), "auth yandex: invalid state", "err", err)
 		oauthcommon.RedirectToLoginError(w, r, h.cfg.WebPublicBaseURL, "state", provider)
 
 		return
 	}
-	email, verified, err := h.googleClient.ExchangeCodeForUserInfo(r.Context(), code)
+	email, err := h.yandexClient.ExchangeCodeForUserInfo(r.Context(), code)
 	if err != nil {
-		clog.Warn(r.Context(), "auth google: token or userinfo failed", "err", err)
+		clog.Warn(r.Context(), "auth yandex: token or userinfo failed", "err", err)
 		oauthcommon.RedirectToLoginError(w, r, h.cfg.WebPublicBaseURL, "oauth", provider)
 
 		return
 	}
-	if !verified {
+	if email == "" {
 		oauthcommon.RedirectToLoginError(w, r, h.cfg.WebPublicBaseURL, "forbidden", provider)
 
 		return
 	}
-	allow := oauthcommon.ParseEmailAllowlist(h.googleClient.Config.AllowedEmails)
+	allow := oauthcommon.ParseEmailAllowlist(h.yandexClient.Config.AllowedEmails)
 	if !oauthcommon.IsEmailAllowed(allow, email) {
-		clog.Info(r.Context(), "auth google: email not in allowlist", "email", email)
+		clog.Info(r.Context(), "auth yandex: email not in allowlist", "email", email)
 		oauthcommon.RedirectToLoginError(w, r, h.cfg.WebPublicBaseURL, "forbidden", provider)
 
 		return
 	}
 	sid, err := h.store.Create(h.cfg.Auth.SessionTTL)
 	if err != nil {
-		clog.Errorf(r.Context(), "auth google: create session: %w", err)
+		clog.Errorf(r.Context(), "auth yandex: create session: %w", err)
 		oauthcommon.RedirectToLoginError(w, r, h.cfg.WebPublicBaseURL, "server", provider)
 
 		return
@@ -96,11 +96,11 @@ func (h *AuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Request
 	setSessionCookie(w, r, sid, int(h.cfg.Auth.SessionTTL.Seconds()))
 	dest, err := oauthcommon.AppendQueryPath(h.cfg.WebPublicBaseURL, returnPath, "")
 	if err != nil {
-		clog.Errorf(r.Context(), "auth google: build redirect: %v", err)
+		clog.Errorf(r.Context(), "auth yandex: build redirect: %v", err)
 		oauthcommon.RedirectToLoginError(w, r, h.cfg.WebPublicBaseURL, "config", provider)
 
 		return
 	}
-	clog.Info(r.Context(), "auth google: success", "email", email)
+	clog.Info(r.Context(), "auth yandex: success", "email", email)
 	http.Redirect(w, r, dest, http.StatusFound)
 }

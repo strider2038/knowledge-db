@@ -1,4 +1,4 @@
-package googleoauth
+package oauthcommon
 
 import (
 	"crypto/hmac"
@@ -73,7 +73,7 @@ func VerifyState(secret, state string) (string, error) {
 	if err != nil {
 		return "", errors.Errorf("invalid state encoding: %w", err)
 	}
-	if len(raw) < 1+8+2+sha256.Size+1 { // at least 1 + ts + 2 (len) + 1 char path
+	if len(raw) < 1+8+2+sha256.Size+1 {
 		return "", errors.New("state too short")
 	}
 	if raw[0] != stateV1 {
@@ -93,7 +93,6 @@ func VerifyState(secret, state string) (string, error) {
 		return "", errors.New("invalid state signature")
 	}
 
-	// parse payload: v1 | ms | u16 pathlen | path | 16 random
 	if len(payload) < 1+8+2 {
 		return "", errors.New("corrupt state")
 	}

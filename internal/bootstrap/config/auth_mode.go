@@ -1,6 +1,6 @@
 package config
 
-// AuthMode describes how the web app authenticates: disabled, password, or Google OAuth.
+// AuthMode describes web auth for the session API: off, a single method (password, google, yandex), or multi.
 type AuthMode string
 
 const (
@@ -10,4 +10,8 @@ const (
 	AuthModePassword AuthMode = "password"
 	// AuthModeGoogle uses Google OAuth 2.0 and KB_AUTH_ALLOWED_EMAILS.
 	AuthModeGoogle AuthMode = "google"
+	// AuthModeYandex uses Yandex OAuth and KB_AUTH_ALLOWED_EMAILS.
+	AuthModeYandex AuthMode = "yandex"
+	// AuthModeMulti is returned when several auth methods are configured (deprecated field).
+	AuthModeMulti AuthMode = "multi"
 )

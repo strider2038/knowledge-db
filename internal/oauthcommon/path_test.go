@@ -1,11 +1,11 @@
-package googleoauth_test
+package oauthcommon_test
 
 import (
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/strider2038/knowledge-db/internal/googleoauth"
+	"github.com/strider2038/knowledge-db/internal/oauthcommon"
 )
 
 func TestSanitizeReturnPath(t *testing.T) {
@@ -25,7 +25,7 @@ func TestSanitizeReturnPath(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%q", tc.in), func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tc.want, googleoauth.SanitizeReturnPath(tc.in))
+			assert.Equal(t, tc.want, oauthcommon.SanitizeReturnPath(tc.in))
 		})
 	}
 }

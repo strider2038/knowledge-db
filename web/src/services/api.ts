@@ -82,12 +82,17 @@ export interface GetNodesParams {
   order?: string;
 }
 
-export type WebAuthMode = 'password' | 'google';
+export type AuthMethod = 'password' | 'google' | 'yandex';
+
+/** @deprecated Prefer `auth_methods`; single method name or `multi`. */
+export type WebAuthMode = AuthMethod | 'multi';
 
 export interface SessionStatus {
   authenticated: boolean;
   auth_enabled: boolean;
-  /** Present when `auth_enabled` (password vs Google). */
+  /** Configured sign-in methods (preferred). */
+  auth_methods?: AuthMethod[];
+  /** @deprecated Use `auth_methods`. */
   auth_mode?: WebAuthMode;
 }
 
@@ -120,8 +125,7 @@ export async function logout(): Promise<void> {
 
 const KB_OAUTH_REDIRECT_KEY = 'kb_oauth_redirect';
 
-/** Start Google OAuth in the same browser (full navigation). */
-export function startGoogleOAuth(redirectPath: string): void {
+function startOAuth(provider: 'google' | 'yandex', redirectPath: string): void {
   if (typeof window === 'undefined') return;
   const path = redirectPath.startsWith('/') ? redirectPath : `/${redirectPath}`;
   try {
@@ -134,7 +138,17 @@ export function startGoogleOAuth(redirectPath: string): void {
     q.set('redirect', path);
   }
   const suffix = q.toString() ? `?${q.toString()}` : '';
-  window.location.assign(`${API_URL}/api/auth/google${suffix}`);
+  window.location.assign(`${API_URL}/api/auth/${provider}${suffix}`);
+}
+
+/** Start Google OAuth in the same browser (full navigation). */
+export function startGoogleOAuth(redirectPath: string): void {
+  startOAuth('google', redirectPath);
+}
+
+/** Start Yandex OAuth in the same browser (full navigation). */
+export function startYandexOAuth(redirectPath: string): void {
+  startOAuth('yandex', redirectPath);
 }
 
 export function takeStoredOAuthRedirect(fallback: string): string {

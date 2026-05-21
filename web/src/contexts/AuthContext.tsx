@@ -7,12 +7,22 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { getSession, type SessionStatus, type WebAuthMode } from '@/services/api'
+import { getSession, type AuthMethod, type SessionStatus, type WebAuthMode } from '@/services/api'
+
+function authMethodsFromSession(session: SessionStatus | null): AuthMethod[] {
+  if (!session?.auth_enabled) return []
+  if (session.auth_methods?.length) return session.auth_methods
+  const mode = session.auth_mode
+  if (mode && mode !== 'multi') return [mode]
+  return []
+}
 
 type AuthContextValue = {
   authenticated: boolean | null
   authEnabled: boolean | null
-  /** When auth is enabled, how the user signs in. */
+  /** Configured sign-in methods from session API. */
+  authMethods: AuthMethod[]
+  /** @deprecated Prefer `authMethods`. */
   authMode: WebAuthMode | null
   loading: boolean
   refresh: () => Promise<void>
@@ -42,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     authenticated: session?.authenticated ?? null,
     authEnabled: session?.auth_enabled ?? null,
+    authMethods: authMethodsFromSession(session),
     authMode: session?.auth_mode ?? null,
     loading,
     refresh,

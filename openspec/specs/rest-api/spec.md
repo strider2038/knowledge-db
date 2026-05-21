@@ -364,63 +364,101 @@ API MUST предоставлять эндпоинт POST /api/import/telegram/s
 
 ### Requirement: Опциональная защита API сессией
 
-При включённой авторизации (парольный режим: заданы `KB_LOGIN` и `KB_PASSWORD`; **или** Google-режим: полный набор Google OAuth и `KB_AUTH_ALLOWED_EMAILS` при пустых `KB_LOGIN` / `KB_PASSWORD`, см. `web-session-auth`) REST API ДОЛЖЕН (SHALL) требовать валидную сессионную cookie для доступа к защищённым эндпоинтам `/api/*`, **кроме** явно разрешённых путей аутентификации: `POST /api/auth/login` (в парольном режиме), `GET /api/auth/google` и `GET /api/auth/google/callback` (в Google-режиме), а также health/readiness. Маршруты `/api/*`, включая `/api/assets/*`, SHALL требовать сессию, если не относятся к перечисленным исключениям. При отсутствии или невалидности сессии на защищённом пути сервер MUST возвращать `401 Unauthorized`.
+При `auth_enabled` (см. `web-session-auth`) REST API SHALL требовать валидную cookie на `/api/*`, **кроме** `/api/auth/*` (все auth-маршруты, включая login, logout, session, google/*, yandex/*) и health/readiness. Не зависит от того, сколько способов входа настроено.
 
 #### Сценарий: Доступ к API без сессии при включённой авторизации
 
-- **WHEN** клиент вызывает защищённый эндпоинт `/api/*` (не из исключений) без валидной cookie-сессии
-- **THEN** сервер возвращает `401 Unauthorized`
+- **WHEN** защищённый `/api/*` без cookie
+- **THEN** `401 Unauthorized`
 
 #### Сценарий: Доступ к API с валидной сессией
 
-- **WHEN** клиент вызывает защищённый эндпоинт `/api/*` с валидной cookie-сессией
-- **THEN** сервер обрабатывает запрос по обычной бизнес-логике эндпоинта
+- **WHEN** защищённый `/api/*` с валидной cookie
+- **THEN** обычная обработка
+
+### Requirement: Эндпоинты Yandex OAuth
+
+Если Yandex OAuth настроен (см. `web-session-auth`), REST API MUST предоставлять `GET /api/auth/yandex` и `GET /api/auth/yandex/callback` под `/api/auth/`, exempt от проверки сессии до установки cookie. Если Yandex **не** настроен, запросы к этим путям SHALL отвечать ошибкой (4xx), указывающей, что провайдер не сконфигурирован.
+
+#### Сценарий: Старт Yandex OAuth
+
+- **WHEN** Yandex настроен, клиент вызывает `GET /api/auth/yandex`
+- **THEN** редирект 3xx на authorize Yandex с подписанным `state`
+
+#### Сценарий: Yandex OAuth callback
+
+- **WHEN** Yandex настроен, callback с валидными `code` и `state`
+- **THEN** обмен на токен, userinfo, allowlist, установка `kb_session` или отказ
+
+#### Сценарий: Yandex не настроен
+
+- **WHEN** Yandex env неполный/отсутствует, клиент вызывает `GET /api/auth/yandex`
+- **THEN** сервер SHALL NOT инициировать OAuth у Yandex (4xx)
 
 ### Requirement: Эндпоинты Google OAuth
 
-В Google-режиме (см. `web-session-auth`) REST API MUST предоставлять `GET /api/auth/google` (инициация редиректа на Google) и `GET /api/auth/google/callback` (приём `code`/`state`). Эти маршруты SHALL располагаться под `/api/auth/` и SHALL быть исключены из обязательной проверки сессии так же, как `POST /api/auth/login` в парольном режиме (до установки сессии).
+Если Google OAuth **настроен**, MUST быть `GET /api/auth/google` и `GET /api/auth/google/callback` с тем же поведением, что раньше. Если Google не настроен — 4xx на эти пути. Наличие Yandex или пароля MUST NOT отключать Google endpoints.
 
 #### Сценарий: Старт OAuth
 
-- **WHEN** Google-режим и клиент запрашивает `GET /api/auth/google` с корректным `Origin` (при настроенном CORS)
-- **THEN** сервер SHALL отвечать редиректом (3xx) на URL авторизации Google с корректным `state`
+- **WHEN** Google настроен, `GET /api/auth/google`
+- **THEN** редирект на Google authorize с `state`
 
 #### Сценарий: OAuth callback
 
-- **WHEN** Google-режим и внешний HTTP-клиент (браузер) вызывает `GET /api/auth/google/callback` с параметрами `code` и `state` при успешной авторизации у Google
-- **THEN** сервер SHALL обменять `code` на токен(ы), получить userinfo, применить allowlist и либо установить `kb_session` с редиректом в веб-интерфейс, либо отказать без сессии
+- **WHEN** Google настроен, успешный callback
+- **THEN** обмен code, allowlist, сессия или отказ
+
+### Requirement: Список способов входа в GET /api/auth/session
+
+`GET /api/auth/session` при `auth_enabled: true` MUST возвращать `auth_methods` — массив строк из `{ password, google, yandex }`, отражающий **все** настроенные способы. Поле `auth_mode` MAY дублировать единственный способ или значение `multi` при нескольких (deprecated).
+
+#### Сценарий: Несколько способов
+
+- **WHEN** настроены пароль и Google OAuth
+- **THEN** `auth_methods` MUST быть `["password","google"]` (фиксированный порядок: `password`, `google`, `yandex` — только включённые)
+
+#### Сценарий: Один способ
+
+- **WHEN** настроен только Google OAuth
+- **THEN** `auth_methods` MUST быть `["google"]`; `auth_mode` MAY быть `"google"`
 
 ### Requirement: Режим в ответе GET /api/auth/session
 
-`GET /api/auth/session` SHALL возвращать при включённой веб-авторизации поле `auth_mode` со значением `password` или `google` (а также `auth_enabled: true`), чтобы веб-интерфейс мог выбрать форму входа без отдельного build-time API URL.
+`GET /api/auth/session` SHALL возвращать при `auth_enabled: true` массив `auth_methods` — основной контракт для UI. Поле `auth_mode` MAY сохраняться для обратной совместимости (единственный способ или `multi`). Клиенты MUST предпочитать `auth_methods` при его наличии.
 
-#### Сценарий: Веб-интерфейс определяет тип входа
+#### Сценарий: Веб-интерфейс определяет доступные способы
 
-- **WHEN** `auth_enabled` истинен и `GET /api/auth/session` вызывается с клиента
-- **THEN** ответ MUST содержать `auth_mode` в `{ password, google }` согласно фактическому конфигу сервера
+- **WHEN** `auth_enabled` и `GET /api/auth/session`
+- **THEN** ответ MUST содержать `auth_methods`; UI SHALL строить экран входа по этому массиву
 
 ### Requirement: Auth endpoints для login/logout/session
 
-REST API MUST предоставлять для веб-клиента: `POST /api/auth/logout`, `GET /api/auth/session`. В **парольном** режиме MUST дополнительно предоставлять `POST /api/auth/login` (создание сессии по учётным данным). В **Google-режиме** MUST предоставлять `GET /api/auth/google` и `GET /api/auth/google/callback` вместо выдачи сессии через `POST /api/auth/login`, при этом `POST /api/auth/login` SHALL NOT создавать сессию (SHALL отвечать ошибкой, указывающей, что используется вход через Google).
+REST API MUST предоставлять `POST /api/auth/logout`, `GET /api/auth/session` при `auth_enabled`. `POST /api/auth/login` MUST работать (создавать сессию), если пароль **настроен**, независимо от OAuth. OAuth-маршруты каждого провайдера MUST регистрироваться и работать только при настройке провайдера. `POST /api/auth/login` при **не**настроенном пароле SHALL отвечать 400 «password auth not configured». При настроенном OAuth и отключённом пароле login SHALL NOT создавать сессию.
 
 #### Сценарий: Эндпоинт login выдаёт сессию (пароль)
 
-- **WHEN** парольный режим и клиент отправляет корректные credentials на `POST /api/auth/login`
-- **THEN** сервер создаёт сессию и устанавливает cookie в ответе
+- **WHEN** пароль настроен, верные credentials
+- **THEN** cookie сессии
+
+#### Сценарий: Login при только OAuth
+
+- **WHEN** пароль не настроен, `POST /api/auth/login`
+- **THEN** сессия SHALL NOT создаваться; ошибка конфигурации
 
 #### Сценарий: Эндпоинт session отражает текущий статус
 
-- **WHEN** клиент вызывает `GET /api/auth/session`
-- **THEN** сервер возвращает статус аутентификации текущей сессии (и флаг, что веб-авторизация включена, если применимо)
+- **WHEN** `GET /api/auth/session`
+- **THEN** `authenticated`, `auth_enabled`, `auth_methods`
 
 #### Сценарий: Эндпоинт logout завершает сессию
 
-- **WHEN** клиент вызывает `POST /api/auth/logout`
-- **THEN** сервер инвалидирует текущую сессию и очищает auth-cookie
+- **WHEN** `POST /api/auth/logout`
+- **THEN** инвалидация и очистка cookie
 
-#### Сценарий: Google-режим без парольного login
+#### Сценарий: OAuth-режим без парольного login
 
-- **WHEN** Google-режим и клиент вызывает `POST /api/auth/login` с JSON credentials
+- **WHEN** только Google/Yandex, без пароля, `POST /api/auth/login`
 - **THEN** сессия SHALL NOT создаваться
 
 ### Requirement: Git-статус API

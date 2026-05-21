@@ -18,6 +18,8 @@ func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 		mux.HandleFunc("POST /api/auth/logout", auth.Logout)
 		mux.HandleFunc("GET /api/auth/google", auth.GoogleOAuthStart)
 		mux.HandleFunc("GET /api/auth/google/callback", auth.GoogleOAuthCallback)
+		mux.HandleFunc("GET /api/auth/yandex", auth.YandexOAuthStart)
+		mux.HandleFunc("GET /api/auth/yandex/callback", auth.YandexOAuthCallback)
 	}
 	mux.HandleFunc("GET /api/nodes/by-id/{id}", h.GetNodeByID)
 	mux.HandleFunc("GET /api/nodes/{path...}", h.GetNode)
