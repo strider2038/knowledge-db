@@ -38,11 +38,14 @@
 | Правило | Действие |
 |--------|----------|
 | Частичный пароль (только login или только password) | Ошибка старта |
-| Любая `KB_GOOGLE_*` / oauth state / allowlist без полного Google | Ошибка старта |
-| Любая `KB_YANDEX_*` без полного Yandex | Ошибка старта |
-| Полный Google или Yandex без `KB_OAUTH_STATE_SECRET` / пустого allowlist | Ошибка старта |
-| Любой OAuth без `KB_PUBLIC_WEB_BASE_URL` | Ошибка старта |
+| Любая **Google-специфичная** env (`KB_GOOGLE_OAUTH_*`) без полного Google | Ошибка старта |
+| Любая **Yandex-специфичная** env (`KB_YANDEX_OAUTH_*`) без полного Yandex | Ошибка старта |
+| Полный Google или Yandex без `KB_OAUTH_STATE_SECRET` / пустого `KB_AUTH_ALLOWED_EMAILS` | Ошибка старта |
+| `KB_OAUTH_STATE_SECRET` или `KB_AUTH_ALLOWED_EMAILS` заданы, но **ни один** OAuth-провайдер не полный | Ошибка старта (висящие общие OAuth-переменные) |
+| Любой полный OAuth без `KB_PUBLIC_WEB_BASE_URL` | Ошибка старта |
 | Пароль + Google + Yandex все полные | **Разрешено** |
+
+**Порядок `auth_methods` в API (зафиксировать в коде и README):** `password`, `google`, `yandex` — в этом порядке, только включённые способы.
 
 Убрать ошибки «password and Google mutually exclusive».
 
@@ -96,4 +99,4 @@ State HMAC, allowlist, sanitize return path, redirect to login with `?error=&pro
 
 ## Open Questions
 
-- Значение `auth_mode` при нескольких способах: зафиксировано как `"multi"` в реализации (можно уточнить в tasks).
+- _(нет открытых — `auth_mode: "multi"` при ≥2 способах зафиксировано в tasks §3.1 и спеках.)_

@@ -7,7 +7,7 @@
 ## 2. Конфигурация: мульти-способ
 
 - [ ] 2.1 Добавить `KB_YANDEX_OAUTH_*`, `YandexAuthConfigured()`, `anyYandexEnvSet()`
-- [ ] 2.2 Реализовать `AuthMethods() []string`; `AuthEnabled()` := len(methods) > 0
+- [ ] 2.2 Реализовать `AuthMethods() []string` (порядок: `password`, `google`, `yandex`); `AuthEnabled()` := len(methods) > 0
 - [ ] 2.3 Переписать `ValidateAuth`: убрать взаимоисключение пароль/Google/Yandex; сохранить проверки неполных наборов по каждому способу
 - [ ] 2.4 Обобщить проверку `KB_PUBLIC_WEB_BASE_URL` при **любом** настроенном OAuth
 - [ ] 2.5 Unit-тесты config: комбинации password+google, google+yandex, все три, частичные env → ошибка
@@ -32,7 +32,7 @@
 
 - [ ] 5.1 **`.env.example`**: заменить «ровно один режим» на мульти-способ; блок Yandex env; комментарии к общим `KB_OAUTH_STATE_SECRET`, `KB_AUTH_ALLOWED_EMAILS`, `KB_PUBLIC_WEB_BASE_URL`; примеры «только пароль», «Google+Yandex+пароль (dev)»
 - [ ] 5.2 **`README.md` — раздел «Веб-авторизация»** (переструктурировать):
-  - [ ] 5.2.1 Матрица: какие env включают password / google / yandex
+  - [ ] 5.2.1 Матрица: какие env включают password / google / yandex; порядок `auth_methods` в API
   - [ ] 5.2.2 Общие OAuth-переменные и когда они обязательны
   - [ ] 5.2.3 Google: Console, redirect `/api/auth/google/callback`, test users, CORS
   - [ ] 5.2.4 Yandex: [oauth.yandex.com](https://oauth.yandex.com/), право **доступ к email**, redirect `/api/auth/yandex/callback`, отличие от Google (`default_email`, нет `email_verified`)
