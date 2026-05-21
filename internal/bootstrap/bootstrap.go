@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -73,7 +74,7 @@ func Run() error {
 	var indexStore index.Store
 	var syncWorker *index.SyncWorker
 	var embeddingProvider index.EmbeddingProvider
-	indexStore, syncWorker, embeddingProvider = buildIndexComponents(cfg)
+	indexStore, syncWorker, embeddingProvider = buildIndexComponents(context.Background(), cfg)
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue, indexStore)
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
@@ -231,7 +232,7 @@ func validateConfig(cfg *config.Config) error {
 	return nil
 }
 
-func buildIndexComponents(cfg *config.Config) (index.Store, *index.SyncWorker, index.EmbeddingProvider) {
+func buildIndexComponents(ctx context.Context, cfg *config.Config) (index.Store, *index.SyncWorker, index.EmbeddingProvider) {
 	kbDir := filepath.Join(cfg.DataPath, ".kb")
 	if err := os.MkdirAll(kbDir, 0o755); err != nil {
 		slog.Error("failed to create .kb directory", "error", err)
@@ -240,7 +241,7 @@ func buildIndexComponents(cfg *config.Config) (index.Store, *index.SyncWorker, i
 	}
 
 	dbPath := filepath.Join(kbDir, "index.db")
-	store, err := sqliteindex.NewStore(dbPath)
+	store, err := sqliteindex.NewStore(ctx, dbPath)
 	if err != nil {
 		slog.Error("failed to open index database", "error", err)
 

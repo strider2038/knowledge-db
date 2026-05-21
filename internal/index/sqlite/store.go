@@ -23,14 +23,14 @@ type Store struct {
 	keywordIndexMode string
 }
 
-func NewStore(dbPath string) (*Store, error) {
+func NewStore(ctx context.Context, dbPath string) (*Store, error) {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, errors.Errorf("open index database: %w", err)
 	}
 
 	store := &Store{db: db, dbPath: dbPath}
-	if err := store.migrate(); err != nil {
+	if err := store.migrate(ctx); err != nil {
 		db.Close()
 
 		return nil, errors.Errorf("migrate index database: %w", err)
@@ -568,8 +568,7 @@ func (s *Store) execContext(ctx context.Context, query string, args ...any) erro
 	return err
 }
 
-func (s *Store) migrateFTS() error {
-	ctx := context.Background()
+func (s *Store) migrateFTS(ctx context.Context) error {
 	if !s.detectFTS5(ctx) {
 		s.keywordIndexMode = index.KeywordIndexModeScan
 

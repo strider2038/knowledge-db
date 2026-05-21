@@ -421,7 +421,7 @@ func TestPipelineIngester_IngestURL_WhenDuplicateSourceURL_ExpectSameIDAndPath(t
 	})
 	require.NoError(t, err)
 
-	indexStore, err := sqlite.NewStore(":memory:")
+	indexStore, err := sqlite.NewStore(context.Background(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = indexStore.Close() })
 	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")

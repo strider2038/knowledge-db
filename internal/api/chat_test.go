@@ -197,7 +197,7 @@ func TestPostChat_WhenMemoryMode_ExpectNoSourcesAndLLMAnswer(t *testing.T) {
 	require.NoError(t, chatStore.AddMessage(context.Background(), session.ID, "user", "обсудили sqlite", false))
 	h.SetChatStore(chatStore)
 
-	store, err := indexSqlite.NewStore(":memory:")
+	store, err := indexSqlite.NewStore(context.Background(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 	h.SetIndexComponents(store, nil, &chatTestEmbeddingProvider{}, config.Embedding{

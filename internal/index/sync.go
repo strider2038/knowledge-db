@@ -120,6 +120,25 @@ func (w *SyncWorker) ProcessSingleNodeForTest(ctx context.Context, path string) 
 	w.processSingleNode(ctx, path)
 }
 
+// ManualRebuild очищает индекс и выполняет полную переиндексацию всех нод из FS.
+func (w *SyncWorker) ManualRebuild(ctx context.Context) error {
+	logger := clog.FromContext(ctx)
+	logger.Info("sync: manual rebuild started")
+
+	startTime := time.Now()
+	if err := w.store.ClearAll(ctx); err != nil {
+		return errors.Errorf("sync: clear index: %w", err)
+	}
+
+	logger.Debug("sync: index cleared, starting full reconcile")
+
+	w.runFullReconcile(ctx)
+
+	logger.Info("sync: manual rebuild complete", "duration_ms", time.Since(startTime).Milliseconds())
+
+	return nil
+}
+
 func (w *SyncWorker) handleEvent(ctx context.Context, event SyncEvent) {
 	logger := clog.FromContext(ctx)
 	logger.Debug("sync: event received", "event", fmt.Sprintf("%T", event))
@@ -141,7 +160,9 @@ func (w *SyncWorker) handleEvent(ctx context.Context, event SyncEvent) {
 		w.runFullReconcile(ctx)
 	case ManualRebuildEvent:
 		logger.Info("sync: manual rebuild event")
-		w.manualRebuild(ctx)
+		if err := w.ManualRebuild(ctx); err != nil {
+			clog.Errorf(ctx, "sync: manual rebuild: %w", err)
+		}
 	}
 }
 
@@ -342,24 +363,6 @@ func (w *SyncWorker) fullReconcile(ctx context.Context) {
 		"stale_deleted", len(indexedSet)-indexedCount,
 		"duration_ms", time.Since(startTime).Milliseconds(),
 	)
-}
-
-func (w *SyncWorker) manualRebuild(ctx context.Context) {
-	logger := clog.FromContext(ctx)
-	logger.Info("sync: manual rebuild started")
-
-	startTime := time.Now()
-	if err := w.store.ClearAll(ctx); err != nil {
-		clog.Errorf(ctx, "sync: clear index: %w", err)
-
-		return
-	}
-
-	logger.Debug("sync: index cleared, starting full reconcile")
-
-	w.runFullReconcile(ctx)
-
-	logger.Info("sync: manual rebuild complete", "duration_ms", time.Since(startTime).Milliseconds())
 }
 
 func (w *SyncWorker) runFullReconcile(ctx context.Context) {

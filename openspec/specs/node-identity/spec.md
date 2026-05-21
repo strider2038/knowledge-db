@@ -65,11 +65,11 @@ TBD - created by archiving change add-node-uuid-v7. Update Purpose after archive
 
 #### Scenario: Dry-run миграции
 
-- **WHEN** выполняется `kb-cli migrate-node-ids --dry-run`
+- **WHEN** выполняется `kb migrate-node-ids --dry-run`
 - **THEN** выводится список файлов, которым будет присвоен id, без изменения файлов
 
 #### Scenario: Применение миграции
 
-- **WHEN** выполняется `kb-cli migrate-node-ids` без dry-run
+- **WHEN** выполняется `kb migrate-node-ids` без dry-run
 - **THEN** каждый узел без `id` получает уникальный UUID v7 в frontmatter
 

@@ -14,7 +14,7 @@ import (
 func setupTestStore(t *testing.T) *Store {
 	t.Helper()
 
-	store, err := NewStore(":memory:")
+	store, err := NewStore(context.Background(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 
@@ -45,11 +45,11 @@ func TestStore_Migrate_WhenExistingIndex_ExpectSearchTablesAdded(t *testing.T) {
 	t.Parallel()
 
 	dbPath := filepath.Join(t.TempDir(), "index.db")
-	store, err := NewStore(dbPath)
+	store, err := NewStore(context.Background(), dbPath)
 	require.NoError(t, err)
 	require.NoError(t, store.Close())
 
-	store, err = NewStore(dbPath)
+	store, err = NewStore(context.Background(), dbPath)
 	require.NoError(t, err)
 	defer store.Close()
 

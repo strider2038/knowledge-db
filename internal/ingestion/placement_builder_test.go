@@ -132,7 +132,7 @@ annotation: "Skills for Claude Code agents."
 ---
 `,
 	})
-	indexStore, err := sqlite.NewStore(":memory:")
+	indexStore, err := sqlite.NewStore(context.Background(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, indexStore.Close()) })
 	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "test")

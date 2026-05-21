@@ -69,7 +69,7 @@ func TestSearchServices_SemanticSearch_WhenProviderMissing_ExpectUnavailableErro
 	t.Parallel()
 
 	tmp := t.TempDir()
-	store, err := sqlite.NewStore(filepath.Join(tmp, "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(tmp, "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -83,7 +83,7 @@ func TestSearchServices_SearchNotes_WhenQueryEmpty_ExpectValidationError(t *test
 	t.Parallel()
 
 	tmp := t.TempDir()
-	store, err := sqlite.NewStore(filepath.Join(tmp, "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(tmp, "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -141,7 +141,7 @@ Body text for reading.`
 	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
 
-	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -170,7 +170,7 @@ title: Test Node
 	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
 
-	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -193,7 +193,7 @@ title: Test Node
 	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
 
-	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -215,7 +215,7 @@ func TestSearchServices_GetNote_WhenPathEmpty_ExpectValidationError(t *testing.T
 
 	dataPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
-	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -241,7 +241,7 @@ Note body by id.`
 	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
 
-	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -259,7 +259,7 @@ func TestSearchServices_GetNote_WhenNotFound_ExpectError(t *testing.T) {
 
 	dataPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
-	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -273,7 +273,7 @@ func setupSearchStore(t *testing.T) index.Store {
 
 	dataPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
-	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := sqlite.NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 

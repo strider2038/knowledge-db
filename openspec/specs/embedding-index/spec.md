@@ -35,7 +35,7 @@ Embedding-индекс на SQLite: генерация векторных пре
 #### Scenario: Миграция существующего индекса
 
 - **WHEN** `kb serve` запускается с существующим index.db со схемой path PK
-- **THEN** миграция переводит схему на node_id PK или документированно требует rebuild; markdown-файлы не изменяются автоматически
+- **THEN** миграция переводит схему на node_id PK или документированно требует rebuild (`kb rebuild-index` или `POST /api/index/rebuild`); markdown-файлы не изменяются автоматически
 
 ### Requirement: Markdown-aware chunking
 
@@ -107,7 +107,7 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 ### Requirement: SyncWorker — синхронизация индекса
 
-Система ДОЛЖНА (SHALL) предоставлять SyncWorker (реализующий `runnable.Runnable`) для синхронизации индекса с git-репозиторием. SyncWorker MUST обрабатывать события: SingleNode(path) — индексация одной ноды по path с резолвом node_id из frontmatter; GitSyncDiff — diff после git pull; FullReconcile — полная сверка по FS с node_id; ManualRebuild — полная перестройка. SyncWorker MUST ограничивать частоту запросов к embedding API (rate limit: не более 1 batch/сек). SyncWorker MUST логировать warn при ошибках синхронизации.
+Система ДОЛЖНА (SHALL) предоставлять SyncWorker (реализующий `runnable.Runnable`) для синхронизации индекса с git-репозиторием. SyncWorker MUST обрабатывать события: SingleNode(path) — индексация одной ноды по path с резолвом node_id из frontmatter; GitSyncDiff — diff после git pull; FullReconcile — полная сверка по FS с node_id; ManualRebuild — полная перестройка. SyncWorker MUST экспортировать синхронный метод `ManualRebuild(ctx)` (очистка индекса + FullReconcile) для CLI `kb rebuild-index`. SyncWorker MUST ограничивать частоту запросов к embedding API (rate limit: не более 1 batch/сек). SyncWorker MUST логировать warn при ошибках синхронизации.
 
 #### Scenario: Триггер после создания ноды
 
@@ -130,10 +130,15 @@ Embedding-индекс на SQLite: генерация векторных пре
 - **WHEN** срабатывает periodic timer (раз в сутки)
 - **THEN** SyncWorker выполняет FullReconcile: walk FS, сверяет по node_id и path, добавляет/обновляет/удаляет
 
-#### Scenario: Manual rebuild
+#### Scenario: Manual rebuild через API
 
-- **WHEN** вызывается `POST /api/index/rebuild`
-- **THEN** SyncWorker очищает индекс и выполняет полную переиндексацию всех нод с валидным id
+- **WHEN** вызывается `POST /api/index/rebuild` при работающем `kb serve`
+- **THEN** SyncWorker получает событие ManualRebuild, очищает индекс и выполняет полную переиндексацию всех нод с валидным id; API возвращает 202 Accepted
+
+#### Scenario: Manual rebuild через CLI
+
+- **WHEN** выполняется `kb rebuild-index --path /data/kb` при настроенных embedding-переменных
+- **THEN** вызывается `SyncWorker.ManualRebuild` синхронно: индекс очищается и все ноды с валидным `id` переиндексируются без запущенного HTTP-сервера
 
 #### Scenario: Rate limiting при batch
 

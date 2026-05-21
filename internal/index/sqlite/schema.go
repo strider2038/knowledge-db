@@ -9,8 +9,7 @@ import (
 
 const schemaVersionV2 = 2
 
-func (s *Store) migrate() error {
-	ctx := context.Background()
+func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
 		return errors.Errorf("set WAL mode: %w", err)
 	}
@@ -34,7 +33,7 @@ func (s *Store) migrate() error {
 		return err
 	}
 
-	return s.migrateFTS()
+	return s.migrateFTS(ctx)
 }
 
 func (s *Store) ensureSchemaMeta(ctx context.Context) error {

@@ -30,7 +30,7 @@ func setupTestHandlerWithIndex(t *testing.T) (http.Handler, index.Store) {
 	t.Cleanup(func() { _ = chatStore.Close() })
 	h.SetChatStore(chatStore)
 
-	store, err := indexSqlite.NewStore(":memory:")
+	store, err := indexSqlite.NewStore(context.Background(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 

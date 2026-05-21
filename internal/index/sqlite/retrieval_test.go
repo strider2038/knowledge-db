@@ -117,7 +117,7 @@ updated: 2026-01-01
 SQLite body.
 `), 0o644))
 
-	store, err := NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	store, err := NewStore(context.Background(), filepath.Join(dataPath, ".kb", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 

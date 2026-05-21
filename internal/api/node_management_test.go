@@ -109,7 +109,7 @@ annotation: "Test annotation"
 Content here`, "topic/my-node.md")
 	require.NoError(t, os.WriteFile(filepath.Join(themeDir, "my-node.md"), []byte(content), 0o644))
 
-	store, err := indexSqlite.NewStore(filepath.Join(tmp, "index.db"))
+	store, err := indexSqlite.NewStore(context.Background(), filepath.Join(tmp, "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 	worker := index.NewSyncWorker(store, &testEmbeddingProvider{vector: []float32{1, 0, 0}}, tmp, "model", 0)

@@ -539,12 +539,12 @@ API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/chat` д
 
 ### Requirement: Управление индексом
 
-API ДОЛЖЕН (SHALL) предоставлять endpoints для управления индексом: `POST /api/index/rebuild` — полная перестройка индекса (запускает SyncWorker ManualRebuild); `GET /api/index/status` — состояние индекса (total_nodes, total_chunks, embedding_model, keyword_index, last_indexed_at, status). Оба endpoint MUST возвращать 503 при `KB_EMBEDDING_ENABLED=false`.
+API ДОЛЖЕН (SHALL) предоставлять endpoints для управления индексом: `POST /api/index/rebuild` — полная перестройка индекса (запускает SyncWorker ManualRebuild асинхронно); `GET /api/index/status` — состояние индекса (total_nodes, total_chunks, embedding_model, keyword_index, last_indexed_at, status). Оба endpoint MUST возвращать 503 при `KB_EMBEDDING_ENABLED=false`. Эквивалентная синхронная офлайн-операция MUST быть доступна через CLI `kb rebuild-index` (см. `kb-cli`).
 
 #### Scenario: Запуск перестройки индекса
 
-- **WHEN** `POST /api/index/rebuild`
-- **THEN** запускается полная переиндексация, возвращается 202 Accepted
+- **WHEN** `POST /api/index/rebuild` при работающем сервере и включённых эмбеддингах
+- **THEN** в очередь SyncWorker ставится ManualRebuild, возвращается 202 Accepted
 
 #### Scenario: Проверка статуса индекса
 

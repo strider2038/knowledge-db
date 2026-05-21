@@ -62,6 +62,9 @@ KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb serve
 
 # CLI: инициализация с примером узла (формат Obsidian)
 ./kb init --path /path/to/data --example
+
+# CLI: полная перестройка embedding-index (нужны KB_EMBEDDING_*)
+KB_DATA_PATH=/path/to/data ./kb rebuild-index
 ```
 
 ### Апгрейд на версию с UUID v7 (`id` в frontmatter)
@@ -76,9 +79,9 @@ cp -a /path/to/data /path/to/data.bak
 ./kb migrate-node-ids --path /path/to/data --dry-run
 ./kb migrate-node-ids --path /path/to/data
 
-# 3. Запустить сервер и пересобрать embedding-index (схема index.db меняется)
-KB_DATA_PATH=/path/to/data ./kb serve
-# POST /api/index/rebuild через UI или curl
+# 3. Пересобрать embedding-index (схема index.db меняется)
+KB_DATA_PATH=/path/to/data ./kb rebuild-index
+# или: ./kb serve и POST /api/index/rebuild через UI или curl
 ```
 
 Старый `index.db` (path PK) при старте мигрируется на схему `node_id` PK; при несовместимости данные индекса сбрасываются — нужен rebuild.
@@ -262,6 +265,10 @@ export KB_CHAT_API_KEY="-"
 При старте сервера автоматически выполняется полная синхронизация индекса с файловой системой. После добавления новых записей можно запустить переиндексацию вручную:
 
 ```bash
+# без запущенного сервера (нужны KB_EMBEDDING_* из .env)
+KB_DATA_PATH=/path/to/data ./kb rebuild-index
+
+# или через API при работающем kb serve
 curl -X POST http://localhost:8080/api/index/rebuild
 ```
 

@@ -27,6 +27,7 @@ func TestNewApp_ContainsRequiredCommands(t *testing.T) {
 	require.Contains(t, commands, "dump-images")
 	require.Contains(t, commands, "expand-urls")
 	require.Contains(t, commands, "reindex-links")
+	require.Contains(t, commands, "rebuild-index")
 	require.Contains(t, commands, "migrate-node-ids")
 }
 
@@ -48,6 +49,7 @@ func TestNewApp_HelpContainsCommands(t *testing.T) {
 	require.Contains(t, out, "dump-images")
 	require.Contains(t, out, "expand-urls")
 	require.Contains(t, out, "reindex-links")
+	require.Contains(t, out, "rebuild-index")
 	require.Contains(t, out, "migrate-node-ids")
 }
 
