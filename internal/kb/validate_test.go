@@ -8,6 +8,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestValidate_WhenDuplicateID_ExpectViolation(t *testing.T) {
+	t.Parallel()
+
+	dupID := "018f0000-0000-7000-8000-0000000000aa"
+	store, base := seedMemFS(map[string]string{
+		"topic/one.md": `---
+id: "` + dupID + `"
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+type: note
+title: One
+---
+
+# One`,
+		"other/two.md": `---
+id: "` + dupID + `"
+keywords: [b]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+type: note
+title: Two
+---
+
+# Two`,
+	})
+
+	violations, err := store.Validate(context.Background(), base)
+	require.NoError(t, err)
+	require.NotEmpty(t, violations)
+	assert.Contains(t, violations[0].Message, "duplicate id "+dupID)
+}
+
 func TestValidate_WhenValidNode_ExpectNoViolations(t *testing.T) {
 	t.Parallel()
 

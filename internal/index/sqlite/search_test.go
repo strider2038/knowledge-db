@@ -35,8 +35,9 @@ func setupKeywordStore(t *testing.T) *Store {
 
 	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "articles/sqlite", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("articles/sqlite"), "articles/sqlite", "h1", "bh1", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID:     TestNodeID("articles/sqlite"),
 		Path:       "articles/sqlite",
 		Title:      "SQLite Search",
 		Type:       "article",
@@ -48,7 +49,7 @@ func setupKeywordStore(t *testing.T) *Store {
 
 	chunkEmbID, err := store.InsertEmbedding(ctx, []float32{0.3}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertChunks(ctx, "articles/sqlite", []index.Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("articles/sqlite"), "articles/sqlite", []index.Chunk{
 		{
 			NodePath:    "articles/sqlite",
 			ChunkIndex:  0,
@@ -60,8 +61,9 @@ func setupKeywordStore(t *testing.T) *Store {
 
 	embID, err = store.InsertEmbedding(ctx, []float32{0.4}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "notes/go", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("notes/go"), "notes/go", "h2", "bh2", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID:     TestNodeID("notes/go"),
 		Path:       "notes/go",
 		Title:      "Go Notes",
 		Type:       "note",
@@ -84,8 +86,8 @@ func TestVectorSearch_WhenMatch_ExpectSorted(t *testing.T) {
 
 	embID1, _ := store.InsertEmbedding(ctx, vec1, "model")
 	embID2, _ := store.InsertEmbedding(ctx, vec2, "model")
-	require.NoError(t, store.UpsertNode(ctx, "a/b", "h1", "bh1", embID1))
-	require.NoError(t, store.UpsertNode(ctx, "c/d", "h2", "bh2", embID2))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("a/b"), "a/b", "h1", "bh1", embID1))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("c/d"), "c/d", "h2", "bh2", embID2))
 
 	provider := &mockProvider{vectors: [][]float32{{1, 0, 0}}}
 
@@ -117,9 +119,9 @@ func TestVectorSearch_WhenTopK_ExpectLimit(t *testing.T) {
 	ctx := context.Background()
 
 	embID, _ := store.InsertEmbedding(ctx, []float32{1, 0, 0}, "model")
-	require.NoError(t, store.UpsertNode(ctx, "a/b", "h1", "bh1", embID))
-	require.NoError(t, store.UpsertNode(ctx, "c/d", "h2", "bh2", embID))
-	require.NoError(t, store.UpsertNode(ctx, "e/f", "h3", "bh3", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("a/b"), "a/b", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("c/d"), "c/d", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("e/f"), "e/f", "h3", "bh3", embID))
 
 	provider := &mockProvider{vectors: [][]float32{{1, 0, 0}}}
 
@@ -138,11 +140,11 @@ func TestChunkSearch_WhenMatch_ExpectSorted(t *testing.T) {
 	vec2 := []float32{0, 1, 0}
 
 	nodeEmbID, _ := store.InsertEmbedding(ctx, vec1, "model")
-	require.NoError(t, store.UpsertNode(ctx, "a/b", "h1", "bh1", nodeEmbID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("a/b"), "a/b", "h1", "bh1", nodeEmbID))
 
 	chunkEmbID1, _ := store.InsertEmbedding(ctx, vec1, "model")
 	chunkEmbID2, _ := store.InsertEmbedding(ctx, vec2, "model")
-	require.NoError(t, store.UpsertChunks(ctx, "a/b", []index.Chunk{
+	require.NoError(t, store.UpsertChunks(ctx, TestNodeID("a/b"), "a/b", []index.Chunk{
 		{NodePath: "a/b", ChunkIndex: 0, Heading: "Section 1", Content: "content 1", EmbeddingID: chunkEmbID1},
 		{NodePath: "a/b", ChunkIndex: 1, Heading: "Section 2", Content: "content 2", EmbeddingID: chunkEmbID2},
 	}))
@@ -188,8 +190,9 @@ func TestKeywordSearchNodes_WhenExactTitleMatch_ExpectBoostedFirst(t *testing.T)
 
 	embID, err := store.InsertEmbedding(ctx, []float32{0.2}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "articles/other", "h3", "bh3", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("articles/other"), "articles/other", "h3", "bh3", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("articles/other"),
 		Path:       "articles/other",
 		Title:      "Other",
 		Annotation: "SQLite Search appears in this annotation many times SQLite Search",
@@ -224,8 +227,9 @@ func TestKeywordSearchNodes_WhenQuestionHasStopWords_ExpectCleanKeywordMatch(t *
 
 	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "ai/rag/rag-alternatives", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("ai/rag/rag-alternatives"), "ai/rag/rag-alternatives", "h1", "bh1", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID:   TestNodeID("ai/rag/rag-alternatives"),
 		Path:     "ai/rag/rag-alternatives",
 		Title:    "RAG retrieval notes",
 		Type:     "note",
@@ -234,8 +238,9 @@ func TestKeywordSearchNodes_WhenQuestionHasStopWords_ExpectCleanKeywordMatch(t *
 
 	embID, err = store.InsertEmbedding(ctx, []float32{0.2}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "programming/jira-alternatives", "h2", "bh2", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("programming/jira-alternatives"), "programming/jira-alternatives", "h2", "bh2", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID:   TestNodeID("programming/jira-alternatives"),
 		Path:     "programming/jira-alternatives",
 		Title:    "Jira alternatives",
 		Type:     "article",
@@ -258,8 +263,9 @@ func TestKeywordSearchNodes_WhenBodyMatchOnly_ExpectSearchableTextReason(t *test
 
 	embID, err := store.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "notes/body-only", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, TestNodeID("notes/body-only"), "notes/body-only", "h1", "bh1", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID: TestNodeID("notes/body-only"),
 		Path:  "notes/body-only",
 		Title: "Body Only",
 		Type:  "note",

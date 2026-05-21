@@ -18,6 +18,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/index"
+	"github.com/strider2038/knowledge-db/internal/kb"
 	indexSqlite "github.com/strider2038/knowledge-db/internal/index/sqlite"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 )
@@ -27,14 +28,16 @@ func setupTestHandlerWithNode(t *testing.T) http.Handler {
 	tmp := t.TempDir()
 	themeDir := filepath.Join(tmp, "topic")
 	require.NoError(t, os.MkdirAll(themeDir, 0o755))
-	content := `---
+	content := injectTestNodeID(`---
 keywords: [test]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
+type: note
+title: My Node
 annotation: "Test annotation"
 ---
 
-Content here`
+Content here`, "topic/my-node.md")
 	require.NoError(t, os.WriteFile(filepath.Join(themeDir, "my-node.md"), []byte(content), 0o644))
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
 	mux, err := api.NewMux(h, nil)
@@ -94,14 +97,16 @@ func TestMoveNode_WhenIndexWorkerConfigured_ExpectReindexOldAndNewPaths(t *testi
 	tmp := t.TempDir()
 	themeDir := filepath.Join(tmp, "topic")
 	require.NoError(t, os.MkdirAll(themeDir, 0o755))
-	content := `---
+	content := injectTestNodeID(`---
 keywords: [test]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
+type: note
+title: My Node
 annotation: "Test annotation"
 ---
 
-Content here`
+Content here`, "topic/my-node.md")
 	require.NoError(t, os.WriteFile(filepath.Join(themeDir, "my-node.md"), []byte(content), 0o644))
 
 	store, err := indexSqlite.NewStore(filepath.Join(tmp, "index.db"))
@@ -135,14 +140,19 @@ Content here`
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
+	nodeBefore, err := kb.GetNode(context.Background(), tmp, "topic/my-node")
+	require.NoError(t, err)
+	nodeID := nodeBefore.ID
+
 	resp := apitest.HandlePOST(t, mux, "/api/nodes/topic/my-node/move",
 		strings.NewReader(`{"target_path":"new-topic/my-node"}`),
 		apitest.WithJSONContentType())
 
 	resp.IsOK()
+
 	require.Eventually(t, func() bool {
 		_, oldErr := store.GetNodeByPath(context.Background(), "topic/my-node")
-		newNode, newErr := store.GetNodeByPath(context.Background(), "new-topic/my-node")
+		newNode, newErr := store.GetNodeByID(context.Background(), nodeID)
 
 		return errors.Is(oldErr, sql.ErrNoRows) && newErr == nil && newNode.Path == "new-topic/my-node"
 	}, time.Second, 10*time.Millisecond)

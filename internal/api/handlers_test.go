@@ -70,9 +70,12 @@ func setupTestHandler(t *testing.T) http.Handler {
 	themeDir := filepath.Join(tmp, "topic")
 	_ = os.MkdirAll(themeDir, 0o755)
 	node1Content := `---
+id: "018f0000-0000-7000-8000-000000000099"
 keywords: [a]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
+type: note
+title: Node 1
 annotation: "Annotation"
 ---
 
@@ -102,10 +105,49 @@ func TestGetNode_WhenValidPath_ExpectOK(t *testing.T) {
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("id").IsString().IsNotEmpty()
 		json.Node("path").IsString().EqualTo("topic/node1")
 		json.Node("annotation").IsString().EqualTo("Annotation")
 		json.Node("content").IsString().EqualTo("Content")
 	})
+}
+
+func TestGetNodeByID_WhenValid_ExpectOK(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandler(t)
+
+	nodeID := "018f0000-0000-7000-8000-000000000099"
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes/by-id/"+nodeID)
+	resp.IsOK()
+	resp.HasJSON(func(json *assertjson.AssertJSON) {
+		json.Node("id").IsString().EqualTo(nodeID)
+		json.Node("path").IsString().EqualTo("topic/node1")
+	})
+}
+
+func TestGetNodeByID_WhenInvalidUUID_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandler(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes/by-id/not-a-uuid")
+	resp.IsBadRequest()
+}
+
+func TestGetNodeByID_WhenUnknown_Expect404(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandler(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes/by-id/00000000-0000-7000-8000-000000000001")
+	resp.IsNotFound()
+}
+
+func TestListNodes_WhenIdQuery_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandler(t)
+
+	resp := apitest.HandleGET(t, handler, "/api/nodes?id=018f0000-0000-7000-8000-000000000099")
+	resp.IsBadRequest()
 }
 
 func TestGetTree_WhenValidBase_ExpectOK(t *testing.T) {
@@ -182,7 +224,7 @@ Content`,
 	} {
 		fullPath := filepath.Join(tmp, path)
 		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
-		require.NoError(t, os.WriteFile(fullPath, []byte(content), 0o644))
+		require.NoError(t, os.WriteFile(fullPath, []byte(injectTestNodeID(content, path)), 0o644))
 	}
 	h := api.NewHandler(tmp, &ingestion.StubIngester{})
 	mux, err := api.NewMux(h, nil)

@@ -26,6 +26,7 @@ export interface TreeNode {
 }
 
 export interface Node {
+  id: string;
   path: string;
   annotation: string;
   content: string;
@@ -53,6 +54,7 @@ export async function createDebugIssue(payload: DebugIssuePayload): Promise<{ id
 }
 
 export interface NodeListItem {
+  id: string;
   path: string;
   title: string;
   type: string;

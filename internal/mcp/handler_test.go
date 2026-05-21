@@ -129,6 +129,7 @@ func TestSearchServices_GetNote_WhenExists_ExpectContent(t *testing.T) {
 	dataPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, "topic"), 0o755))
 	content := `---
+id: "018f0000-0000-7000-8000-000000000099"
 title: Test Node
 type: article
 source_url: https://example.com
@@ -147,6 +148,7 @@ Body text for reading.`
 	services := &searchServices{indexStore: store}
 	got, err := services.getNote(context.Background(), getNoteInput{Path: "topic/node"})
 	require.NoError(t, err)
+	assert.Equal(t, "018f0000-0000-7000-8000-000000000099", got.ID)
 	assert.Equal(t, "topic/node", got.Path)
 	assert.Equal(t, "Test Node", got.Title)
 	assert.Equal(t, "article", got.Type)
@@ -222,6 +224,36 @@ func TestSearchServices_GetNote_WhenPathEmpty_ExpectValidationError(t *testing.T
 	require.EqualError(t, err, "path is required")
 }
 
+func TestSearchServices_GetNote_WhenByID_ExpectContent(t *testing.T) {
+	t.Parallel()
+
+	dataPath := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, "topic"), 0o755))
+	content := `---
+id: "018f0000-0000-7000-8000-000000000099"
+title: By ID Node
+type: note
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+---
+Note body by id.`
+	require.NoError(t, os.WriteFile(filepath.Join(dataPath, "topic", "node.md"), []byte(content), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(dataPath, ".kb"), 0o755))
+
+	store, err := sqlite.NewStore(filepath.Join(dataPath, ".kb", "index.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	services := &searchServices{indexStore: store}
+	got, err := services.getNote(context.Background(), getNoteInput{ID: "018f0000-0000-7000-8000-000000000099"})
+	require.NoError(t, err)
+	assert.Equal(t, "018f0000-0000-7000-8000-000000000099", got.ID)
+	assert.Equal(t, "topic/node", got.Path)
+	assert.Equal(t, "By ID Node", got.Title)
+	assert.Contains(t, got.Content, "Note body by id")
+}
+
 func TestSearchServices_GetNote_WhenNotFound_ExpectError(t *testing.T) {
 	t.Parallel()
 
@@ -248,8 +280,9 @@ func setupSearchStore(t *testing.T) index.Store {
 	ctx := context.Background()
 	embID, err := store.InsertEmbedding(ctx, []float32{1, 0, 0}, "model")
 	require.NoError(t, err)
-	require.NoError(t, store.UpsertNode(ctx, "articles/sqlite", "h1", "bh1", embID))
+	require.NoError(t, store.UpsertNode(ctx, sqlite.TestNodeID("articles/sqlite"), "articles/sqlite", "h1", "bh1", embID))
 	require.NoError(t, store.UpsertNodeSearch(ctx, index.NodeSearchDocument{
+		NodeID:   sqlite.TestNodeID("articles/sqlite"),
 		Path:     "articles/sqlite",
 		Title:    "SQLite",
 		Type:     "article",

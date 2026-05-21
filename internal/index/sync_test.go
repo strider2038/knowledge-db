@@ -23,13 +23,22 @@ func (noopStore) DeleteEmbedding(context.Context, int64) error { return nil }
 func (noopStore) GetAllEmbeddings(context.Context) ([]EmbeddingRecord, error) {
 	return nil, nil
 }
-func (noopStore) UpsertNode(context.Context, string, string, string, int64) error {
+func (noopStore) UpsertNode(context.Context, string, string, string, string, int64) error {
 	return nil
 }
+func (noopStore) UpsertNodeSourceURL(context.Context, string, string) error { return nil }
 func (noopStore) GetNodeByPath(context.Context, string) (*IndexedNode, error) {
-	return nil, nil //nolint:nilnil
+	return nil, sql.ErrNoRows
 }
-func (noopStore) DeleteNode(context.Context, string) error              { return nil }
+func (noopStore) GetNodeByID(context.Context, string) (*IndexedNode, error) {
+	return nil, sql.ErrNoRows
+}
+func (noopStore) UpdateNodePath(context.Context, string, string) error { return nil }
+func (noopStore) FindBySourceURL(context.Context, string) (*NodeSourceMatch, error) {
+	return nil, sql.ErrNoRows
+}
+func (noopStore) DeleteNode(context.Context, string) error   { return nil }
+func (noopStore) DeleteNodeByID(context.Context, string) error { return nil }
 func (noopStore) ListAllIndexed(context.Context) ([]IndexedNode, error) { return nil, nil }
 func (noopStore) UpsertNodeSearch(context.Context, NodeSearchDocument) error {
 	return nil
@@ -38,10 +47,10 @@ func (noopStore) DeleteNodeSearch(context.Context, string) error { return nil }
 func (noopStore) SearchNodeByKeywords(context.Context, []string, int) ([]KeywordNodeHit, error) {
 	return nil, nil
 }
-func (noopStore) UpsertChunks(context.Context, string, []Chunk) error      { return nil }
+func (noopStore) UpsertChunks(context.Context, string, string, []Chunk) error { return nil }
 func (noopStore) UpsertChunkSearch(context.Context, ChunkSearchDocument) error { return nil }
 func (noopStore) ListChunksByNode(context.Context, string) ([]Chunk, error) { return nil, nil }
-func (noopStore) DeleteChunks(context.Context, string) error                { return nil }
+func (noopStore) DeleteChunks(context.Context, string, string) error { return nil }
 func (noopStore) GetAllChunkEmbeddings(context.Context) ([]ChunkEmbedding, error) {
 	return nil, nil
 }
@@ -302,9 +311,11 @@ func TestSyncWorker_Run_WhenPeriodicTick_ExpectFullReconcileTriggered(t *testing
 
 func testNode(title, annotation string, keywords []string, nodeType, content string) *kb.Node {
 	return &kb.Node{
+		ID:      "018f0000-0000-7000-8000-000000000001",
 		Path:    "test/path",
 		Content: content,
 		Metadata: map[string]any{
+			"id":         "018f0000-0000-7000-8000-000000000001",
 			"title":      title,
 			"annotation": annotation,
 			"keywords":   keywords,

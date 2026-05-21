@@ -36,6 +36,10 @@ func (s *Store) CreateNode(ctx context.Context, basePath string, params CreateNo
 		return nil, errors.Errorf("create node: mkdir: %w", err)
 	}
 
+	if err := EnsureNodeID(params.Frontmatter); err != nil {
+		return nil, errors.Errorf("create node: %w", err)
+	}
+
 	fmBytes, err := FormatFrontmatter(params.Frontmatter)
 	if err != nil {
 		return nil, errors.Errorf("create node: %w", err)
@@ -58,6 +62,7 @@ func (s *Store) CreateNode(ctx context.Context, basePath string, params CreateNo
 	annotation, _ := params.Frontmatter["annotation"].(string)
 
 	return &Node{
+		ID:         NodeIDFromMetadata(params.Frontmatter),
 		Path:       nodePath,
 		Annotation: annotation,
 		Content:    params.Content,

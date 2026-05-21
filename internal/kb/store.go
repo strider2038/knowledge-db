@@ -107,7 +107,90 @@ func (s *Store) Validate(ctx context.Context, basePath string) ([]ValidationErro
 		return nil, errors.Errorf("validate base: %w", err)
 	}
 
+	if dupViolations := s.collectDuplicateIDViolations(ctx, basePath); len(dupViolations) > 0 {
+		violations = append(violations, dupViolations...)
+	}
+
 	return violations, nil
+}
+
+//nolint:funcorder // validation helper kept near Validate
+func (s *Store) collectDuplicateIDViolations(ctx context.Context, basePath string) []ValidationError {
+	_ = ctx
+	seen := make(map[string]string)
+	var violations []ValidationError
+
+	checkFile := func(stemRel string, matter map[string]any) {
+		id := NodeIDFromMetadata(matter)
+		if id == "" {
+			return
+		}
+		if prev, ok := seen[id]; ok {
+			violations = append(violations, ValidationError{
+				Path:    stemRel,
+				Message: "duplicate id " + id + " (also in " + prev + ")",
+			})
+
+			return
+		}
+		seen[id] = stemRel
+	}
+
+	_ = afero.Walk(s.fs, basePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return err
+		}
+		if !strings.HasSuffix(info.Name(), ".md") || strings.HasPrefix(info.Name(), ".") {
+			return nil
+		}
+		rel, _ := filepath.Rel(basePath, path)
+		stemRel := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
+		if pathHasHiddenSegment(stemRel) {
+			return nil
+		}
+		matter, err := parseFrontmatterFromPath(s.fs, path)
+		if err != nil {
+			return nil //nolint:nilerr
+		}
+		checkFile(stemRel, matter)
+
+		return nil
+	})
+
+	return violations
+}
+
+func parseFrontmatterFromPath(fs afero.Fs, path string) (map[string]any, error) {
+	data, err := afero.ReadFile(fs, path)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseFrontmatter(data)
+}
+
+// GetNodeByID returns a node by stable frontmatter id.
+func (s *Store) GetNodeByID(ctx context.Context, basePath, nodeID string) (*Node, error) {
+	nodeID = strings.TrimSpace(strings.ToLower(nodeID))
+	if !ValidateNodeID(nodeID) {
+		return nil, errors.Errorf("get node by id: %w", ErrNodeNotFound)
+	}
+
+	allNodes, err := s.ListAllNodes(ctx, basePath)
+	if err != nil {
+		return nil, errors.Errorf("get node by id: %w", err)
+	}
+	for _, tn := range allNodes {
+		node, err := s.GetNode(ctx, basePath, tn.Path)
+		if err != nil {
+			continue
+		}
+		if strings.EqualFold(NodeIDFromMetadata(node.Metadata), nodeID) {
+			return node, nil
+		}
+	}
+
+	return nil, errors.Errorf("get node by id: %w", ErrNodeNotFound)
 }
 
 // ReadTree возвращает дерево тем и подтем базы знаний.
@@ -380,6 +463,7 @@ func (s *Store) ListNodesWithOptions(ctx context.Context, basePath string, opts 
 		}
 
 		items = append(items, &NodeListItem{
+			ID:              NodeIDFromMetadata(meta),
 			Path:            stemRel,
 			Title:           title,
 			Type:            nodeType,
@@ -441,6 +525,7 @@ func (s *Store) GetNode(ctx context.Context, basePath, nodePath string) (*Node, 
 	}
 
 	return &Node{
+		ID:         NodeIDFromMetadata(meta),
 		Path:       filepath.ToSlash(nodePath),
 		Annotation: annotation,
 		Content:    content,
@@ -627,6 +712,7 @@ func (s *Store) MoveNode(ctx context.Context, basePath, nodePath, targetPath str
 	}
 
 	return &Node{
+		ID:         NodeIDFromMetadata(meta),
 		Path:       filepath.ToSlash(targetPath),
 		Annotation: annotation,
 		Content:    content,
@@ -688,6 +774,11 @@ func (s *Store) validateTranslationFile(basePath, filePath, stemRel string, node
 		*violations = append(*violations, ValidationError{Path: stemRel, Message: "translation file: lang required"})
 
 		return nil
+	}
+	if id := NodeIDFromMetadata(matter); id == "" {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "translation file: id required"})
+	} else if !ValidateNodeID(id) {
+		*violations = append(*violations, ValidationError{Path: stemRel, Message: "translation file: id must be a valid UUID"})
 	}
 
 	// stemRel = "theme/slug.ru", extract themePath and baseSlug

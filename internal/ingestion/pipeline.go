@@ -97,6 +97,9 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	applyProfileToResult(result, profile)
 	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
 
+	if id := strings.TrimSpace(req.NodeID); id != "" {
+		result.NodeID = id
+	}
 	node, err := p.saveNode(ctx, result)
 	if err != nil {
 		return nil, err
@@ -354,6 +357,15 @@ func (p *PipelineIngester) expandMarkdownURLs(ctx context.Context, s string) str
 
 func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResult) (*kb.Node, error) {
 	saveStart := time.Now()
+
+	existing, err := p.resolveExistingNode(ctx, result)
+	if err != nil && !errors.Is(err, errNoExistingNodeForIngest) {
+		return nil, err
+	}
+	if existing != nil {
+		return p.updateExistingNode(ctx, existing, result)
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	frontmatter := map[string]any{
 		"keywords":   result.Keywords,
@@ -568,8 +580,9 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 
 	saveStart := time.Now()
 	translationFrontmatter := map[string]any{
-		"translation_of": result.Slug,
-		"lang":           "ru",
+		"translation_of":    result.Slug,
+		"translation_of_id": node.ID,
+		"lang":              "ru",
 		"keywords":       result.Keywords,
 		"created":        node.Metadata["created"],
 		"updated":        node.Metadata["updated"],

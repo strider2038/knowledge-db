@@ -16,6 +16,7 @@ const (
 )
 
 type IndexedNode struct {
+	NodeID          string
 	Path            string
 	ContentHash     string
 	BodyHash        string
@@ -23,8 +24,14 @@ type IndexedNode struct {
 	NodeEmbeddingID int64
 }
 
+type NodeSourceMatch struct {
+	NodeID string
+	Path   string
+}
+
 type Chunk struct {
 	ID          int64
+	NodeID      string
 	NodePath    string
 	ChunkIndex  int
 	Heading     string
@@ -33,6 +40,7 @@ type Chunk struct {
 }
 
 type NodeSearchDocument struct {
+	NodeID          string
 	Path            string
 	Title           string
 	Type            string
@@ -47,6 +55,7 @@ type NodeSearchDocument struct {
 }
 
 type ChunkSearchDocument struct {
+	NodeID     string
 	NodePath   string
 	ChunkIndex int
 	Heading    string
@@ -70,6 +79,7 @@ type IndexStatus struct {
 }
 
 type NodeEmbedding struct {
+	NodeID string
 	Path   string
 	Vector []float32
 }
@@ -93,15 +103,20 @@ type Store interface {
 	GetAllEmbeddings(ctx context.Context) ([]EmbeddingRecord, error)
 	DeleteEmbedding(ctx context.Context, id int64) error
 
-	UpsertNode(ctx context.Context, path, contentHash, bodyHash string, nodeEmbeddingID int64) error
+	UpsertNode(ctx context.Context, nodeID, path, contentHash, bodyHash string, nodeEmbeddingID int64) error
 	UpsertNodeSearch(ctx context.Context, doc NodeSearchDocument) error
+	UpsertNodeSourceURL(ctx context.Context, nodeID, sourceURL string) error
 	DeleteNode(ctx context.Context, path string) error
+	DeleteNodeByID(ctx context.Context, nodeID string) error
 	GetNodeByPath(ctx context.Context, path string) (*IndexedNode, error)
+	GetNodeByID(ctx context.Context, nodeID string) (*IndexedNode, error)
+	UpdateNodePath(ctx context.Context, nodeID, newPath string) error
+	FindBySourceURL(ctx context.Context, normalizedURL string) (*NodeSourceMatch, error)
 	ListAllIndexed(ctx context.Context) ([]IndexedNode, error)
 
-	UpsertChunks(ctx context.Context, nodePath string, chunks []Chunk) error
+	UpsertChunks(ctx context.Context, nodeID, nodePath string, chunks []Chunk) error
 	UpsertChunkSearch(ctx context.Context, doc ChunkSearchDocument) error
-	DeleteChunks(ctx context.Context, nodePath string) error
+	DeleteChunks(ctx context.Context, nodeID, nodePath string) error
 	ListChunksByNode(ctx context.Context, nodePath string) ([]Chunk, error)
 	GetAllChunkEmbeddings(ctx context.Context) ([]ChunkEmbedding, error)
 	GetAllNodeEmbeddings(ctx context.Context) ([]NodeEmbedding, error)
