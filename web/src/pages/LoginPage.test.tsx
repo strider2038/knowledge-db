@@ -20,6 +20,7 @@ vi.mock('@/services/api', () => ({
   logout: (...args: unknown[]) => mockLogout(...args),
   takeStoredOAuthRedirect: (fallback: string) => fallback,
   startGoogleOAuth: vi.fn(),
+  startYandexOAuth: vi.fn(),
   getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0 }),
   getIndexStatus: vi.fn().mockResolvedValue({
     total_nodes: 0,
@@ -49,7 +50,11 @@ function renderLogin(initialEntry = '/login') {
 describe('LoginPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetSession.mockResolvedValue({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
+    mockGetSession.mockResolvedValue({
+      authenticated: false,
+      auth_enabled: true,
+      auth_methods: ['password'],
+    })
   })
 
   it('renders login form', async () => {
@@ -81,8 +86,8 @@ describe('LoginPage', () => {
   it('redirects to overview on successful login', async () => {
     mockLogin.mockResolvedValue(undefined)
     mockGetSession
-      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
-      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
+      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true, auth_methods: ['password'] })
+      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true, auth_methods: ['password'] })
     renderLogin()
 
     const loginInput = await screen.findByLabelText('Логин')
@@ -98,11 +103,67 @@ describe('LoginPage', () => {
     })
   })
 
+  it('shows Google and password when both configured', async () => {
+    mockGetSession.mockResolvedValue({
+      authenticated: false,
+      auth_enabled: true,
+      auth_methods: ['password', 'google'],
+    })
+    renderLogin()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Войти через Google/i })).toBeTruthy()
+      expect(screen.getByLabelText('Логин')).toBeTruthy()
+      expect(screen.getByText('или')).toBeTruthy()
+    })
+  })
+
+  it('shows only Yandex OAuth when yandex only', async () => {
+    mockGetSession.mockResolvedValue({
+      authenticated: false,
+      auth_enabled: true,
+      auth_methods: ['yandex'],
+    })
+    renderLogin()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Войти через Yandex/i })).toBeTruthy()
+      expect(screen.queryByLabelText('Логин')).toBeNull()
+    })
+  })
+
+  it('shows password, Google, and Yandex when all configured', async () => {
+    mockGetSession.mockResolvedValue({
+      authenticated: false,
+      auth_enabled: true,
+      auth_methods: ['password', 'google', 'yandex'],
+    })
+    renderLogin()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Войти через Google/i })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /Войти через Yandex/i })).toBeTruthy()
+      expect(screen.getByLabelText('Логин')).toBeTruthy()
+      expect(screen.getByText('или')).toBeTruthy()
+    })
+  })
+
+  it('shows Yandex-specific OAuth error from query', async () => {
+    renderLogin('/login?error=oauth&provider=yandex')
+    await waitFor(() => {
+      expect(screen.getByText(/Ошибка авторизации Yandex/i)).toBeTruthy()
+    })
+  })
+
+  it('shows Yandex forbidden error from query', async () => {
+    renderLogin('/login?error=forbidden&provider=yandex')
+    await waitFor(() => {
+      expect(screen.getByText(/Email Yandex не в списке/i)).toBeTruthy()
+    })
+  })
+
   it('redirects to redirect param after successful login', async () => {
     mockLogin.mockResolvedValue(undefined)
     mockGetSession
-      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
-      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
+      .mockResolvedValueOnce({ authenticated: false, auth_enabled: true, auth_methods: ['password'] })
+      .mockResolvedValueOnce({ authenticated: true, auth_enabled: true, auth_methods: ['password'] })
     renderLogin('/login?redirect=/add')
 
     const loginInput = await screen.findByLabelText('Логин')
@@ -128,7 +189,11 @@ describe('ProtectedRoute', () => {
   }
 
   it('redirects unauthenticated user to login', async () => {
-    mockGetSession.mockResolvedValue({ authenticated: false, auth_enabled: true, auth_mode: 'password' })
+    mockGetSession.mockResolvedValue({
+      authenticated: false,
+      auth_enabled: true,
+      auth_methods: ['password'],
+    })
     render(
       <MemoryRouter initialEntries={['/']}>
         <AuthProvider>
@@ -146,7 +211,7 @@ describe('ProtectedRoute', () => {
   })
 
   it('shows protected content when authenticated', async () => {
-    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
+    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true, auth_methods: ['password'] })
     render(
       <MemoryRouter initialEntries={['/']}>
         <AuthProvider>
@@ -171,7 +236,7 @@ describe('Logout', () => {
   })
 
   it('calls logout and redirects to login', async () => {
-    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true, auth_mode: 'password' })
+    mockGetSession.mockResolvedValue({ authenticated: true, auth_enabled: true, auth_methods: ['password'] })
     const locationSpy = { href: '' }
     Object.defineProperty(window, 'location', {
       value: { ...window.location, get href() { return locationSpy.href }, set href(v: string) { locationSpy.href = v } },

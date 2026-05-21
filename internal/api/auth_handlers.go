@@ -12,6 +12,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/googleoauth"
+	"github.com/strider2038/knowledge-db/internal/yandexoauth"
 )
 
 const (
@@ -27,6 +28,7 @@ type AuthHandler struct {
 	rateMu            sync.Mutex
 	rateMap           map[string][]time.Time
 	googleClient      *googleoauth.Client
+	yandexClient      *yandexoauth.Client
 }
 
 // NewAuthHandler создаёт AuthHandler.
@@ -37,12 +39,19 @@ func NewAuthHandler(store *session.Store, cfg *config.Config) *AuthHandler {
 			Timeout: googleoauth.DefaultOutboundTimeout,
 		},
 	}
+	yc := &yandexoauth.Client{
+		Config: yandexOAuthConfigFromApp(cfg),
+		HTTPClient: &http.Client{
+			Timeout: yandexoauth.DefaultOutboundTimeout,
+		},
+	}
 	h := &AuthHandler{
 		store:             store,
 		cfg:               cfg,
 		allowedCORSOrigin: cfg.HTTP.AllowedCORSOrigin,
 		rateMap:           make(map[string][]time.Time),
 		googleClient:      gc,
+		yandexClient:      yc,
 	}
 	go h.cleanupRateMap()
 
@@ -57,13 +66,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.cfg.Auth.AuthMode() == config.AuthModeOff {
+	if !h.cfg.Auth.AuthEnabled() {
 		writeError(w, http.StatusBadRequest, "auth disabled")
 
 		return
 	}
-	if h.cfg.Auth.AuthMode() == config.AuthModeGoogle {
-		writeError(w, http.StatusBadRequest, "use Google sign-in")
+	if !h.cfg.Auth.PasswordAuthConfigured() {
+		writeError(w, http.StatusBadRequest, "password auth not configured")
 
 		return
 	}
@@ -118,7 +127,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Session обрабатывает GET /api/auth/session.
 func (h *AuthHandler) Session(w http.ResponseWriter, r *http.Request) {
-	if h.cfg.Auth.AuthMode() == config.AuthModeOff {
+	if !h.cfg.Auth.AuthEnabled() {
 		writeJSON(w, map[string]any{
 			"authenticated": true,
 			"auth_enabled":  false,
@@ -129,6 +138,7 @@ func (h *AuthHandler) Session(w http.ResponseWriter, r *http.Request) {
 
 	base := map[string]any{
 		"auth_enabled": true,
+		"auth_methods": h.cfg.Auth.AuthMethods(),
 		"auth_mode":    string(h.cfg.Auth.AuthMode()),
 	}
 	cookie, err := r.Cookie(session.CookieName)
@@ -173,6 +183,15 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) setTestGoogleOAuthServers(c *http.Client, authURL, tokenURL, userInfoURL string) {
 	h.googleClient.HTTPClient = c
 	h.googleClient.Endpoints = googleoauth.Endpoints{
+		AuthURL:     authURL,
+		TokenURL:    tokenURL,
+		UserInfoURL: userInfoURL,
+	}
+}
+
+func (h *AuthHandler) setTestYandexOAuthServers(c *http.Client, authURL, tokenURL, userInfoURL string) {
+	h.yandexClient.HTTPClient = c
+	h.yandexClient.Endpoints = yandexoauth.Endpoints{
 		AuthURL:     authURL,
 		TokenURL:    tokenURL,
 		UserInfoURL: userInfoURL,

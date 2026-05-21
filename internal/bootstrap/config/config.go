@@ -34,14 +34,16 @@ type Telegram struct {
 	OwnerID int64  `env:"TELEGRAM_OWNER_ID" envDefault:"0"`
 }
 
-// Auth — опциональная сессионная авторизация: пароль (KB_LOGIN+KB_PASSWORD) или Google OAuth.
+// Auth — опциональная сессионная авторизация: пароль, Google OAuth, Yandex OAuth (независимо по env).
 type Auth struct {
 	Login    string `env:"KB_LOGIN" envDefault:""`
 	Password string `env:"KB_PASSWORD" envDefault:""`
-	// Google OAuth (all required when enabling Google; mutually exclusive with password).
 	GoogleClientID     string        `env:"KB_GOOGLE_OAUTH_CLIENT_ID" envDefault:""`
 	GoogleClientSecret string        `env:"KB_GOOGLE_OAUTH_CLIENT_SECRET" envDefault:""`
 	GoogleRedirectURL  string        `env:"KB_GOOGLE_OAUTH_REDIRECT_URL" envDefault:""`
+	YandexClientID     string        `env:"KB_YANDEX_OAUTH_CLIENT_ID" envDefault:""`
+	YandexClientSecret string        `env:"KB_YANDEX_OAUTH_CLIENT_SECRET" envDefault:""`
+	YandexRedirectURL  string        `env:"KB_YANDEX_OAUTH_REDIRECT_URL" envDefault:""`
 	AuthAllowedEmails  string        `env:"KB_AUTH_ALLOWED_EMAILS" envDefault:""` // comma-separated
 	OAuthStateSecret   string        `env:"KB_OAUTH_STATE_SECRET" envDefault:""`
 	SessionTTL         time.Duration `env:"KB_SESSION_TTL" envDefault:"8h"`
@@ -61,61 +63,95 @@ func (a Auth) GoogleAuthConfigured() bool {
 		strings.TrimSpace(a.AuthAllowedEmails) != ""
 }
 
-// AuthMode returns off, password, or google based on environment (call ValidateAuth at startup first).
+// YandexAuthConfigured reports a complete Yandex OAuth env set (incl. non-empty allowlist and state secret).
+func (a Auth) YandexAuthConfigured() bool {
+	return a.YandexClientID != "" &&
+		a.YandexClientSecret != "" &&
+		a.YandexRedirectURL != "" &&
+		a.OAuthStateSecret != "" &&
+		strings.TrimSpace(a.AuthAllowedEmails) != ""
+}
+
+// AuthMethods returns configured sign-in methods in fixed order: password, google, yandex.
+func (a Auth) AuthMethods() []string {
+	var methods []string
+	if a.PasswordAuthConfigured() {
+		methods = append(methods, string(AuthModePassword))
+	}
+	if a.GoogleAuthConfigured() {
+		methods = append(methods, string(AuthModeGoogle))
+	}
+	if a.YandexAuthConfigured() {
+		methods = append(methods, string(AuthModeYandex))
+	}
+
+	return methods
+}
+
+// AuthMode returns off, a single method name, or multi for backward-compatible session API.
 func (a Auth) AuthMode() AuthMode {
-	switch {
-	case a.GoogleAuthConfigured():
-		return AuthModeGoogle
-	case a.PasswordAuthConfigured():
-		return AuthModePassword
-	default:
+	methods := a.AuthMethods()
+	switch len(methods) {
+	case 0:
 		return AuthModeOff
+	case 1:
+		return AuthMode(methods[0])
+	default:
+		return AuthModeMulti
 	}
 }
 
-// AuthEnabled returns true for password or Google session mode.
+// AuthEnabled returns true when at least one auth method is configured.
 func (a Auth) AuthEnabled() bool {
-	return a.AuthMode() != AuthModeOff
+	return len(a.AuthMethods()) > 0
 }
 
-// ValidateAuth enforces mutual exclusion, complete groups, and allowlist rules.
+// ValidateAuth enforces complete groups per method and shared OAuth env rules.
 func (a Auth) ValidateAuth() error {
 	hasPartialPassword := (a.Login != "" || a.Password != "") && !a.PasswordAuthConfigured()
 	if hasPartialPassword {
-		return errors.New("auth: set both KB_LOGIN and KB_PASSWORD, or clear both for Google OAuth")
+		return errors.New("auth: set both KB_LOGIN and KB_PASSWORD, or clear both")
 	}
-	if a.anyGoogleEnvSet() && !a.GoogleAuthConfigured() {
-		return errors.New("auth: incomplete Google OAuth env — set KB_GOOGLE_OAUTH_CLIENT_ID, KB_GOOGLE_OAUTH_CLIENT_SECRET, KB_GOOGLE_OAUTH_REDIRECT_URL, KB_OAUTH_STATE_SECRET, and non-empty KB_AUTH_ALLOWED_EMAILS, or clear all")
+	if a.anyGoogleSpecificEnvSet() && !a.GoogleAuthConfigured() {
+		return errors.New("auth: incomplete Google OAuth env — set KB_GOOGLE_OAUTH_CLIENT_ID, KB_GOOGLE_OAUTH_CLIENT_SECRET, KB_GOOGLE_OAUTH_REDIRECT_URL, KB_OAUTH_STATE_SECRET, and non-empty KB_AUTH_ALLOWED_EMAILS, or clear all Google-specific variables")
 	}
-	if a.GoogleAuthConfigured() && a.PasswordAuthConfigured() {
-		return errors.New("auth: password mode (KB_LOGIN/KB_PASSWORD) and Google OAuth are mutually exclusive — remove one set of variables")
+	if a.anyYandexEnvSet() && !a.YandexAuthConfigured() {
+		return errors.New("auth: incomplete Yandex OAuth env — set KB_YANDEX_OAUTH_CLIENT_ID, KB_YANDEX_OAUTH_CLIENT_SECRET, KB_YANDEX_OAUTH_REDIRECT_URL, KB_OAUTH_STATE_SECRET, and non-empty KB_AUTH_ALLOWED_EMAILS, or clear all Yandex-specific variables")
 	}
-	if a.GoogleAuthConfigured() && (a.Login != "" || a.Password != "") {
-		return errors.New("auth: Google mode requires empty KB_LOGIN and KB_PASSWORD")
+	if a.anyOAuthCommonEnvSet() && !a.GoogleAuthConfigured() && !a.YandexAuthConfigured() {
+		return errors.New("auth: KB_OAUTH_STATE_SECRET and/or KB_AUTH_ALLOWED_EMAILS set but no full OAuth provider (Google or Yandex) configured")
 	}
 
 	return nil
 }
 
-// ValidateWebPublicBaseForGoogle returns an error in Google mode when WebPublicBaseURL is missing.
-func (a Auth) ValidateWebPublicBaseForGoogle(webPublicBaseURL string) error {
-	if !a.GoogleAuthConfigured() {
+// ValidateWebPublicBaseForOAuth returns an error when any OAuth provider is configured without KB_PUBLIC_WEB_BASE_URL.
+func (a Auth) ValidateWebPublicBaseForOAuth(webPublicBaseURL string) error {
+	if !a.GoogleAuthConfigured() && !a.YandexAuthConfigured() {
 		return nil
 	}
 	if strings.TrimSpace(webPublicBaseURL) == "" {
-		return errors.New("auth: KB_PUBLIC_WEB_BASE_URL is required in Google OAuth mode (post-login redirect)")
+		return errors.New("auth: KB_PUBLIC_WEB_BASE_URL is required when OAuth is enabled (post-login redirect)")
 	}
 
 	return nil
 }
 
-func (a Auth) anyGoogleEnvSet() bool {
-	if a.GoogleClientID != "" || a.GoogleClientSecret != "" || a.GoogleRedirectURL != "" ||
-		a.OAuthStateSecret != "" || strings.TrimSpace(a.AuthAllowedEmails) != "" {
-		return true
-	}
+// ValidateWebPublicBaseForGoogle is deprecated; use ValidateWebPublicBaseForOAuth.
+func (a Auth) ValidateWebPublicBaseForGoogle(webPublicBaseURL string) error {
+	return a.ValidateWebPublicBaseForOAuth(webPublicBaseURL)
+}
 
-	return false
+func (a Auth) anyGoogleSpecificEnvSet() bool {
+	return a.GoogleClientID != "" || a.GoogleClientSecret != "" || a.GoogleRedirectURL != ""
+}
+
+func (a Auth) anyYandexEnvSet() bool {
+	return a.YandexClientID != "" || a.YandexClientSecret != "" || a.YandexRedirectURL != ""
+}
+
+func (a Auth) anyOAuthCommonEnvSet() bool {
+	return a.OAuthStateSecret != "" || strings.TrimSpace(a.AuthAllowedEmails) != ""
 }
 
 // Embedding — конфигурация эмбеддингов и RAG (опционально).

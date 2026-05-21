@@ -50,7 +50,7 @@ func Run() error {
 	if err := cfg.Auth.ValidateAuth(); err != nil {
 		return errors.Errorf("invalid auth configuration: %w", err)
 	}
-	if err := cfg.Auth.ValidateWebPublicBaseForGoogle(cfg.WebPublicBaseURL); err != nil {
+	if err := cfg.Auth.ValidateWebPublicBaseForOAuth(cfg.WebPublicBaseURL); err != nil {
 		return errors.Errorf("invalid auth configuration: %w", err)
 	}
 	if err := cfg.Embedding.Validate(); err != nil {

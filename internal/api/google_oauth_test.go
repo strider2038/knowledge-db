@@ -14,7 +14,7 @@ import (
 	"github.com/strider2038/knowledge-db/internal/auth"
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
-	"github.com/strider2038/knowledge-db/internal/googleoauth"
+	"github.com/strider2038/knowledge-db/internal/oauthcommon"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/mcp"
 )
@@ -62,7 +62,7 @@ func newGoogleE2EHandler(t *testing.T, userInfoJSON, allowlist, webBase string) 
 		},
 	}
 	require.NoError(t, cfg.Auth.ValidateAuth())
-	require.NoError(t, cfg.Auth.ValidateWebPublicBaseForGoogle(cfg.WebPublicBaseURL))
+	require.NoError(t, cfg.Auth.ValidateWebPublicBaseForOAuth(cfg.WebPublicBaseURL))
 	st := session.NewStore()
 	ah := NewAuthHandler(st, cfg)
 	ah.setTestGoogleOAuthServers(mock.Client(), mock.URL+"/authz", mock.URL+"/token", mock.URL+"/userinfo")
@@ -74,6 +74,39 @@ func newGoogleE2EHandler(t *testing.T, userInfoJSON, allowlist, webBase string) 
 	router.Handle("POST /api/mcp", mcpHandler)
 
 	return auth.Middleware(Gzip(CORS(router, "")), st)
+}
+
+func newPasswordOnlyE2EHandler(t *testing.T) http.Handler {
+	t.Helper()
+	data := t.TempDir()
+	up := t.TempDir()
+	cfg := &config.Config{
+		DataPath:   data,
+		UploadsDir: up,
+		Auth: config.Auth{
+			Login:      "u",
+			Password:   "p",
+			SessionTTL: 8 * time.Hour,
+		},
+	}
+	require.NoError(t, cfg.Auth.ValidateAuth())
+	st := session.NewStore()
+	ah := NewAuthHandler(st, cfg)
+	mh := NewHandlerWithUploads(data, up, &ingestion.StubIngester{}, nil)
+	router, err := NewMux(mh, ah)
+	require.NoError(t, err)
+
+	return auth.Middleware(Gzip(CORS(router, "")), st)
+}
+
+func TestGoogleOAuthStart_WhenNotConfigured_Expect404(t *testing.T) {
+	t.Parallel()
+	h := newPasswordOnlyE2EHandler(t)
+	r := httptest.NewRecorder()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/api/auth/google", nil)
+	require.NoError(t, err)
+	h.ServeHTTP(r, req)
+	require.Equal(t, http.StatusNotFound, r.Code)
 }
 
 func TestGoogleCallback_InvalidState_ExpectRedirect(t *testing.T) {
@@ -94,7 +127,7 @@ func TestGoogleCallback_InvalidState_ExpectRedirect(t *testing.T) {
 func TestGoogleCallback_ForbiddenEmail_ExpectRedirect(t *testing.T) {
 	t.Parallel()
 	h := newGoogleE2EHandler(t, `{"email":"b@ex.com","email_verified":true}`, "only@a.com", "http://web:9")
-	signed, err := googleoauth.SignState(testOAuthStateSecret, "/", time.Now())
+	signed, err := oauthcommon.SignState(testOAuthStateSecret, "/", time.Now())
 	require.NoError(t, err)
 	u := "/api/auth/google/callback?code=ok&state=" + url.QueryEscape(signed)
 	r := httptest.NewRecorder()
@@ -111,7 +144,7 @@ func TestGoogleCallback_OK_ExpectSessionCookie(t *testing.T) {
 	t.Parallel()
 	web := "http://127.0.0.1:7"
 	h := newGoogleE2EHandler(t, `{"email":"a@ex.com","email_verified":true}`, "a@ex.com", web)
-	signed, err := googleoauth.SignState(testOAuthStateSecret, "/add", time.Now())
+	signed, err := oauthcommon.SignState(testOAuthStateSecret, "/add", time.Now())
 	require.NoError(t, err)
 	u := "/api/auth/google/callback?code=ok&state=" + url.QueryEscape(signed)
 	rec := httptest.NewRecorder()
@@ -138,6 +171,98 @@ func TestGetSession_GoogleMode_IncludesAuthMode(t *testing.T) {
 	require.NoError(t, json.NewDecoder(r.Body).Decode(&out))
 	assert.Equal(t, true, out["auth_enabled"])
 	assert.Equal(t, "google", out["auth_mode"])
+	methods, ok := out["auth_methods"].([]any)
+	require.True(t, ok)
+	require.Len(t, methods, 1)
+	assert.Equal(t, "google", methods[0])
+}
+
+func TestGetSession_PasswordAndGoogle_IncludesAuthMethods(t *testing.T) {
+	t.Parallel()
+	data := t.TempDir()
+	up := t.TempDir()
+	cfg := &config.Config{
+		DataPath:         data,
+		UploadsDir:       up,
+		WebPublicBaseURL: "http://web/",
+		Auth: config.Auth{
+			Login:              "u",
+			Password:           "p",
+			GoogleClientID:     "c",
+			GoogleClientSecret: "s",
+			GoogleRedirectURL:  "http://localhost/cb",
+			AuthAllowedEmails:  "a@ex.com",
+			OAuthStateSecret:   testOAuthStateSecret,
+			SessionTTL:         8 * time.Hour,
+		},
+	}
+	require.NoError(t, cfg.Auth.ValidateAuth())
+	require.NoError(t, cfg.Auth.ValidateWebPublicBaseForOAuth(cfg.WebPublicBaseURL))
+	st := session.NewStore()
+	ah := NewAuthHandler(st, cfg)
+	mh := NewHandlerWithUploads(data, up, &ingestion.StubIngester{}, nil)
+	router, err := NewMux(mh, ah)
+	require.NoError(t, err)
+	h := auth.Middleware(Gzip(CORS(router, "")), st)
+
+	r := httptest.NewRecorder()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "/api/auth/session", nil)
+	require.NoError(t, err)
+	h.ServeHTTP(r, req)
+	require.Equal(t, http.StatusOK, r.Code)
+	var out map[string]any
+	require.NoError(t, json.NewDecoder(r.Body).Decode(&out))
+	assert.Equal(t, "multi", out["auth_mode"])
+	methods, ok := out["auth_methods"].([]any)
+	require.True(t, ok)
+	assert.Equal(t, []any{"password", "google"}, methods)
+}
+
+func TestPostLogin_PasswordAndGoogle_ExpectSession(t *testing.T) {
+	t.Parallel()
+	data := t.TempDir()
+	up := t.TempDir()
+	cfg := &config.Config{
+		DataPath:         data,
+		UploadsDir:       up,
+		WebPublicBaseURL: "http://web/",
+		Auth: config.Auth{
+			Login:              "u",
+			Password:           "p",
+			GoogleClientID:     "c",
+			GoogleClientSecret: "s",
+			GoogleRedirectURL:  "http://localhost/cb",
+			AuthAllowedEmails:  "a@ex.com",
+			OAuthStateSecret:   testOAuthStateSecret,
+			SessionTTL:         8 * time.Hour,
+		},
+	}
+	require.NoError(t, cfg.Auth.ValidateAuth())
+	st := session.NewStore()
+	ah := NewAuthHandler(st, cfg)
+	mh := NewHandlerWithUploads(data, up, &ingestion.StubIngester{}, nil)
+	router, err := NewMux(mh, ah)
+	require.NoError(t, err)
+	h := auth.Middleware(Gzip(CORS(router, "")), st)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/auth/login", strings.NewReader(`{"login":"u","password":"p"}`))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	r := httptest.NewRecorder()
+	h.ServeHTTP(r, req)
+	require.Equal(t, http.StatusOK, r.Code)
+	assert.Contains(t, r.Header().Get("Set-Cookie"), session.CookieName)
+}
+
+func TestPostLogin_WithoutPasswordAuth_Expect400(t *testing.T) {
+	t.Parallel()
+	h := newGoogleE2EHandler(t, `{"email":"a@ex.com","email_verified":true}`, "a@ex.com", "http://w/")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/auth/login", strings.NewReader(`{"login":"a","password":"b"}`))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	r := httptest.NewRecorder()
+	h.ServeHTTP(r, req)
+	require.Equal(t, http.StatusBadRequest, r.Code)
 }
 
 func TestPostLogin_GoogleMode_Expect400(t *testing.T) {

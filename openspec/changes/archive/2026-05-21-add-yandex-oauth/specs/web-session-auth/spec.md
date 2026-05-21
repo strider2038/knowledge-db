@@ -2,7 +2,7 @@
 
 Опциональная мульти-способная авторизация web: пароль, Google OAuth, Yandex OAuth — независимо по конфигурации env; cookie-сессии.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Yandex OAuth как независимый способ входа
 
@@ -40,6 +40,8 @@
 
 - **WHEN** настроен полный Google или Yandex OAuth, `KB_PUBLIC_WEB_BASE_URL` пуст
 - **THEN** сервер SHALL отказать в старте с явной диагностикой
+
+## MODIFIED Requirements
 
 ### Requirement: Опциональный режим сессионной авторизации
 
@@ -136,3 +138,16 @@
 
 - **WHEN** инфраструктурный клиент вызывает endpoint health/readiness без cookie-сессии
 - **THEN** сервер обрабатывает запрос без требования аутентификации
+
+## REMOVED Requirements
+
+### Requirement: Конфликт конфигурации парольного и Google-режима
+
+**Reason:** Пароль и OAuth-провайдеры больше не взаимоисключающие; включение определяется независимой полнотой env каждого способа.
+
+**Migration:** Убрать из деплоя ожидание ошибки старта при `KB_LOGIN`+`KB_PASSWORD` вместе с Google/Yandex. Для production без пароля — не задавать `KB_LOGIN`/`KB_PASSWORD`. Ранее пустые login/password при Google остаются валидными.
+
+#### Сценарий: Ранее недопустимая комбинация env теперь разрешена
+
+- **WHEN** настроены полный Google OAuth и пара `KB_LOGIN`/`KB_PASSWORD`
+- **THEN** сервер SHALL успешно стартовать и выставить `auth_methods`, содержащий `password` и `google`

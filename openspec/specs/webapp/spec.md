@@ -316,48 +316,109 @@ Web UI ДОЛЖЕН (SHALL) поддерживать страницу входа
 - **WHEN** пользователь открывает приложение и `GET /api/auth/session` подтверждает валидную сессию
 - **THEN** UI отображает запрошенный раздел без редиректа на login
 
+### Requirement: Кнопка и переход к Yandex OAuth
+
+Если `yandex` ∈ `auth_methods`, страница входа SHALL показывать «Войти через Yandex» с иконкой Yandex (inline SVG / локальный asset), переход на `GET /api/auth/yandex` без секретов на клиенте. Если `yandex` ∉ `auth_methods`, кнопка SHALL NOT отображаться.
+
+#### Сценарий: Показ кнопки Yandex
+
+- **WHEN** `auth_methods` содержит `yandex`
+- **THEN** кнопка с иконкой и текстом отображается
+
+#### Сценарий: Навигация на старт Yandex OAuth
+
+- **WHEN** пользователь нажимает кнопку Yandex
+- **THEN** полный переход на `GET /api/auth/yandex` (с сохранением redirect в sessionStorage, как у Google)
+
+### Requirement: Иконки провайдеров на OAuth-кнопках
+
+Кнопки «Войти через Google» и «Войти через Yandex» SHALL содержать узнаваемую иконку слева от текста. Ресурсы MUST быть локальными (inline SVG), без загрузки с внешних CDN.
+
+#### Сценарий: Визуальное различие провайдеров
+
+- **WHEN** отображаются обе OAuth-кнопки
+- **THEN** у каждой своя иконка; подписи однозначно называют провайдера
+
+### Requirement: Комбинированная страница входа
+
+Web UI SHALL на `/login` отображать **все** настроенные способы: OAuth-кнопки для каждого элемента `{ google, yandex }` ∩ `auth_methods`; форму логин/пароль, если `password` ∈ `auth_methods`. При пароле и хотя бы одном OAuth SHOULD быть визуальный разделитель («или»). Порядок: OAuth-кнопки (Google, затем Yandex), разделитель, форма пароля.
+
+#### Сценарий: Пароль и два OAuth
+
+- **WHEN** `auth_methods` = `password`, `google`, `yandex`
+- **THEN** UI показывает две OAuth-кнопки с иконками, разделитель, форму пароля
+
+#### Сценарий: Только OAuth
+
+- **WHEN** `auth_methods` без `password`
+- **THEN** только OAuth-кнопки, форма скрыта
+
+#### Сценарий: Только пароль
+
+- **WHEN** `auth_methods` = `password`
+- **THEN** только форма, OAuth-кнопки скрыты
+
 ### Requirement: Кнопка и переход к Google OAuth
 
-При **Google-режиме** (сервер настроен на OAuth) веб-интерфейс SHALL на странице входа отображать действие «Войти через Google», ведущее на `GET /api/auth/google` (полный переход в браузере: тот же origin/порт, что и API, либо иной явно согласованный URL из конфигурации), без передачи секретов на клиент. В **парольном** режиме эта кнопка SHALL NOT отображаться (либо SHALL быть отключена с пояснением — на усмотрение UI; по умолчанию скрыть).
+Если `google` ∈ `auth_methods`, UI SHALL показывать «Войти через Google» с иконкой Google и переходом на `GET /api/auth/google`. Условие **не** «единственный auth_mode», а наличие `google` в `auth_methods`. При наличии пароля кнопка Google SHALL отображаться **вместе** с формой.
 
-#### Сценарий: Показ кнопки
+#### Сценарий: Показ кнопки Google
 
-- **WHEN** `GET /api/auth/session` возвращает `auth_mode: "google"` (и `auth_enabled: true`)
-- **THEN** UI отображает «Войти через Google»
+- **WHEN** `auth_methods` содержит `google`
+- **THEN** кнопка с иконкой Google
 
 #### Сценарий: Навигация на старт OAuth
 
-- **WHEN** пользователь нажимает «Войти через Google»
-- **THEN** UI SHALL инициировать переход к `GET /api/auth/google` (например, `location.href` или ссылка)
+- **WHEN** нажатие «Войти через Google»
+- **THEN** переход на `GET /api/auth/google`
 
 ### Requirement: Поведение login/logout flow
 
-Web UI MUST обрабатывать сценарии входа в соответствии с режимом: в **парольном** — отправка учётных данных на `POST /api/auth/login`, после успешного ответа — обновление сессии и переход на `redirect` или `/`. В **Google-режиме** сессия SHALL устанавливается сервером в ходе редиректов OAuth; Web UI SHALL после возврата в SPA (на `KB_PUBLIC_WEB_BASE_URL` или экв.) вызвать `GET /api/auth/session` и при `authenticated` перенаправить на сохранённый `redirect` или на `/`. UI MUST поддерживать выход через `POST /api/auth/logout` с последующим переходом на login.
+Web UI MUST определять поведение по `auth_methods` (с fallback на `auth_mode` только если `auth_methods` отсутствует — legacy). Парольный вход — при `password` ∈ `auth_methods`. OAuth — сессия через callback; после возврата на `KB_PUBLIC_WEB_BASE_URL` — `GET /api/auth/session`, redirect из sessionStorage/query. Ошибки OAuth: учитывать query `provider` (`google`|`yandex`) для текста; без `provider` — нейтральное сообщение.
 
 #### Сценарий: Успешный парольный вход
 
-- **WHEN** парольный режим и пользователь вводит корректные login/password и отправляет форму
-- **THEN** UI вызывает `POST /api/auth/login` и перенаправляет на исходный или маршрут по умолчанию
+- **WHEN** `password` ∈ `auth_methods`, верные credentials
+- **THEN** `POST /api/auth/login`, редирект на `redirect` или `/`
 
 #### Сценарий: Ошибка парольного входа
 
-- **WHEN** парольный режим и учётные данные неверны
-- **THEN** UI отображает сообщение об ошибке и остаётся на login
+- **WHEN** неверные credentials
+- **THEN** сообщение об ошибке, остаёмся на login
 
 #### Сценарий: Успешный возврат из Google
 
-- **WHEN** Google-режим, браузер возвращается на публичный базовый URL веба (см. `KB_PUBLIC_WEB_BASE_URL`) после callback с выставленной `kb_session`
-- **THEN** UI SHALL вызвать `GET /api/auth/session`, при `authenticated` SHALL перенаправить согласно `redirect` (из query или sessionStorage до OAuth) или на `/`
+- **WHEN** `google` ∈ `auth_methods`, callback установил `kb_session`
+- **THEN** session check, редирект на сохранённый путь
 
-#### Сценарий: Отказ allowlist или ошибка OAuth
+#### Сценарий: Успешный возврат из Yandex
 
-- **WHEN** Google-режим, callback отказал (ошибка в query или пустой вход)
-- **THEN** UI SHALL показать понятное сообщение, не аутентифицировать, оставить на login или с приглашением повторить
+- **WHEN** `yandex` ∈ `auth_methods`, callback установил `kb_session`
+- **THEN** session check, редирект на сохранённый путь
+
+#### Сценарий: Отказ allowlist или ошибка OAuth Google
+
+- **WHEN** `error` в query, `provider=google` или не указан при Google-only инстансе
+- **THEN** понятное сообщение; не аутентифицировать
+
+#### Сценарий: Отказ allowlist или ошибка OAuth Yandex
+
+- **WHEN** `error` в query, `provider=yandex`
+- **THEN** сообщение с упоминанием Yandex при `oauth`/`forbidden`
 
 #### Сценарий: Выход
 
-- **WHEN** пользователь инициирует logout
-- **THEN** UI вызывает `POST /api/auth/logout` и переводит на страницу входа
+- **WHEN** logout
+- **THEN** `POST /api/auth/logout`, переход на login
+
+### Requirement: Потребление auth_methods в AuthContext
+
+`AuthContext` (и `api.ts`) SHALL экспортировать `authMethods: ('password'|'google'|'yandex')[]` из session API; компоненты login MUST использовать его вместо единственного `authMode === 'google'`.
+
+#### Сценарий: Обновление после session
+
+- **WHEN** `getSession()` вернул `auth_methods`
+- **THEN** LoginPage и guards используют актуальный набор способов
 
 ### Requirement: Вкладка чатбота
 

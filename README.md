@@ -123,15 +123,17 @@ KB_DATA_PATH=/path/to/data ./kb rebuild-index
 | **KB_MCP_DEBUG_API_KEY**                                         | API-ключ для debug MCP endpoint `/api/mcp/debug` (заголовок `Authorization: Bearer <key>`). Если пустой/не задан — debug MCP endpoint отключён                                                   |
 | **KB_TELEGRAM_RAW_LOG_ENABLED**                                  | Включить запись сырых Telegram update payload в `.kb/telegram-raw/*.ndjson` и периодическую очистку файлов старше 14 дней                                                                       |
 | **KB_GIT_DISABLED**                                              | Отключить git (коммиты и sync)                                                                                                                                                                  |
-| **KB_LOGIN**, **KB_PASSWORD**                                    | Парольный режим: при задании **обоих** включается защита API и web UI (нельзя совмещать с Google OAuth)                                                                                         |
-| **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: идентификатор и секрет OAuth 2.0-клиента (тип **Web application**) в Google Cloud Console                                                                                         |
-| **KB_GOOGLE_OAUTH_REDIRECT_URL**                                 | Google OAuth: **точный** URL обратного вызова, как в Console — обычно `https://<хост API>/api/auth/google/callback`                                                                             |
-| **KB_OAUTH_STATE_SECRET**                                        | Google OAuth: секрет для подписи параметра `state` (CSRF); сгенерируйте длинную случайную строку                                                                                                |
-| **KB_AUTH_ALLOWED_EMAILS**                                       | Google OAuth: список разрешённых email через запятую; чужой Google-аккаунт не получит сессию                                                                                                    |
+| **KB_LOGIN**, **KB_PASSWORD**                                    | Пароль: при задании **обоих** включается `password` в `auth_methods` (можно вместе с OAuth)                                                                                                    |
+| **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: клиент типа **Web application** в Google Cloud Console                                                                                                                          |
+| **KB_GOOGLE_OAUTH_REDIRECT_URL**                                 | Google OAuth: redirect URI — `https://<хост API>/api/auth/google/callback`                                                                                                                    |
+| **KB_YANDEX_OAUTH_CLIENT_ID**, **KB_YANDEX_OAUTH_CLIENT_SECRET** | Yandex OAuth: приложение на [oauth.yandex.com](https://oauth.yandex.com/)                                                                                                                     |
+| **KB_YANDEX_OAUTH_REDIRECT_URL**                                 | Yandex OAuth: redirect — `https://<хост API>/api/auth/yandex/callback`                                                                                                                        |
+| **KB_OAUTH_STATE_SECRET**                                        | Любой OAuth: секрет подписи `state` (CSRF), ≥16 байт                                                                                                                                            |
+| **KB_AUTH_ALLOWED_EMAILS**                                       | Любой OAuth: allowlist email через запятую (общий для Google и Yandex)                                                                                                                          |
 | **KB_SESSION_TTL**                                               | TTL сессии (по умолчанию 8h)                                                                                                                                                                    |
 | **TELEGRAM_TOKEN**                                               | Токен Telegram-бота (опционально)                                                                                                                                                               |
 | **TELEGRAM_OWNER_ID**                                            | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN)                                                                                                                                      |
-| **KB_PUBLIC_WEB_BASE_URL**                                       | Публичный URL веб-интерфейса без завершающего `/` (например `https://kb.example`); **обязателен в режиме Google OAuth** (редирект после входа в SPA), в ответе бота — ссылка «Открыть на сайте» |
+| **KB_PUBLIC_WEB_BASE_URL**                                       | Публичный URL SPA без `/` (например `https://kb.example`); **обязателен при любом OAuth** (редирект после callback), в Telegram — «Открыть на сайте»                                           |
 | **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL**                  | LLM для ingestion (OpenAI-совместимый API)                                                                                                                                                      |
 | **JINA_API_KEY**                                                 | Ключ Jina для эмбеддингов (опционально)                                                                                                                                                         |
 | **KB_EMBEDDING_ENABLED**                                         | Включить RAG и чат-бота (true/false, по умолчанию false)                                                                                                                                        |
@@ -164,23 +166,51 @@ KB_DATA_PATH=/path/to/data ./kb rebuild-index
 
 ## Режимы запуска
 
-**Открытый режим** (по умолчанию): без `KB_LOGIN`/`KB_PASSWORD` API и web UI доступны без авторизации.
+### Веб-авторизация
+
+Способы входа **независимы**: каждый включается полным набором env для этого способа. `GET /api/auth/session` возвращает `auth_methods` — массив в порядке `password`, `google`, `yandex` (только настроенные). Поле `auth_mode` устарело: один способ → его имя; несколько → `multi`.
+
+| Способ | Что задать |
+| ------ | ---------- |
+| **password** | `KB_LOGIN` и `KB_PASSWORD` |
+| **google** | `KB_GOOGLE_OAUTH_*` + `KB_OAUTH_STATE_SECRET` + непустой `KB_AUTH_ALLOWED_EMAILS` + `KB_PUBLIC_WEB_BASE_URL` |
+| **yandex** | `KB_YANDEX_OAUTH_*` + те же общие OAuth-переменные |
+
+Частичный набор внутри одного способа или «висящие» `KB_OAUTH_STATE_SECRET` / `KB_AUTH_ALLOWED_EMAILS` без полного Google/Yandex — сервер **не стартует**.
+
+**Открытый доступ** (по умолчанию): ни один способ не настроен.
 
 ```bash
 KB_DATA_PATH=/path/to/data ./kb serve
 ```
 
-**Парольный режим** (`KB_LOGIN` + `KB_PASSWORD`): вход через форму на `/login`. **Не задавайте** одновременно полный набор переменных Google OAuth — сервер не запустится.
+**Только пароль:**
 
 ```bash
 KB_DATA_PATH=/path/to/data KB_LOGIN=admin KB_PASSWORD=secret ./kb serve
 ```
 
-**Режим Google OAuth** — взаимоисключающий с паролем. Нужны **все** перечисленные в таблице переменные: клиент, redirect, секрет `state`, непустой allowlist, публичный URL SPA; `KB_LOGIN` и `KB_PASSWORD` должны быть **пустыми**.
+**Общие OAuth-переменные** (при полном Google и/или Yandex): `KB_OAUTH_STATE_SECRET`, `KB_AUTH_ALLOWED_EMAILS`, `KB_PUBLIC_WEB_BASE_URL` (URL SPA без `/`, куда редиректить после callback).
 
-1. В [Google Cloud Console](https://console.cloud.google.com/) создайте проект (или выберите существующий), настройте **OAuth consent screen** (для теста — External и тестовые пользователи), затем **APIs & Services → Credentials → Create Credentials → OAuth client ID** и тип **Web application**.
-2. В **Authorized redirect URIs** укажите **ровно** тот же URL, что и в `KB_GOOGLE_OAUTH_REDIRECT_URL` — путь фиксирован: `/api/auth/google/callback` на том хосте и схеме, где снаружи доступен `kb`. Пример: `https://api.example.com/api/auth/google/callback` или для локальной проверки: `http://localhost:8080/api/auth/google/callback` (в test mode Google допускает localhost).
-3. Скопируйте **Client ID** и **Client secret** в `KB_GOOGLE_OAUTH_CLIENT_ID` и `KB_GOOGLE_OAUTH_CLIENT_SECRET`. Сгенерируйте криптостойкую строку для `KB_OAUTH_STATE_SECRET` (например `openssl rand -hex 32`). В `KB_AUTH_ALLOWED_EMAILS` перечислите email пользователей; вход возможен только для **подтверждённого** в Google email.
+**Google OAuth**
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → OAuth client **Web application**.
+2. Redirect URI = `KB_GOOGLE_OAUTH_REDIRECT_URL` (например `https://api.example.com/api/auth/google/callback` или `http://localhost:8080/api/auth/google/callback` в test mode).
+3. Вход только при `email_verified` и email из allowlist.
+
+**Yandex OAuth**
+
+1. [oauth.yandex.com](https://oauth.yandex.com/) → приложение, право **доступ к email**.
+2. Redirect URI = `KB_YANDEX_OAUTH_REDIRECT_URL` → `/api/auth/yandex/callback`.
+3. Allowlist по полю `default_email` из userinfo (нет `email_verified` как у Google).
+
+**Production:** не оставляйте `KB_LOGIN`/`KB_PASSWORD` на публичном инстансе без необходимости; HTTPS и `X-Forwarded-Proto`; `ALLOWED_CORS_ORIGIN` = origin SPA; ротируйте `KB_OAUTH_STATE_SECRET`; минимальный allowlist.
+
+**Dev:** пароль + OAuth на localhost — задайте `KB_PUBLIC_WEB_BASE_URL=http://localhost:5173` и callback на `:8080` для Google/Yandex.
+
+**Безопасность:** при пароле и OAuth — два канала атаки; rate limit на `POST /api/auth/login`; OAuth только с allowlist.
+
+**Миграция:** раньше пароль и Google были взаимоисключающими — теперь можно добавить `KB_LOGIN`/`KB_PASSWORD` к существующему Google без смены OAuth env. Клиентам UI: использовать `auth_methods`, не только `auth_mode`.
 
 ```bash
 export KB_DATA_PATH=/path/to/data
@@ -189,17 +219,11 @@ export KB_GOOGLE_OAUTH_CLIENT_ID=....apps.googleusercontent.com
 export KB_GOOGLE_OAUTH_CLIENT_SECRET=...
 export KB_GOOGLE_OAUTH_REDIRECT_URL=https://api.example.com/api/auth/google/callback
 export KB_OAUTH_STATE_SECRET=$(openssl rand -hex 32)
-export KB_AUTH_ALLOWED_EMAILS=you@example.com,colleague@example.com
+export KB_AUTH_ALLOWED_EMAILS=you@example.com
 ./kb serve
 ```
 
-Если задана **хотя бы одна** переменная Google OAuth, пустой набор остальных не допускается: либо полная конфигурация, либо очистите все `KB_GOOGLE_`*, `KB_OAUTH_STATE_SECRET` и `KB_AUTH_ALLOWED_EMAILS`.
-
-UI и API должны согласовываться по CORS: для production укажите `ALLOWED_CORS_ORIGIN` (origin веб-интерфейса, без пути). Вход: кнопка «Войти через Google» ведёт на `GET /api/auth/google` на том же origin, что и API, либо настраивайте прокси так, чтобы этот путь попадал на `kb`.
-
-При публичном доступе (вне localhost) рекомендуется использовать TLS: cookie `Secure` требует HTTPS. Настройте reverse proxy (nginx, Caddy) с TLS и корректные заголовки `X-Forwarded-Proto`, `X-Forwarded-For`.
-
-При включённой авторизации для production задайте `ALLOWED_CORS_ORIGIN` (origin вашего web UI) — это усиливает проверку Origin/Referer для state-changing auth-запросов.
+CORS: `ALLOWED_CORS_ORIGIN` для production. OAuth-кнопки ведут на `GET /api/auth/google` и `GET /api/auth/yandex` (тот же origin, что API, или прокси). TLS обязателен вне localhost (`Secure` cookie).
 
 ## RAG и чат-бот
 
