@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { startNodeAgentEdit } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +12,14 @@ import {
 
 const instructionStorageKey = (nodePath: string) => `kb:agent-edit-instruction:${nodePath}`
 
+function loadSavedInstruction(nodePath: string): string {
+  try {
+    return sessionStorage.getItem(instructionStorageKey(nodePath)) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 interface NodeAgentEditDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -19,21 +27,16 @@ interface NodeAgentEditDialogProps {
   onStarted: (operationId: string) => void
 }
 
-export function NodeAgentEditDialog({ open, onOpenChange, nodePath, onStarted }: NodeAgentEditDialogProps) {
-  const [instruction, setInstruction] = useState('')
+interface NodeAgentEditDialogFormProps {
+  nodePath: string
+  onOpenChange: (open: boolean) => void
+  onStarted: (operationId: string) => void
+}
+
+function NodeAgentEditDialogForm({ nodePath, onOpenChange, onStarted }: NodeAgentEditDialogFormProps) {
+  const [instruction, setInstruction] = useState(() => loadSavedInstruction(nodePath))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setError(null)
-    try {
-      const saved = sessionStorage.getItem(instructionStorageKey(nodePath))
-      setInstruction(saved ?? '')
-    } catch {
-      setInstruction('')
-    }
-  }, [open, nodePath])
 
   const trimmed = instruction.trim()
   const canSubmit = trimmed.length > 0 && !submitting
@@ -59,31 +62,46 @@ export function NodeAgentEditDialog({ open, onOpenChange, nodePath, onStarted }:
   }
 
   return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Редактировать с агентом</DialogTitle>
+        <DialogDescription>
+          Опишите, что нужно изменить в узле. Cursor Agent отредактирует файл на сервере; ход выполнения
+          отобразится в панели логов.
+        </DialogDescription>
+      </DialogHeader>
+      <textarea
+        className="min-h-32 w-full rounded-md border bg-background px-3 py-2 text-sm"
+        value={instruction}
+        onChange={(e) => setInstruction(e.target.value)}
+        placeholder="Например: добавь ключевые слова про Docker и сократи вступление"
+        disabled={submitting}
+      />
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+          Отмена
+        </Button>
+        <Button type="button" onClick={handleSubmit} disabled={!canSubmit}>
+          {submitting ? 'Запуск...' : 'Запустить'}
+        </Button>
+      </DialogFooter>
+    </>
+  )
+}
+
+export function NodeAgentEditDialog({ open, onOpenChange, nodePath, onStarted }: NodeAgentEditDialogProps) {
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Редактировать с агентом</DialogTitle>
-          <DialogDescription>
-            Опишите, что нужно изменить в узле. Cursor Agent отредактирует файл на сервере; ход выполнения
-            отобразится в панели логов.
-          </DialogDescription>
-        </DialogHeader>
-        <textarea
-          className="min-h-32 w-full rounded-md border bg-background px-3 py-2 text-sm"
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          placeholder="Например: добавь ключевые слова про Docker и сократи вступление"
-          disabled={submitting}
-        />
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Отмена
-          </Button>
-          <Button type="button" onClick={handleSubmit} disabled={!canSubmit}>
-            {submitting ? 'Запуск...' : 'Запустить'}
-          </Button>
-        </DialogFooter>
+        {open ? (
+          <NodeAgentEditDialogForm
+            key={nodePath}
+            nodePath={nodePath}
+            onOpenChange={onOpenChange}
+            onStarted={onStarted}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   )
