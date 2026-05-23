@@ -79,6 +79,7 @@ func Run() error {
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 	apiHandler.SetNodeNormalizer(api.NewCursorNodeNormalizer())
+	apiHandler.SetNodeAgentEditor(api.NewCursorNodeAgentEditor())
 	debugStore := debugdata.NewStore(cfg.DataPath)
 	apiHandler.SetDebugIssueStore(debugStore)
 	chatStore := buildChatStore(cfg)

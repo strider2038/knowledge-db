@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronUp, Languages, Move, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Languages, Move, RefreshCw, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import {
   type Node,
+  type NodeAgentEditLogEntry,
   type NodeDumpImagesLogEntry,
   type NodeNormalizationLogEntry,
+  getNode,
+  getNodeAgentEditLogs,
+  getNodeAgentEditStatus,
   getNodeDumpImagesLogs,
   getNodeDumpImagesStatus,
   getJobStatus,
-  getNode,
   getNodeNormalizationLogs,
   getNodeNormalizationStatus,
   startJob,
   startNodeDumpImages,
   startNodeNormalization,
 } from '@/services/api'
+import { NodeAgentEditDialog } from '@/components/NodeAgentEditDialog'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { DeleteNodeDialog } from '@/components/DeleteNodeDialog'
@@ -83,6 +87,17 @@ export function NodeActionBar({
   const [dumpLogEntries, setDumpLogEntries] = useState<NodeDumpImagesLogEntry[]>([])
   const dumpLogOffsetRef = useRef(0)
   const dumpLogsContainerRef = useRef<HTMLDivElement | null>(null)
+  const [agentEditOpen, setAgentEditOpen] = useState(false)
+  const [agentEditing, setAgentEditing] = useState(false)
+  const [agentEditError, setAgentEditError] = useState<string | null>(null)
+  const [agentEditSuccess, setAgentEditSuccess] = useState(false)
+  const [agentEditOpID, setAgentEditOpID] = useState<string | null>(null)
+  const [agentEditStage, setAgentEditStage] = useState<string>('')
+  const [agentEditFinished, setAgentEditFinished] = useState(false)
+  const [agentEditLogsPanelOpen, setAgentEditLogsPanelOpen] = useState(false)
+  const [agentEditLogEntries, setAgentEditLogEntries] = useState<NodeAgentEditLogEntry[]>([])
+  const agentEditLogOffsetRef = useRef(0)
+  const agentEditLogsContainerRef = useRef<HTMLDivElement | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
 
@@ -167,6 +182,43 @@ export function NodeActionBar({
   }, [dumpImagesOpID, dumpImagesFinished, onNodeChanged, node])
 
   useEffect(() => {
+    if (!agentEditOpID || agentEditFinished) return
+    const tick = () => {
+      getNodeAgentEditStatus(agentEditOpID)
+        .then(async (status) => {
+          setAgentEditStage(status.stage)
+          if (status.status === 'running') {
+            setAgentEditing(true)
+          } else {
+            setAgentEditing(false)
+            setAgentEditFinished(true)
+            if (status.status === 'error') {
+              setAgentEditError(status.error ?? 'Ошибка редактирования')
+            } else {
+              setAgentEditSuccess(true)
+              const updated = await getNode(basePath)
+              onNodeChanged(updated)
+            }
+          }
+        })
+        .catch((err) => setAgentEditError(err instanceof Error ? err.message : 'Ошибка статуса редактирования'))
+
+      getNodeAgentEditLogs(agentEditOpID, agentEditLogOffsetRef.current)
+        .then((resp) => {
+          if (resp.entries.length > 0) {
+            setAgentEditLogEntries((prev) => [...prev, ...resp.entries])
+          }
+          agentEditLogOffsetRef.current = resp.next_offset
+        })
+        .catch(() => {})
+    }
+
+    tick()
+    const interval = setInterval(tick, 1500)
+    return () => clearInterval(interval)
+  }, [agentEditOpID, agentEditFinished, basePath, onNodeChanged])
+
+  useEffect(() => {
     if (!logsPanelOpen || !logsContainerRef.current) return
     logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight
   }, [logEntries, logsPanelOpen])
@@ -175,6 +227,24 @@ export function NodeActionBar({
     if (!dumpLogsPanelOpen || !dumpLogsContainerRef.current) return
     dumpLogsContainerRef.current.scrollTop = dumpLogsContainerRef.current.scrollHeight
   }, [dumpLogEntries, dumpLogsPanelOpen])
+
+  useEffect(() => {
+    if (!agentEditLogsPanelOpen || !agentEditLogsContainerRef.current) return
+    agentEditLogsContainerRef.current.scrollTop = agentEditLogsContainerRef.current.scrollHeight
+  }, [agentEditLogEntries, agentEditLogsPanelOpen])
+
+  const handleAgentEditStarted = (operationId: string) => {
+    setLogsPanelOpen(false)
+    setAgentEditing(true)
+    setAgentEditError(null)
+    setAgentEditSuccess(false)
+    setAgentEditFinished(false)
+    setAgentEditOpID(operationId)
+    setAgentEditStage('edit')
+    setAgentEditLogsPanelOpen(true)
+    setAgentEditLogEntries([])
+    agentEditLogOffsetRef.current = 0
+  }
 
   const handleTranslate = () => {
     setTranslating(true)
@@ -241,6 +311,7 @@ export function NodeActionBar({
   const showPrimaryGroup = showManualProcessed || showTranslate || hasTranslations || canRefreshDescription
 
   const handleNormalize = () => {
+    setAgentEditLogsPanelOpen(false)
     setNormalizing(true)
     setNormalizeError(null)
     setNormalizeSuccess(false)
@@ -338,6 +409,19 @@ export function NodeActionBar({
             </Button>
           )}
 
+          {!isTranslation && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => setAgentEditOpen(true)}
+              disabled={agentEditing}
+            >
+              <Wand2 className={cn('mr-1 size-4', agentEditing && 'animate-pulse')} />
+              {agentEditing ? 'Редактирование...' : 'Редактировать с агентом'}
+            </Button>
+          )}
+
           {canDumpImages && (
             <Button variant="outline" size="sm" className="h-8" onClick={handleDumpImages} disabled={dumpingImages}>
               <Sparkles className={cn('mr-1 size-4', dumpingImages && 'animate-pulse')} />
@@ -369,6 +453,8 @@ export function NodeActionBar({
           {refreshSuccess && <span className="text-xs text-green-600 dark:text-green-400">Описание обновлено</span>}
           {normalizeError && <span className="text-xs text-destructive">{normalizeError}</span>}
           {normalizeSuccess && <span className="text-xs text-green-600 dark:text-green-400">Нормализация завершена</span>}
+          {agentEditError && <span className="text-xs text-destructive">{agentEditError}</span>}
+          {agentEditSuccess && <span className="text-xs text-green-600 dark:text-green-400">Редактирование завершено</span>}
           {dumpImagesError && <span className="text-xs text-destructive">{dumpImagesError}</span>}
           {dumpImagesSuccess && <span className="text-xs text-green-600 dark:text-green-400">Выгрузка изображений завершена</span>}
         </div>
@@ -377,6 +463,78 @@ export function NodeActionBar({
       <DeleteNodeDialog open={deleteOpen} onOpenChange={setDeleteOpen} node={node} onDeleted={onNavigateHome} />
 
       <MoveNodeDialog open={moveOpen} onOpenChange={setMoveOpen} node={node} onMoved={handleMoved} />
+
+      <NodeAgentEditDialog
+        open={agentEditOpen}
+        onOpenChange={setAgentEditOpen}
+        nodePath={basePath}
+        onStarted={handleAgentEditStarted}
+      />
+
+      {agentEditOpID && (
+        <div className="fixed inset-x-0 bottom-0 z-50 m-0 border-t bg-background/95">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-4 py-2 text-left text-sm"
+            onClick={() => setAgentEditLogsPanelOpen((v) => !v)}
+          >
+            <span>
+              Логи редактирования агентом ·{' '}
+              {agentEditing ? `running (${agentEditStage})` : agentEditError ? 'error' : 'success'}
+            </span>
+            {agentEditLogsPanelOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+          </button>
+          <div
+            className={cn(
+              'overflow-hidden border-t bg-muted/40 transition-all duration-300 ease-out',
+              agentEditLogsPanelOpen ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0',
+            )}
+            aria-hidden={!agentEditLogsPanelOpen}
+          >
+            <div className="px-4 py-2">
+              <div className="mb-2 flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Режим логов</span>
+                <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={logViewMode === 'compact' ? 'default' : 'outline'}
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setLogViewMode('compact')}
+                  >
+                    compact
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={logViewMode === 'raw' ? 'default' : 'outline'}
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setLogViewMode('raw')}
+                  >
+                    raw
+                  </Button>
+                </div>
+              </div>
+              <div ref={agentEditLogsContainerRef} className="max-h-56 overflow-auto font-mono text-xs">
+                {agentEditLogEntries.length === 0 ? (
+                  <div className="text-muted-foreground">Логов пока нет...</div>
+                ) : (
+                  agentEditLogEntries.map((entry) => (
+                    <div key={entry.offset} className="whitespace-pre-wrap break-words py-0.5">
+                      <span className="mr-2 text-muted-foreground">[{entry.stream}]</span>
+                      {logViewMode === 'compact' ? (
+                        <MarkdownContent content={entry.text} nodePath={basePath} />
+                      ) : (
+                        <span>{entry.text}</span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {normalizeOpID && (
         <div className="fixed inset-x-0 bottom-0 z-50 m-0 border-t bg-background/95">
