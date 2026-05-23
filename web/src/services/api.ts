@@ -381,7 +381,7 @@ export async function startNodeNormalization(path: string): Promise<NodeNormaliz
 }
 
 export async function startJob(
-  type: 'node_normalize' | 'node_dump_images' | 'refresh_description' | 'article_translate',
+  type: 'node_normalize' | 'node_agent_edit' | 'node_dump_images' | 'refresh_description' | 'article_translate',
   target: string,
   options?: Record<string, unknown>,
 ): Promise<JobOperation> {
@@ -434,6 +434,64 @@ export async function getNodeNormalizationLogs(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to get normalization logs');
+  }
+  return res.json();
+}
+
+export interface NodeAgentEditOperation {
+  id: string;
+  node_path: string;
+  status: 'running' | 'success' | 'error';
+  stage: 'edit' | 'sync' | 'done';
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+  sync_done: boolean;
+  edit_ok: boolean;
+}
+
+export type NodeAgentEditLogEntry = NodeNormalizationLogEntry;
+
+export interface NodeAgentEditLogsResponse {
+  entries: NodeAgentEditLogEntry[];
+  next_offset: number;
+}
+
+export async function startNodeAgentEdit(
+  path: string,
+  instruction: string,
+): Promise<NodeAgentEditOperation> {
+  const encoded = path.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/agent-edit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ instruction }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to start agent edit');
+  }
+  return res.json();
+}
+
+export async function getNodeAgentEditStatus(id: string): Promise<NodeAgentEditOperation> {
+  const res = await apiFetch(`${API_URL}/api/node-agent-edit/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get agent edit status');
+  }
+  return res.json();
+}
+
+export async function getNodeAgentEditLogs(
+  id: string,
+  after?: number,
+): Promise<NodeAgentEditLogsResponse> {
+  const query = after !== undefined ? `?after=${encodeURIComponent(String(after))}` : '';
+  const res = await apiFetch(`${API_URL}/api/node-agent-edit/${encodeURIComponent(id)}/logs${query}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to get agent edit logs');
   }
   return res.json();
 }

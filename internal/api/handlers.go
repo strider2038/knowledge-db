@@ -48,6 +48,7 @@ type Handler struct {
 	chatClient        chatClient
 	chatStore         chat.Store
 	normalizeRunner   nodeNormalizer
+	agentEditRunner   NodeAgentEditor
 	jobs              *JobManager
 	debugStore        debugIssueStore
 }
@@ -84,6 +85,11 @@ func NewHandlerWithUploads(dataPath, uploadsDir string, ingester ingestion.Inges
 // SetNodeNormalizer устанавливает раннер нормализации узлов через Cursor Agent.
 func (h *Handler) SetNodeNormalizer(runner nodeNormalizer) {
 	h.normalizeRunner = runner
+}
+
+// SetNodeAgentEditor устанавливает раннер редактирования узлов через Cursor Agent.
+func (h *Handler) SetNodeAgentEditor(runner NodeAgentEditor) {
+	h.agentEditRunner = runner
 }
 
 // SetGitCommitter устанавливает GitCommitter и CommitMessageGenerator.
@@ -220,6 +226,11 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(path, "/normalize") {
 		h.PostNodeNormalize(w, r)
+
+		return
+	}
+	if strings.HasSuffix(path, "/agent-edit") {
+		h.PostNodeAgentEdit(w, r)
 
 		return
 	}

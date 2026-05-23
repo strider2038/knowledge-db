@@ -57,6 +57,8 @@ func NewMux(h *Handler, auth *AuthHandler) (*http.ServeMux, error) {
 	mux.HandleFunc("GET /api/jobs/{id}/logs", h.GetJobLogs)
 	mux.HandleFunc("GET /api/node-normalization/{id}", h.GetNodeNormalizeStatus)
 	mux.HandleFunc("GET /api/node-normalization/{id}/logs", h.GetNodeNormalizeLogs)
+	mux.HandleFunc("GET /api/node-agent-edit/{id}", h.GetNodeAgentEditStatus)
+	mux.HandleFunc("GET /api/node-agent-edit/{id}/logs", h.GetNodeAgentEditLogs)
 	mux.HandleFunc("GET /api/node-dump-images/{id}", h.GetNodeDumpImagesStatus)
 	mux.HandleFunc("GET /api/node-dump-images/{id}/logs", h.GetNodeDumpImagesLogs)
 	spa, err := NewSPAHandler()

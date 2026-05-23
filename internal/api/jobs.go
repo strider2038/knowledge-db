@@ -25,6 +25,7 @@ const (
 	jobStatusError   = "error"
 
 	jobTypeNormalize   = "node_normalize"
+	jobTypeAgentEdit   = "node_agent_edit"
 	jobTypeDumpImages  = "node_dump_images"
 	jobTypeRefreshDesc = "refresh_description"
 	jobTypeTranslate   = "article_translate"
@@ -38,8 +39,12 @@ var (
 	errJobNormalizeUnavailable    = errors.New("node normalization unavailable")
 	errJobCursorAgentUnavailable  = errors.New("cursor-agent not found in PATH")
 	errJobNodeNotArticle          = errors.New("node is not an article")
-	errJobNormalizeAlreadyRunning = errors.New("normalization already running for this node")
-	errJobDumpAlreadyRunning      = errors.New("dump images already running for this node")
+	errJobNormalizeAlreadyRunning      = errors.New("normalization already running for this node")
+	errJobAgentEditAlreadyRunning      = errors.New("agent edit already running for this node")
+	errJobAgentEditUnavailable         = errors.New("node agent edit unavailable")
+	errJobAgentEditInstructionRequired = errors.New("instruction required")
+	errJobAgentEditInstructionTooLong  = errors.New("instruction too long")
+	errJobDumpAlreadyRunning           = errors.New("dump images already running for this node")
 	errJobRefreshAlreadyRunning   = errors.New("refresh description already running for this node")
 	errJobTranslateUnavailable    = errors.New("translation service unavailable")
 )
@@ -271,6 +276,15 @@ func (h *Handler) PostJobs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, job)
+	case jobTypeAgentEdit:
+		instruction, _ := req.Options["instruction"].(string)
+		job, err := h.startAgentEditJob(r.Context(), req.Target, instruction)
+		if err != nil {
+			writeError(w, httpStatusFromJobErr(err), err.Error())
+
+			return
+		}
+		writeJSON(w, job)
 	case jobTypeDumpImages:
 		job, err := h.startDumpImagesJob(r.Context(), req.Target)
 		if err != nil {
@@ -348,9 +362,12 @@ func httpStatusFromJobErr(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, ingestion.ErrSourceURLRequired):
 		return http.StatusBadRequest
-	case errors.Is(err, errJobNormalizeUnavailable), errors.Is(err, errJobCursorAgentUnavailable), errors.Is(err, errJobDescRefreshUnavailable), errors.Is(err, errJobTranslateUnavailable):
+	case errors.Is(err, errJobNormalizeUnavailable), errors.Is(err, errJobAgentEditUnavailable), errors.Is(err, errJobCursorAgentUnavailable), errors.Is(err, errJobDescRefreshUnavailable), errors.Is(err, errJobTranslateUnavailable):
 		return http.StatusServiceUnavailable
 	default:
+		if errors.Is(err, errJobAgentEditInstructionRequired) || errors.Is(err, errJobAgentEditInstructionTooLong) {
+			return http.StatusBadRequest
+		}
 		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "unsupported") || strings.Contains(err.Error(), "not an article") {
 			return http.StatusBadRequest
 		}

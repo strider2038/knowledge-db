@@ -1,5 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { createDebugIssue, getKeywordSuggestions, getNodeDumpImagesLogs, getNodeNormalizationLogs, getNodesWithParams, patchNodeMetadata, postGitSync, searchKnowledgeBase, streamChat } from './api'
+import {
+  createDebugIssue,
+  getKeywordSuggestions,
+  getNodeAgentEditLogs,
+  getNodeDumpImagesLogs,
+  getNodeNormalizationLogs,
+  getNodesWithParams,
+  patchNodeMetadata,
+  postGitSync,
+  searchKnowledgeBase,
+  startNodeAgentEdit,
+  streamChat,
+} from './api'
 
 describe('getNodesWithParams', () => {
   let fetchMock: ReturnType<typeof vi.fn>
@@ -374,6 +386,67 @@ describe('getNodeNormalizationLogs', () => {
     await getNodeNormalizationLogs('op-1', 42)
     const url = new URL(fetchMock.mock.calls[0][0])
     expect(url.pathname).toContain('/api/node-normalization/op-1/logs')
+    expect(url.searchParams.get('after')).toBe('42')
+  })
+})
+
+describe('startNodeAgentEdit', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('POSTs instruction to agent-edit endpoint', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'op-1',
+        node_path: 'topic/node',
+        status: 'running',
+        stage: 'edit',
+        sync_done: false,
+        edit_ok: false,
+      }),
+    })
+
+    await startNodeAgentEdit('topic/node', 'improve intro')
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/nodes/topic/node/agent-edit'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ instruction: 'improve intro' }),
+      }),
+    )
+  })
+})
+
+describe('getNodeAgentEditLogs', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('builds logs URL with after query', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ entries: [], next_offset: 12 }),
+    })
+
+    await getNodeAgentEditLogs('op-1', 42)
+    const url = new URL(fetchMock.mock.calls[0][0])
+    expect(url.pathname).toContain('/api/node-agent-edit/op-1/logs')
     expect(url.searchParams.get('after')).toBe('42')
   })
 })
