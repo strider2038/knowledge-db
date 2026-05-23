@@ -1,97 +1,104 @@
 ---
 name: golang-logging
-description: Контекстное логирование в Go с github.com/muonsoft/clog. Используй при добавлении логов, работе с контекстным логгером в internal/ и cmd/.
+description: Contextual logging in Go with github.com/muonsoft/clog. Use when adding logs, binding loggers to context, or logging errors with preserved stack traces.
 ---
 
-# Логирование в Go (muonsoft/clog)
+# Logging in Go (muonsoft/clog)
 
-Пакет: `github.com/muonsoft/clog` (надстройка над `log/slog`).
+Package: `github.com/muonsoft/clog` (built on `log/slog`).
 
-## Основные концепции
+## Context API (knowledge-db)
 
-- Логгер привязан к `context.Context`
-- Атрибуты (`slog.Attr`) добавляются к логгеру
-- Ошибки из `github.com/muonsoft/errors` логируются напрямую — атрибуты подхватываются
+| Function | Purpose |
+|----------|---------|
+| `clog.NewContext(ctx, logger)` | Bind `*slog.Logger` to context (middleware / main) |
+| `clog.FromContext(ctx)` | Extract logger from context |
+| `clog.Info(ctx, msg, args...)` | Info — shorthand when logger not stored locally |
+| `clog.Warn(ctx, msg, args...)` | Warning |
+| `clog.Debug(ctx, msg, args...)` | Debug |
+| `clog.Error(ctx, msg, ...slog.Attr)` | Error with attributes |
+| `clog.Errorf(ctx, format, ...any)` | Error with `%w` for `error` values (preserves stack) |
 
-## Привязка логгера к контексту
+Prefer `clog.Info(ctx, ...)` / `clog.Errorf(ctx, ...)` over calling `FromContext` repeatedly unless you need the logger for many calls in one function.
+
+### Binding in middleware
 
 ```go
-import (
-	"log/slog"
-	"github.com/muonsoft/clog"
-)
-
-// В middleware или main:
 logger := slog.Default().With(
-	slog.String("request_method", r.Method),
-	slog.String("request_url", r.URL.Path),
+    slog.String("request_method", r.Method),
+    slog.String("request_url", r.URL.Path),
 )
 ctx := clog.NewContext(r.Context(), logger)
+// pass ctx to handlers
 ```
 
-Извлечение: `logger := clog.FromContext(ctx)`
-
-## Уровни
-
-| Уровень | Использование |
-|---------|---------------|
-| Debug | Отладочная информация |
-| Info | Нормальный ход работы |
-| Warn | Нештатные, некритичные ситуации (fallback, опциональный шаг) |
-| Error | Ошибки важных частей логики — с `clog.Errorf` и `%w` для сохранения стека |
-
-## Логирование ошибок (Error-уровень)
-
-**Обязательно** использовать `clog.Errorf`, а не `clog.Error` + `slog.String("error", ...)`:
+## slog attributes
 
 ```go
-// Неправильно
-clog.Error(ctx, "failed", slog.String("error", err.Error()))
+slog.String("path", path)
+slog.Int("count", n)
+slog.Bool("ok", true)
+slog.Any("detail", value)
+```
 
-// Правильно
+Pass path, node id, job id, etc. as structured fields — not only inside the message string.
+
+## Logging errors
+
+**Use `clog.Errorf` with `%w`** — not `clog.Error` + `slog.String("error", err.Error())`:
+
+```go
+// Wrong — loses stack
+clog.Error(ctx, "get node failed", slog.String("error", err.Error()))
+
+// Correct
 clog.Errorf(ctx, "get node failed: %w", err)
 ```
 
-## Важные части логики: Error, не Warn
+### Error vs Warn
 
-Для ошибок **важных частей логики** (перевод, сохранение, критичные шаги pipeline) — использовать **`clog.Errorf`** с `%w`, а не `Warn`:
+| Level | When |
+|-------|------|
+| **Error** (`clog.Errorf`) | Failed ingestion step, git commit/push failure, DB/index errors, OAuth/session failures that matter for the operation |
+| **Warn** | Optional degradation, retryable git push noted in background, non-fatal queue item |
+| **Debug** | Expected client errors (404 on move/delete) when useful for support — see handlers using `clog.Debug` before 404 |
 
-```go
-// Неправильно — теряется стек, уровень занижен
-clog.Warn(ctx, "translation failed", "error", err)
+When unsure, prefer **Error** so real bugs are not hidden.
 
-// Правильно — стек сохраняется через %w
-clog.Errorf(ctx, "ingest text: translation failed: %w", err)
-```
-
-Warn — для некритичных ситуаций (fallback, опциональный шаг). Error — когда сбой влияет на результат.
-
-## Использование логгера
-
-**Не вызывать** `clog.FromContext(ctx)` многократно в одной функции — только для однократного извлечения, если логгер переиспользуется:
+### Handler pattern (from `internal/api`)
 
 ```go
-// Неправильно — многократный вызов FromContext
-clog.FromContext(ctx).Info("start", "x", 1)
-clog.FromContext(ctx).Info("done", "x", 2)
-
-// Правильно — сокращённый метод
-clog.Info(ctx, "start", "x", 1)
-clog.Info(ctx, "done", "x", 2)
-
-// Либо — однократное извлечение при частом переиспользовании
-logger := clog.FromContext(ctx)
-logger.Info("start", "x", 1)
-logger.Debug("step", "y", 2)
-logger.Info("done", "x", 2)
+if errors.Is(err, kb.ErrNodeNotFound) {
+    clog.Debug(r.Context(), "delete node: not found", "path", nodePath)
+    writeError(w, http.StatusNotFound, "node not found")
+    return
+}
+clog.Errorf(r.Context(), "delete node: %w", err)
+writeError(w, http.StatusInternalServerError, err.Error())
 ```
 
-Сокращённые методы: `clog.Info(ctx, msg, args...)`, `clog.Warn(ctx, msg, args...)`, `clog.Debug(ctx, msg, args...)`.
+## Workers and loops
 
-## Правила
+```go
+for task := range q.Tasks() {
+    if err := worker.handle(ctx, task); err != nil {
+        clog.Errorf(ctx, "handle task: %w", err)
+    }
+}
+```
 
-1. Логгер только из контекста (`clog.FromContext` или `clog.Info(ctx, ...)` и т.п.)
-2. Воркеры (Telegram bot и т.п.) — только `clog.FromContext(ctx)` или `clog.*(ctx, ...)`, не `slog.*` напрямую
-3. Не логировать чувствительные данные (токены, пароли)
-4. Сообщения в нотации действия: `"get node"`, `"validate base"`
-5. Важные ошибки — `clog.Errorf` с `%w`, не `Warn` с атрибутом
+## Rules
+
+1. Do not log passwords, tokens, or session secrets.
+2. Always pass `context.Context` as the first argument.
+3. Business logic in `internal/` uses **`clog` only** — do not add `*slog.Logger` fields to domain types; inject logger into context at the edge (HTTP middleware, `main`).
+4. Errors: `clog.Errorf` with `%w`, or attributes via `slog.*` for non-error fields.
+5. Do not duplicate attributes already on the request context logger.
+
+## Checklist
+
+- [ ] `github.com/muonsoft/clog` used in `internal/` and handlers
+- [ ] Logger bound with `clog.NewContext` at request/worker boundary
+- [ ] Failures logged with `clog.Errorf` and `%w`
+- [ ] No sensitive data in log fields
+- [ ] No ad-hoc `slog.Default()` in business packages

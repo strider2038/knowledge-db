@@ -1,73 +1,86 @@
 ---
 name: kb-backend-golang
-description: Правила и лучшие практики для Go-кода backend (cmd/kb-server, cmd/kb-cli, internal/). Используй при работе с internal/**/*.go, cmd/**/*.go.
+description: Go backend style and practices for knowledge-db (cmd/kb-server, cmd/kb-cli, internal/). Use when editing handlers, kb store, ingestion, index, or bootstrap code.
 ---
 
-# Go в knowledge-db — стиль и практики
+# Go backend — knowledge-db
 
-Этот skill применяется при работе с Go-кодом в `internal/`, `cmd/kb-server`, `cmd/kb-cli`.  
-Цель — идиоматичный, модульный, тестируемый код.
+Applies to `cmd/kb-server`, `cmd/kb-cli`, and `internal/`.
 
-## Роль
+Goals: idiomatic Go, clear package boundaries, testable code via interfaces, offline-first behavior.
 
-- Идиоматичный Go-код
-- Чёткое разделение слоёв (API handlers, internal/kb, internal/ingestion)
-- Тестируемость через интерфейсы
+## Layers (this project)
 
-## Архитектура
+| Package | Role |
+|---------|------|
+| `internal/api` | HTTP handlers, routing, JSON, status mapping |
+| `internal/kb` | Filesystem knowledge base, frontmatter, tree, validation |
+| `internal/ingestion` | Capture pipeline, fetchers, LLM orchestration |
+| `internal/index` | Search index, embeddings, sync worker |
+| `internal/bootstrap` | Config, wiring |
+| `internal/mcp` | MCP endpoint |
+| `cmd/kb-cli` | validate, init |
 
-- **internal/api** — HTTP handlers, роутинг
-- **internal/kb** — работа с data/, валидация структуры
-- **internal/ingestion** — интерфейс Ingester, pipeline
-- **internal/mcp** — MCP endpoint
-- **internal/ui** — embed статики
+There is **no PostgreSQL** and no entity/repository layout — persistence is markdown on disk (`KB_DATA_PATH`).
 
-Предпочитать **интерфейсы** вместо жёстких зависимостей. Публичные функции принимают интерфейсы, где уместно.
+Prefer **interfaces** at package boundaries (`Ingester`, `index.Store`, `igit.GitCommitter`) for tests.
 
-## Порядок объявлений в файле
+## Formatting and imports
 
-- Публичные типы и методы — в начале
-- Приватные методы и функции — в конце
+- Run `gofmt` / `goimports` on changed files.
+- Import groups: stdlib → external → `github.com/strider2038/knowledge-db/...` (alphabetical within each).
 
-## Импорты
+## Linting
 
-- Группы: stdlib → внешние → internal (github.com/strider2038/knowledge-db/...)
-- Сортировка по алфавиту внутри группы
+- `golangci-lint` with root `.golangci.yml`.
+- Prefer inline `// #nosec` with a reason over broad config excludes.
 
-## Линтинг
+## Code style
 
-- `golangci-lint`, конфиг `.golangci.yml` в корне
+- Functions: verbs (`GetNode`, `Ingest`, `CommitAll`).
+- Early returns; nesting depth ≤ 3.
+- I/O functions: `context.Context` first; do not store context in struct fields.
+- Avoid more than two bare return values — use a small struct when needed.
 
-## Стиль кода
+## Errors and logging
 
-- Именование: функции — глаголы, переменные — существительные
-- Ранние возвраты, глубина вложенности не более 3
-- Ошибки: `github.com/muonsoft/errors`, оборачивать через `errors.Errorf("action: %w", err)`
-- Контекст: I/O-операции принимают `context.Context` первым аргументом
+- Errors: `github.com/muonsoft/errors` — see [golang-errors](../golang-errors/SKILL.md).
+- Logging: `github.com/muonsoft/clog` — see [golang-logging](../golang-logging/SKILL.md).
+- **No panic** in production paths; return `error`.
+- Do not ignore errors (`_ = err` forbidden).
 
-## Работа с ошибками
+## HTTP handlers
 
-- Sentinel-ошибки: `var ErrNodeNotFound = errors.New("node not found")`
-- Каждая возвращаемая ошибка оборачивается через `errors.Errorf` или `errors.Wrap`
-- Не подавлять ошибки (`_ = err` запрещён)
-- **Не использовать panic** — обрабатывать ошибки явно, возвращать их вызывающему коду
+- Map `kb.ErrNodeNotFound` → 404, `kb.ErrConflict` → 409, validation/bad input → 400.
+- Use shared helpers `writeJSON`, `writeError` in `internal/api`.
+- Wrap unexpected failures with `errors.Errorf` before logging and 500 responses.
 
-## Логирование (muonsoft/clog)
+## Storage and testing
 
-- Логгер из контекста: `clog.FromContext(ctx)` или сокращённо `clog.Info(ctx, msg, args...)`, `clog.Warn(ctx, ...)`
-- Не вызывать `FromContext` многократно — либо `logger := clog.FromContext(ctx)` и переиспользовать, либо `clog.Info(ctx, ...)`
-- Не создавать `slog.Logger` в бизнес-коде
-- Error-уровень: `clog.Errorf(ctx, "msg: %w", err)` — не `slog.String("error", ...)`
+- Production store: `kb.NewStore(afero.NewOsFs())`.
+- Tests: `afero.NewMemMapFs()` — see [golang-tests](../golang-tests/SKILL.md).
+- Path to KB: `KB_DATA_PATH` (never assume `./data` in code comments for agents).
 
-## Хранение данных
+## Concurrency
 
-- База знаний — файловая система (markdown, JSON)
-- Путь к базе — `KB_DATA_PATH` (env)
-- Нет СУБД, нет миграций
+- Background work: `pior/runnable` — see [runnable-background-processes](../runnable-background-processes/SKILL.md).
+- Goroutines respect context cancellation; protect shared state with mutex or channels.
+- Index sync worker and translation queue: clear lifecycle, log failures with `clog.Errorf`.
 
-## Чек-лист перед коммитом
+## API JSON
 
-- [ ] gofmt / goimports
-- [ ] golangci-lint проходит
-- [ ] Тесты для затронутой логики
-- [ ] Нет временных логов
+- Request/response fields use **snake_case** JSON tags (`target_path`, `source_url`) — see [api-conventions](../api-conventions/SKILL.md).
+- REST-style routes with path parameters (`/api/nodes/{path...}`), not miniapp `POST .../find`.
+
+## Related skills
+
+- Structure: [backend-structure](../backend-structure/SKILL.md)
+- Tests: [golang-tests](../golang-tests/SKILL.md)
+- Validation (when adopted): [golang-validation](../golang-validation/SKILL.md)
+
+## Pre-commit checklist
+
+- [ ] `gofmt` / `goimports` on touched Go files
+- [ ] `golangci-lint` passes
+- [ ] Tests for changed behavior (`go test ./...` or targeted package)
+- [ ] No debug/temporary logging left behind

@@ -1,58 +1,73 @@
 ---
 name: web-frontend
-description: Frontend web/ (React, TypeScript, Vite). Используй при работе с web/src/**/*.tsx, web/src/**/*.ts.
+description: Frontend for knowledge-db in web/ (React 19, TypeScript, Vite, Tailwind). Use when editing web/src components, pages, hooks, or API client code.
 ---
 
-# Frontend web — стек и практики
+# Frontend — web/
 
-Применяется при работе с `web/`:
+Stack:
 
-- React 18, TypeScript, Vite
-- `react-router-dom` (SPA-роутинг)
+- React 19, TypeScript, Vite
+- `react-router-dom` — SPA routing
+- Tailwind CSS 4 + Radix UI primitives + shadcn-style components
+- `next-themes` for light/dark
 
-Цель — чистый, предсказуемый UI, согласованный с API kb-server.
+Goal: dense, practical UI for managing a personal knowledge base — not a marketing site.
 
-## Структура
+## Layout
 
-- `web/src/main.tsx` — входная точка, `BrowserRouter`
-- `web/src/App.tsx` — основное приложение
-- `components/` — UI-компоненты
-- `pages/` — страницы (Добавить, Поиск)
-- `hooks/` — кастомные хуки
-- `services/` — API-клиент
-- `types/` — типы (Node, Tree и т.п.)
+```text
+web/src/
+├── main.tsx          # Entry, BrowserRouter
+├── App.tsx           # Routes shell
+├── pages/            # Add, Search, Node, Chat, Login, …
+├── components/       # Shared UI
+├── hooks/            # Data hooks
+├── services/api.ts   # HTTP client
+├── lib/              # Utilities (type-styles, headings, …)
+└── types/            # API types
+```
 
-## Принципы
+## Principles
 
-- Функциональные компоненты с hooks
-- Побочные эффекты только в `useEffect`/хуках
-- Дата-фетчинг — в hooks/сервисах, не в компонентах
+- Functional components and hooks
+- Fetch data in hooks/services, not scattered `useEffect` in presentational components
+- Explicit `loading` / `error` / `success` for async UI
+- Centralize API calls in `services/api.ts` (`VITE_API_URL`, default localhost)
 
 ## TypeScript
 
-- Точные интерфейсы, не `any`
-- Типы запросов/ответов API в `types/`
+- Prefer precise interfaces over `any`
+- API types in `types/` — **snake_case** field names matching backend JSON
 
-## Работа с API
+## Routing
 
-- Централизованный клиент в `services/api.ts`
-- Base URL из `VITE_API_URL` (по умолчанию localhost)
-- Обработка ошибок: показывать понятные сообщения
+- Declarative routes in `App.tsx`
+- Use `MemoryRouter` in tests — see [web-frontend-tests](../web-frontend-tests/SKILL.md)
 
-## Роутинг
+## Styling
 
-- Декларативная конфигурация маршрутов
-- Страницы: Добавить, Поиск, просмотр узла
+- Use Tailwind utility classes and shared tokens
+- Node type colors: `web/src/lib/type-styles.ts` — do not duplicate badge/button classes (see `.cursor/rules/web-type-colors.mdc`)
+- Keep UI compact: tables, filters, and forms should work on laptop-width viewports; avoid decorative chrome
 
-## Состояние
+## Forms
 
-- `useState` — локальное UI
-- `loading`, `error`, `success` — для асинхронных операций
-- Явные индикаторы (спиннеры, сообщения об ошибках)
+- Controlled inputs, labels, accessible errors — see [ux-form-practices](../ux-form-practices/SKILL.md)
 
-## Чек-лист
+## Commands
 
-- [ ] Компоненты и hooks с чёткой ответственностью
-- [ ] TypeScript без лишнего `any`
-- [ ] Асинхронные операции с явными статусами
-- [ ] API-вызовы в services/api.ts
+```bash
+cd web && npm run dev
+cd web && npm run build
+cd web && npm run test
+cd web && npm run lint
+# or from repo root: task web:dev, task web:build, task web:test, task web:lint
+```
+
+## Checklist
+
+- [ ] API changes reflected in `services/api.ts` and types
+- [ ] Async states visible to the user
+- [ ] Type colors via `type-styles.ts` when showing node types
+- [ ] `npm run build` and `npm run test` when behavior changes

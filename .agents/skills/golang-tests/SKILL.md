@@ -1,142 +1,119 @@
 ---
 name: golang-tests
-description: Тестирование на Go — API-тесты (muonsoft/api-testing), unit-тесты. Arrange–Act–Assert. Используй при написании тестов для internal/ и cmd/.
+description: Go testing for knowledge-db — API tests (muonsoft/api-testing), unit tests with testify and afero. Use when writing tests for internal/ and cmd/.
 ---
 
-# Тестирование на Go (knowledge-db)
+# Go testing (knowledge-db)
 
-Цель: покрыть тестами API-handlers, internal/kb, internal/ingestion.
+Cover API handlers, `internal/kb`, `internal/ingestion`, and related packages.
 
-## Один аспект на тест, Arrange–Act–Assert
+Detailed API examples: [references/api-tests.md](references/api-tests.md).
 
-- Один тест — один сценарий
-- **Arrange** — подготовка (моки, handler)
-- **Act** — одно действие (HTTP-запрос или вызов функции)
-- **Assert** — проверки результата
+## One scenario per test (AAA)
 
-## API-тесты (muonsoft/api-testing)
-
-Пакеты **apitest** и **assertjson**:
+Use explicit sections:
 
 ```go
-func TestGetNode_WhenNotFound_Expect404(t *testing.T) {
-	t.Parallel()
+func TestDeleteNode_WhenExists_ExpectOK(t *testing.T) {
+    t.Parallel()
+    // Arrange
+    handler := setupTestHandlerWithNode(t)
 
-	// Arrange
-	handler := setupTestHandler() // или NewTestHandler(container)
+    // Act
+    resp := apitest.HandleDELETE(t, handler, "/api/nodes/topic/my-node")
 
-	// Act
-	resp := apitest.HandleGET(t, handler, "/api/nodes/missing/path")
-
-	// Assert
-	resp.IsNotFound()
+    // Assert
+    resp.IsOK()
+    resp.HasJSON(func(json *assertjson.AssertJSON) {
+        json.Node("path").IsString().EqualTo("topic/my-node")
+        json.Node("deleted").IsTrue()
+    })
 }
 ```
 
-**assertjson.Node** — вариадический синтаксис: `Node("key", 0, "nested")`, не legacy `/key/0/nested`.
+## API tests (muonsoft/api-testing)
 
-## Моки
+Packages: `github.com/muonsoft/api-testing/apitest`, `assertjson`.
 
-- Ручные моки в `internal/<pkg>/mocks` или `*_test.go`
-- Хранилище на `map` по ключу
-- Ошибки через `errors.Errorf`, не `errors.New` для анонимных
+```go
+resp := apitest.HandleGET(t, mux, "/api/git/status")
+resp.IsOK()
 
-## Именование
-
+resp := apitest.HandlePOST(t, mux, "/api/git/commit",
+    strings.NewReader(`{"message":"sync"}`),
+    apitest.WithJSONContentType(),
+)
+resp.HasCode(503)
 ```
+
+**assertjson paths:** variadic `Node("key", 0, "nested")` — not legacy `/key/0/nested`.
+
+Custom requests: `httptest.NewRequest` + `apitest.HandleRequest(t, handler, req)`.
+
+Setup pattern:
+
+```go
+h := api.NewHandler(dataPath, &ingestion.StubIngester{})
+h.SetGitCommitter(mock, nil, gitDisabled)
+mux, err := api.NewMux(h, nil)
+require.NoError(t, err)
+```
+
+Use `package api_test` (black-box) for handler tests.
+
+## Naming
+
+```text
 Test<Entity>_<Action>_When<Condition>_Expect<Result>
 ```
 
-Примеры: `TestGetNode_WhenValidPath_ExpectOK`, `TestValidate_WhenMissingContent_ExpectError`.
+Examples: `TestGetGitStatus_WhenGitDisabled_Expect503`, `TestMoveNode_WhenConflict_Expect409`.
 
-## testify (обязательно)
+## testify
 
-Все проверки в тестах — через **testify** (`require` и `assert`):
+| Use | Package |
+|-----|---------|
+| Must stop test | `require.NoError`, `require.Error` |
+| Continue on failure | `assert.Equal`, `assert.True`, `assert.ErrorIs` |
 
-- **`require`** — обязательные проверки, останавливают тест при провале (`require.NoError`, `require.Error`, `require.NotEmpty`)
-- **`assert`** — сравнения, продолжают тест (`assert.Equal`, `assert.Empty`, `assert.True`, `assert.False`)
+Prefer `assert.ErrorIs(t, err, target)` over `assert.True(t, errors.Is(...))`.
 
-### Типичные паттерны
+## Helpers
 
-```go
-// Ошибки
-require.NoError(t, err)           // ожидаем успех
-require.Error(t, err)             // ожидаем ошибку
-assert.ErrorIs(t, err, ErrNotFound) // ошибка должна быть target
+- Accept `testing.TB`, call `tb.Helper()` at start.
+- On setup failure: `tb.Fatalf` — **no panic** in test helpers.
 
-// Сравнения
-assert.Equal(t, expected, actual)
-assert.Empty(t, slice)             // len == 0
-assert.NotEmpty(t, slice)
-assert.True(t, cond)
-assert.False(t, cond)
-assert.NotNil(t, ptr)
-assert.Contains(t, slice, element)  // slice содержит element
-```
+## Filesystem tests
 
-### Когда require vs assert
+### API / integration-style: `t.TempDir`
 
-- `require` — когда дальнейшие проверки бессмысленны (нет данных, паника и т.п.)
-- `assert` — для обычных проверок значений
+Many `internal/api` tests seed markdown under `t.TempDir()` and pass the path to `api.NewHandler`. This matches real on-disk layout.
 
-### Хелперы и setup: без panic
-
-В тестовом коде **не использовать panic** — даже в хелперах и setup. При ошибках вызывать `tb.Fatalf`:
+### Unit tests for `kb.Store`: afero
 
 ```go
-func buildTestData(tb testing.TB, input string) *Response {
-    tb.Helper()
-    data, err := json.Marshal(input)
-    if err != nil {
-        tb.Fatalf("marshal: %v", err)
-    }
-    // ...
-}
+fs := afero.NewMemMapFs()
+store := kb.NewStore(fs)
 ```
 
-- Хелперы принимают `testing.TB` (работает с `*testing.T` и `*testing.B`)
-- Вызывать `tb.Helper()` в начале хелпера — корректный stack trace при падении
-- `tb.Fatalf` останавливает тест с понятным сообщением
+Use absolute paths with MemMapFs (`/` as base). See `internal/kb` tests for `seedMemFS` patterns.
 
-## Afero: in-memory fs в тестах
+## Mocks
 
-Для тестов с файловой структурой используй **afero** вместо `t.TempDir()` и `os.WriteFile`:
+- Small interfaces (`igit.GitCommitter`, `ingestion.Ingester`) — manual mocks in `*_test.go`.
+- Return errors with `errors.Errorf` from muonsoft/errors for anonymous failures.
 
-- **Production**: `NewStore(afero.NewOsFs())`
-- **Тесты**: `NewStore(afero.NewMemMapFs())` — in-memory, без диска, быстрее
+## What we do not use here
 
-### Паттерн
+- Postgres / `//go:build integration` repository suites
+- testify/suite + DI test containers
+- OAuth cookie / company-scoped access tests
 
-1. Код принимает `afero.Fs` (через `Store` или `NewStore(fs)`).
-2. В тестах создаёшь `fs := afero.NewMemMapFs()`, заполняешь через `afero.WriteFile`, `afero.MkdirAll`.
-3. Вызываешь методы `Store` с этим fs.
+## Checklist
 
-### Хелпер
-
-```go
-func seedMemFS(files map[string]string) (*Store, string) {
-    fs := afero.NewMemMapFs()
-    basePath := "/"
-    for path, content := range files {
-        fullPath := filepath.Join(basePath, path)
-        _ = fs.MkdirAll(filepath.Dir(fullPath), 0755)
-        _ = afero.WriteFile(fs, fullPath, []byte(content), 0644)
-    }
-    return NewStore(fs), basePath
-}
-```
-
-Пример: `store, base := seedMemFS(map[string]string{"topic/node1/node1.md": "---\nkeywords: []\n---\n"})`.
-
-### Пути
-
-Для MemMapFs используй **абсолютные** пути (`/` как base). `filepath.Join` с `/` даёт корректные пути.
-
-## Чек-лист
-
-- [ ] API-эндпоинты покрыты тестами
-- [ ] Arrange–Act–Assert
-- [ ] Именование TestXxx_WhenYyy_ExpectZzz
-- [ ] Проверки через testify (require/assert), не t.Error/t.Fatal
-- [ ] Хелперы без panic — использовать tb.Fatalf (testing.TB)
-- [ ] Тесты с файлами — через afero MemMapFs, не t.TempDir
+- [ ] API endpoints touched have tests
+- [ ] AAA structure with `t.Parallel()` where safe
+- [ ] `TestX_WhenY_ExpectZ` naming
+- [ ] testify `require` / `assert`, not bare `t.Fatal` except in helpers
+- [ ] JSON assertions via `assertjson` + `HasJSON`
+- [ ] kb store unit tests use afero when testing `Store` directly

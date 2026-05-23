@@ -1,53 +1,67 @@
 ---
 name: knowledge-db
-description: Работа с базой знаний knowledge-db. Структура узлов, создание записей. Путь к базе: {{DATA_PATH}}
+description: Knowledge base layout and node format for knowledge-db. Use when creating or editing KB markdown files. Root path placeholder {{DATA_PATH}}.
 ---
 
-# База знаний knowledge-db
+# Knowledge base — knowledge-db
 
-При работе с базой знаний используй структуру узлов и правила ниже.
+Use this skill when working with the user's knowledge base files (not application source).
 
-## Путь к базе
+## Base path
 
-Путь к корню базы: **{{DATA_PATH}}**
+Knowledge base root: **{{DATA_PATH}}**
 
-## Структура узла
+In the running app, this is `KB_DATA_PATH`. Do not assume `./data` unless the user specifies it.
 
-Каждый узел (статья, заметка) — папка с главным файлом `{имя-папки}.md` (формат Obsidian):
+## Node structure
 
-| Элемент | Назначение |
-|---------|------------|
-| `{dirname}.md` | Главный файл: YAML frontmatter + markdown-тело |
-| `notes/` | Дополнительные заметки (.md) |
-| `images/` | Изображения |
-| `.local/` | Служебные данные (исключены из git) |
+Each node (article, link, note) is a **directory** with a main markdown file `{folder-name}.md` (Obsidian-style):
 
-## Формат главного .md файла
+| Path | Purpose |
+|------|---------|
+| `{dirname}/{dirname}.md` | Main file: YAML frontmatter + markdown body |
+| `notes/` | Extra notes (`.md`) |
+| `images/` | Images |
+| `.local/` | Local-only data (gitignored) |
+
+## Main `.md` frontmatter
 
 ```yaml
 ---
 keywords: [tag1, tag2]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
-annotation: "Краткое описание"   # опционально
-source: "https://..."            # опционально
-sourceType: article              # опционально
+annotation: "Краткое описание"   # optional
+source: "https://..."            # optional
+sourceType: article              # optional — article | link | note
 ---
 
-# Заголовок
+# Title
 
-Основной контент (markdown)...
+Body (markdown)…
 ```
 
-Обязательные поля во frontmatter: `keywords`, `created`, `updated`.
+Required frontmatter fields: `keywords`, `created`, `updated`.
 
-## Иерархия тем
+User-facing content is often **Russian**; keep existing language unless asked to translate.
 
-- Темы и подтемы — директории (2–3 уровня вложенности)
-- Узлы — папки с `{dirname}.md`
+## Topic hierarchy
 
-## Создание узла
+- Topics/subtopics are directories (typically 2–3 levels)
+- Nodes live under topics as folders with `{dirname}.md`
 
-1. Создать папку в нужной теме (например, `topic/subtopic/node-name/`)
-2. Добавить файл `node-name.md` с frontmatter и телом
-3. При необходимости — notes/, images/
+## Creating a node
+
+1. Create folder under the target topic, e.g. `topic/subtopic/my-node/`
+2. Add `my-node.md` with frontmatter and body
+3. Add `notes/` or `images/` if needed
+
+## Validation
+
+Run from the app repo:
+
+```bash
+go run ./cmd/kb-cli validate --path "{{DATA_PATH}}"
+```
+
+Follow OpenSpec and `.cursor/rules/markdown-normalization.mdc` when normalizing imported content.

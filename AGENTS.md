@@ -59,9 +59,53 @@ knowledge-db/
 ## Language Conventions
 
 - Code identifiers and Go/TypeScript comments should follow the local style already used in the package.
+- **Agent skills** (`.agents/skills/**/SKILL.md`) and agent-facing repo docs (`AGENTS.md`) are written in **English**.
 - OpenSpec artifacts (`proposal.md`, `design.md`, `tasks.md`, delta specs) are written in Russian.
 - User-facing knowledge-base content is usually Russian unless the source or existing entry style says otherwise.
-- General repository documentation may be English when it is meant for agents or tooling.
+
+## Agent Skills
+
+Skills live in **`.agents/skills/<name>/SKILL.md`** (project-local; no git subtree). Read the relevant skill before implementing in that area.
+
+**Priority:** project skills → user rules → `.cursor/rules/*.mdc` (rules are short guardrails; skills hold detail).
+
+### Domain and API
+
+| Skill | Use when |
+|-------|----------|
+| `knowledge-db` | Creating or editing KB markdown nodes under `KB_DATA_PATH` |
+| `backend-structure` | Navigating or adding packages under `internal/`, `cmd/` |
+| `api-conventions` | HTTP routes, JSON shape, status codes for `internal/api` |
+
+### Go backend
+
+| Skill | Use when |
+|-------|----------|
+| `kb-backend-golang` | General Go style and layer boundaries in this repo |
+| `golang-errors` | `github.com/muonsoft/errors`, wrapping, sentinels, `errors.Is` / `As` |
+| `golang-logging` | `github.com/muonsoft/clog`, contextual logging |
+| `golang-validation` | `github.com/muonsoft/validation` (when adding validated commands/DTOs) |
+| `golang-tests` | API tests (`api-testing`), testify, afero |
+| `runnable-background-processes` | Telegram bot, workers via `pior/runnable` |
+
+### Frontend
+
+| Skill | Use when |
+|-------|----------|
+| `web-frontend` | React/TypeScript UI in `web/` |
+| `web-frontend-tests` | Vitest + Testing Library in `web/` |
+| `ux-form-practices` | Forms, validation UX, accessibility in `web/` |
+
+### OpenSpec workflow
+
+| Skill | Use when |
+|-------|----------|
+| `openspec-apply-change` | Implementing tasks from a change |
+| `openspec-verify-change` | Verifying implementation vs specs |
+| `openspec-archive-change` | Archiving a completed change |
+| `openspec-new-change`, `openspec-continue-change`, `openspec-explore`, `openspec-ff-change`, `openspec-onboard`, `openspec-sync-specs`, `openspec-bulk-archive-change` | OpenSpec artifact workflow |
+
+Start with **`openspec-apply-change`** for implementation; use **`openspec-explore`** for design-only discussions.
 
 ## Working With The Knowledge Base
 
@@ -74,18 +118,19 @@ knowledge-db/
 ## Backend Guidelines
 
 - Backend code is Go under `cmd/` and `internal/`.
+- **Muonsoft stack:** `github.com/muonsoft/errors`, `github.com/muonsoft/clog`, `github.com/muonsoft/api-testing` (tests). See skills `golang-errors`, `golang-logging`, `golang-tests`.
 - Use package-local interfaces where they reduce coupling and make tests easier.
-- Use `github.com/muonsoft/errors` for wrapping errors.
-- Use contextual logging through `github.com/muonsoft/clog`; do not add direct `slog` calls in business logic unless the surrounding package already does so for bootstrap/setup.
+- Do not use `fmt.Errorf` for wrapped errors; do not use bare `slog` in `internal/` business code (bootstrap/middleware may attach loggers to context).
 - Preserve offline fallback paths, especially in ingestion, search, and index-related code.
-- Prefer focused tests for behavior changes. Use `testify` assertions, and prefer in-memory `afero` filesystems for `kb.Store` tests.
+- Map `kb` sentinel errors to HTTP in handlers — see `api-conventions` and `golang-errors`.
 
 ## Frontend Guidelines
 
-- Frontend code lives in `web/` and uses React, TypeScript, Vite, and the existing component/style conventions.
+- Frontend code lives in `web/` (React 19, TypeScript, Vite, Tailwind). See skills `web-frontend`, `web-frontend-tests`, `ux-form-practices`.
+- API JSON uses **snake_case** — align TypeScript types in `web/src/services/api.ts`.
 - Keep operational UI quiet, dense, and practical. This is a knowledge-management tool, not a marketing site.
 - Use existing routes, API clients, components, and UI patterns before adding new abstractions.
-- Run frontend checks when touching `web/`.
+- Run `task web:test` and `task web:build` (or `npm test` / `npm run build` in `web/`) when touching `web/`.
 
 ## OpenSpec Workflow
 

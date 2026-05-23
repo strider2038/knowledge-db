@@ -1,13 +1,13 @@
 ---
 name: runnable-background-processes
-description: Регистрация фоновых процессов через pior/runnable. Используй при добавлении Telegram bot и других воркеров в kb-server.
+description: Background processes in kb-server via pior/runnable. Use when adding the Telegram bot, index sync worker, or other long-running Run(context) loops.
 ---
 
-# Фоновые процессы (runnable)
+# Background processes (runnable)
 
-Фоновые процессы управляются [pior/runnable](https://github.com/pior/runnable) через `runnable.Manager`.
+kb-server uses [pior/runnable](https://github.com/pior/runnable) (`runnable.Manager`) for graceful shutdown.
 
-## Интерфейс Runnable
+## Runnable interface
 
 ```go
 type Runnable interface {
@@ -15,17 +15,25 @@ type Runnable interface {
 }
 ```
 
-Процесс блокируется в `Run` до отмены контекста. При shutdown Manager отменяет контекст.
+`Run` blocks until `ctx` is cancelled. On shutdown, the manager cancels context and waits for workers.
 
-## Добавление процесса (например, Telegram bot)
-
-### 1. Реализовать Run
+## Registering in main
 
 ```go
-func (b *TelegramBot) Run(ctx context.Context) error {
-    logger := clog.FromContext(ctx)
-    logger.Info("telegram bot: started")
-    defer logger.Info("telegram bot: stopped")
+m.Register(
+    runnable.HTTPServer(srv).ShutdownTimeout(30*time.Second),
+    runnable.WithName("telegram-bot", bot),
+)
+```
+
+Pass a logger into context for each worker (e.g. with a `runnable` attribute) so logs are filterable.
+
+## Telegram bot example
+
+```go
+func (b *Bot) Run(ctx context.Context) error {
+    clog.Info(ctx, "telegram bot: started")
+    defer clog.Info(ctx, "telegram bot: stopped")
 
     for {
         select {
@@ -38,46 +46,31 @@ func (b *TelegramBot) Run(ctx context.Context) error {
 }
 ```
 
-### 2. Зарегистрировать в main
+## Delays in loops
 
-```go
-m.Register(
-    runnable.HTTPServer(srv).ShutdownTimeout(30*time.Second),
-    runnable.WithName("telegram-bot", bot),  // или обёртка с логгером в контексте
-)
-```
-
-При регистрации — обеспечить, чтобы в контекст воркера передавался логгер с атрибутом `runnable=<name>` (для фильтрации в логах).
-
-## Паузы в циклах
-
-**Не использовать `time.Sleep`** — он не реагирует на отмену контекста. При shutdown процесс будет ждать полный интервал вместо немедленной остановки.
-
-Использовать `select` с `ctx.Done()` и `time.After`:
+**Do not use `time.Sleep`** for shutdown-aware waiting — it ignores cancellation.
 
 ```go
 select {
 case <-ctx.Done():
     return nil
-case <-time.After(5 * time.Second):
-    // продолжаем работу
+case <-time.After(interval):
+    // continue
 }
 ```
 
-## Логирование в воркерах
+## Logging in workers
 
-**Только `clog.FromContext(ctx)`.** Запрещён прямой вызов `slog.Info`, `slog.Warn` — иначе нет атрибута `runnable` в логах.
+Use **`clog.FromContext(ctx)`** or `clog.Info(ctx, ...)` / `clog.Errorf(ctx, "…: %w", err)`.
 
-```go
-// Правильно
-logger := clog.FromContext(ctx)
-logger.Warn("poll failed", slog.String("error", err.Error()))
+Do not call `slog.Info` directly in workers — you lose the shared context attributes.
 
-// Неправильно
-slog.Warn("poll failed", ...)
-```
+## Processes vs services
 
-## Processes vs Services
+- **Register** — HTTP server, workers (stopped first)
+- **RegisterService** — infrastructure torn down after processes
 
-- **Register** — HTTP-сервер, воркеры (останавливаются первыми)
-- **RegisterService** — инфраструктура (останавливается после процессов)
+## Related
+
+- Index `SyncWorker` — started from bootstrap; respects context on shutdown
+- See [golang-logging](../golang-logging/SKILL.md) for error logging in loops

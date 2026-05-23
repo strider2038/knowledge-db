@@ -1,18 +1,20 @@
 ---
 name: golang-validation
-description: Валидация данных в Go с github.com/muonsoft/validation. Используй при проверке входных данных, доменных моделей.
+description: Data validation in Go with github.com/muonsoft/validation. Use for Validatable models, commands, validationtest, and mapping violations to HTTP 422 when validation is adopted.
 ---
 
-# Валидация (muonsoft/validation)
+# Data validation (muonsoft/validation)
 
-Пакет: `github.com/muonsoft/validation`.
+Package: `github.com/muonsoft/validation`  
+Constraints: `github.com/muonsoft/validation/it`  
+Tests: `github.com/muonsoft/validation/validationtest`  
+Runner: `github.com/muonsoft/validation/validator`
 
-Применяется:
-- в доменных моделях (метод `Validate`);
-- в use case-ах для проверки команд/запросов;
-- в тестах через `validationtest`.
+> knowledge-db does not use validation everywhere yet; prefer this skill when adding **command/query validation** or rich 422 responses. For simple handler checks, explicit `writeError(400, ...)` is still fine.
 
-## Интерфейс Validatable
+For advanced patterns (collections, enums, translations), see [references/validation-details.md](references/validation-details.md).
+
+## Validatable interface
 
 ```go
 type Validatable interface {
@@ -20,50 +22,113 @@ type Validatable interface {
 }
 ```
 
-## Метод Validate
+## Basic Validate
 
 ```go
-func (n Node) Validate(ctx context.Context, v *validation.Validator) error {
-	return v.Validate(ctx,
-		validation.StringProperty("path", n.Path),
-		validation.StringProperty("annotation", n.Annotation),
-	)
+func (n NodeDraft) Validate(ctx context.Context, v *validation.Validator) error {
+    return v.Validate(ctx,
+        validation.StringProperty("path", n.Path,
+            it.IsNotBlank(),
+            it.HasMaxLength(500),
+        ),
+        validation.StringProperty("annotation", n.Annotation,
+            it.HasMaxLength(2000),
+        ),
+    )
 }
 ```
 
-## Типы свойств
+## Eager validation
 
-- `StringProperty`, `NumberProperty`, `BoolProperty`
-- `ValidProperty` — вложенный Validatable
-- `ValidSliceProperty` — слайс
+One `validator.Validate(ctx, args...)` collects **all** violations. Do not chain per-field `if err != nil { return }` when the API should return a full violation list.
 
-## В use case
+In services:
 
 ```go
-if err := u.validator.ValidateIt(ctx, cmd); err != nil {
-	return err
+if err := validator.ValidateIt(ctx, cmd); err != nil {
+    return err
 }
 ```
 
-## CreateViolation (ручная проверка)
+## Optional fields
+
+| Type | Use |
+|------|-----|
+| `*string` | `validation.NilStringProperty` |
+| `*int`, `*float64` | `validation.NilNumberProperty[T]` |
+| `*time.Time` | `validation.NilTimeProperty` |
+
+Do not split `Validate` with `if ptr != nil { StringProperty(...) }` — use `Nil*` in one `Validate` call.
+
+## Nested objects
+
+Include nested validation in the **same** parent `Validate`:
 
 ```go
-if invalid {
-	return v.CreateViolation(ctx, ErrInvalidFormat, "message", validation.PropertyName("field"))
+validation.ValidProperty("metadata", n.Metadata),
+```
+
+Nested types name **relative** fields only (`title`, not `metadata.title` inside the child).
+
+## Manual violations (422)
+
+For business rules not expressible as field constraints:
+
+```go
+return v.CreateViolation(ctx,
+    ErrInvalidState,
+    ErrInvalidState.Message(),
+    validation.PropertyName("status"),
+)
+```
+
+Use **`err.Message()`** as the message argument when translations are wired.
+
+**422 vs 400:** structural JSON/UUID parse errors → 400 (`writeError`); fixable field/business rules → validation / 422.
+
+## Testing
+
+Table-driven tests with `validationtest`:
+
+```go
+err := validator.ValidateIt(t.Context(), test.input)
+
+if len(test.wantViolations) == 0 {
+    require.NoError(t, err)
+} else {
+    validationtest.Assert(t, err).
+        IsViolationList().
+        WithAttributes(test.wantViolations...)
 }
 ```
 
-## Тестирование (validationtest)
-
 ```go
-validationtest.Assert(t, err).
-	IsViolation().
-	WithError(validation.ErrIsBlank).
-	WithPropertyPath("path")
+validationtest.ViolationAttributes{
+    PropertyPath: "path",
+    Error:        validation.ErrIsBlank,
+}
 ```
 
-## Рекомендации
+## Where validation belongs (knowledge-db)
 
-- Валидация формата HTTP — responsibility handler
-- Бизнес-правила — домен и use case через validation
-- 422 — через validation, не через кастомные ошибки API
+| Layer | Responsibility |
+|-------|----------------|
+| `internal/api` | JSON decode, auth, transport limits → 400 |
+| Command/query types | `Validate` on input DTOs when using validator |
+| `internal/kb` | File structure rules, path semantics — today mostly custom errors + validator CLI |
+
+Do not put domain invariant checks only in handlers if you adopt `validation` — keep them on the command or domain type.
+
+## Anti-patterns
+
+- `validation_helpers.go` with imperative `CreateViolation` per field — use `StringProperty` + `it.*` on a `Validatable` command.
+- Russian (or any locale) hard-coded in `CreateViolation` — use `validation.NewError` with English default + translation map.
+- Returning raw `kb.Err*` for form-fixable issues when clients expect `propertyPath` — map to violations in the layer that owns the API contract.
+
+## Checklist
+
+- [ ] Import `github.com/muonsoft/validation/it` for constraints
+- [ ] Single `Validate` pass when full violation list is required
+- [ ] `Nil*` properties for optional pointers
+- [ ] Tests use `validationtest` with `PropertyPath` and `Error`
+- [ ] User-facing messages: English in `NewError`; translations in a dedicated map if needed

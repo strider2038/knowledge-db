@@ -17,4 +17,4 @@ globs: internal/**/*.go
 
 Пример: `return nil, errors.Errorf("get node: %w", ErrNodeNotFound)` вместо `return nil, ErrNodeNotFound`.
 
-Подробнее: skill `golang-errors`.
+Подробнее: skill `golang-errors` (`.agents/skills/golang-errors/SKILL.md`).
