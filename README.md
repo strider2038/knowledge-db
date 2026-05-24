@@ -1,182 +1,218 @@
 # Personal knowledge database
 
-Система управления персональной базой знаний.
+Локальная система управления персональной базой знаний: markdown под git, ingestion через LLM, поиск и RAG-чат.
 
 ## Концепция
 
-- **Запись** — онлайн: web UI, Telegram, API, MCP. Добавлять заметки удобно из любого места.
-- **Чтение** — offline-first + git-first: база хранится локально в отдельной директории под git. Знания всегда доступны без интернета, версионируются, удобно мержатся. **Ничего не потеряется** — надёжная версионируемая база под вашим контролем.
+- **Запись** — удобно онлайн: web UI, Telegram, REST API, MCP, массовый импорт из экспорта Telegram.
+- **Чтение** — offline-first и git-first: база в отдельном репозитории на вашей машине или VPS, версионируется и мержится без привязки к облачному SaaS.
 
-## Мотивация
+Материалы не только сохраняются, но и структурируются: аннотации, keywords, размещение в дереве тем, индекс для поиска, контекст для RAG. Статьи в интернете исчезают — локальные файлы и git-история остаются под вашим контролем.
 
-В современной IT-среде слишком большой поток информации: статьи, новости, релизы, идеи, заметки из чатов, ссылки из Telegram-каналов. Простого “сохранить в избранное” уже недостаточно: со временем становится сложно вспомнить, что именно было сохранено, найти материал по смыслу и задать вопрос по накопленным знаниям.
+**Режимы:** локальное чтение без сетевых LLM; локальный AI (Ollama / LM Studio); self-hosted VPS для записи с телефона, бота и синхронизации.
 
-**knowledge-db** создаётся как персональная база знаний, где материалы не только складываются в архив, но и обрабатываются: получают аннотации, ключевые слова, структуру, индексируются для поиска и могут использоваться как контекст для RAG-чата.
+## Возможности
 
-Ещё одна причина — надёжность доступа. Статьи исчезают из интернета, сайты меняют структуру, сервисы бывают недоступны, сеть может подвести. Поэтому основой выбран Git и локальные Markdown-файлы: копия базы всегда доступна на рабочей машине, ноутбуке или VPS, а история изменений остаётся прозрачной и версионируемой.
+- Дерево тем и узлы в markdown с YAML frontmatter (UUID `id`, keywords, type, title, …)
+- Ingestion по URL и тексту (LLM, автоперевод, раскрытие ссылок — опционально)
+- Telegram-бот для пересланного контента
+- Массовый импорт сохранённых заметок Telegram (`KB_UPLOADS_DIR`)
+- Git commit/sync из UI и API
+- Keyword- и семантический поиск, RAG-чат с источниками
+- MCP (`/api/mcp`) для агентов
+- Авторизация: без пароля, пароль, Google OAuth, Yandex OAuth (независимо комбинируются)
+- CLI: validate, init, migrate-node-ids, rebuild-index, обслуживание контента
 
-Проект рассчитан на два основных режима:
+## Требования
 
-- **Локальное чтение и работа без сетевых LLM** — база доступна оффлайн; при необходимости можно подключать локальные модели через Ollama или LM Studio.
-- **Self-hosted режим на своей VPS** — удобен для записи, быстрого доступа со смартфона, Telegram-бота, синхронизации и более широких AI-сценариев.
+- **Go** 1.25+ (сборка `kb`)
+- **Node.js** 22+ (сборка `web/`, dev с HMR)
+- Опционально: [Task](https://taskfile.dev), [air](https://github.com/air-verse/air) для `task server:dev`
 
-Заполнение базы поддерживает разные привычные входы: веб-интерфейс, Telegram-бот для пересланного контента из каналов, API, а также массовый импорт из сохранённых заметок Telegram.
+## База знаний (отдельно от приложения)
+
+Репозиторий **knowledge-db** — это приложение. Сами заметки живут в **другом git-репозитории**, путь задаётся `KB_DATA_PATH` (часто `my-knowledge-base`).
+
+```bash
+mkdir -p /path/to/my-knowledge-base
+cd /path/to/my-knowledge-base
+git init   # при необходимости
+
+/path/to/kb init --path .
+# опционально: --example — sample-node.md в example/topic/
+```
+
+`init` создаёт:
+
+- `.gitignore` (`.local/`, `.kb/`, Obsidian, OS)
+- `.agents/skills/knowledge-db/SKILL.md` — инструкции для агентов (путь к базе уже подставлен)
+
+Индекс эмбеддингов: `{KB_DATA_PATH}/.kb/index.db` (не коммитится).
+
+Формат узлов: [.agents/skills/knowledge-db/SKILL.md](.agents/skills/knowledge-db/SKILL.md) в репозитории приложения; в базе — копия после `init`.
+
+## Быстрый старт
+
+```bash
+cp .env.example .env   # задайте KB_DATA_PATH и при необходимости KB_UPLOADS_DIR
+
+task build
+export KB_DATA_PATH=/path/to/my-knowledge-base
+export KB_UPLOADS_DIR=/path/to/uploads   # нужен для POST /api/import/telegram
+./kb serve
+```
+
+Откройте http://localhost:8080 (встроенный UI).
+
+**Разработка UI:** в двух терминалах — `task web:dev` (http://localhost:5173) и `task server:dev` (API на :8080, нужен `task server:dev:install` для air).
+
+**Без Task:**
+
+```bash
+cd web && npm ci && npm run build
+go build -o kb ./cmd/kb
+KB_DATA_PATH=/path/to/my-knowledge-base ./kb serve
+```
+
+**Без git в базе:**
+
+```bash
+KB_GIT_DISABLED=true KB_DATA_PATH=/path/to/my-knowledge-base ./kb serve
+```
+
+### Апгрейд на UUID v7 (`id` в frontmatter)
+
+```bash
+cp -a /path/to/my-knowledge-base /path/to/my-knowledge-base.bak
+./kb migrate-node-ids --path /path/to/my-knowledge-base --dry-run
+./kb migrate-node-ids --path /path/to/my-knowledge-base
+KB_DATA_PATH=/path/to/my-knowledge-base ./kb rebuild-index
+```
 
 ## Структура проекта
 
 ```
 knowledge-db/
-├── cmd/
-│   └── kb/          # serve + validate/init/служебные команды
+├── cmd/kb/              # CLI: serve, validate, init, …
 ├── internal/
-│   ├── kb/          # работа с data/, валидация, дерево тем
-│   ├── api/         # HTTP handlers, роутинг
-│   ├── ingestion/   # интерфейс Ingester, pipeline
-│   ├── mcp/         # MCP endpoint /api/mcp
-│   └── ui/          # embed статики (embed.go, static/)
-├── web/             # React исходники (Vite)
-├── .cursor/skills/  # Agent skills
-├── openspec/        # Спецификации (OpenSpec workflow)
-├── data/            # База знаний (git subtree/submodule, локальная)
-├── AGENTS.md        # Руководство для AI-агентов
+│   ├── bootstrap/       # конфиг, wiring
+│   ├── api/             # HTTP
+│   ├── kb/              # FS, frontmatter, дерево
+│   ├── ingestion/       # pipeline, LLM
+│   ├── index/           # SQLite index, embeddings
+│   ├── chat/            # сессии RAG-чата
+│   ├── telegram/        # бот
+│   ├── mcp/
+│   └── ui/              # embedded SPA
+├── web/                 # React (Vite)
+├── .agents/skills/      # agent skills (шаблон knowledge-db)
+├── docs/                # ADR, презентации
+├── openspec/
+├── AGENTS.md
 └── README.md
 ```
 
-## Быстрый старт
+## CLI
+
+| Команда | Назначение |
+| ------- | ---------- |
+| `serve` | HTTP API, UI, фоновые workers |
+| `validate --path PATH` | проверка структуры и frontmatter |
+| `init --path PATH [--example]` | `.gitignore`, skill в `.agents/skills/knowledge-db/` |
+| `migrate-node-ids` | присвоить `id` узлам без поля |
+| `rebuild-index` | полная перестройка `.kb/index.db` |
+| `dump-images` | выгрузка изображений из узлов |
+| `expand-urls` | раскрытие URL в контенте |
+| `reindex-links` | переиндексация link-узлов (Jina) |
 
 ```bash
-# Сборка
-task build
-
-# Запуск сервера (KB_DATA_PATH обязателен)
-KB_DATA_PATH=/path/to/data ./kb serve
-
-# Без git (коммиты и sync отключены)
-KB_DATA_PATH=/path/to/data KB_GIT_DISABLED=true ./kb serve
-
-# CLI: валидация структуры базы
-./kb validate --path /path/to/data
-
-# CLI: инициализация новой базы
-./kb init --path /path/to/data
-
-# CLI: инициализация с примером узла (формат Obsidian)
-./kb init --path /path/to/data --example
-
-# CLI: полная перестройка embedding-index (нужны KB_EMBEDDING_*)
-KB_DATA_PATH=/path/to/data ./kb rebuild-index
+./kb validate --path /path/to/my-knowledge-base
+./kb init --path /path/to/my-knowledge-base --example
+KB_DATA_PATH=/path/to/my-knowledge-base ./kb rebuild-index
 ```
 
-### Апгрейд на версию с UUID v7 (`id` в frontmatter)
+## Команды Task
 
-После обновления бинарника для существующей базы:
-
-```bash
-# 1. Резервная копия базы знаний
-cp -a /path/to/data /path/to/data.bak
-
-# 2. Присвоить id всем узлам без поля id (сначала dry-run)
-./kb migrate-node-ids --path /path/to/data --dry-run
-./kb migrate-node-ids --path /path/to/data
-
-# 3. Пересобрать embedding-index (схема index.db меняется)
-KB_DATA_PATH=/path/to/data ./kb rebuild-index
-# или: ./kb serve и POST /api/index/rebuild через UI или curl
-```
-
-Старый `index.db` (path PK) при старте мигрируется на схему `node_id` PK; при несовместимости данные индекса сбрасываются — нужен rebuild.
-
-## Команды Taskfile
-
-
-| Команда             | Описание                           |
-| ------------------- | ---------------------------------- |
-| `task build`        | Собрать web + kb |
-| `task build-kb`     | Собрать только kb |
-| `task web:dev`      | Vite dev server (HMR, прокси /api) |
-| `task server:dev`   | kb с hot reload (air), без пересборки embedded UI |
-| `task dev`          | Подсказка по запуску dev-окружения |
-| `task test`         | Запустить тесты                    |
-| `task lint`         | golangci-lint                      |
-| `task lint:fix`     | golangci-lint с автоисправлением   |
-
-
-## Разработка
-
-Для разработки запустите в двух терминалах:
-
-1. `task web:dev` — Vite dev server ([http://localhost:5173](http://localhost:5173))
-2. `task server:dev` — kb с hot reload (embedded UI не пересобирается)
-
-Если нужно обновить встроенную статику (`internal/ui/static`) для бинарника `kb`, используйте `task build-kb` или `task build`.
-
-Для `server:dev` нужен [air](https://github.com/air-verse/air): `task server:dev:install`.
+| Команда | Описание |
+| ------- | -------- |
+| `task build` | web + `kb` |
+| `task build-kb` | только `kb` (web → embed) |
+| `task web:dev` | Vite, прокси `/api` → :8080 |
+| `task server:dev` | `kb serve` с air |
+| `task dev` | подсказка по dev-окружению |
+| `task test` | Go + web тесты |
+| `task lint` | golangci-lint + ESLint |
+| `task web:test` / `task web:lint` | только frontend |
 
 ## Конфигурация
 
+Полный список переменных: [.env.example](.env.example).
 
-| Переменная                                                       | Описание                                                                                                                                                                                        |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **KB_DATA_PATH**                                                 | Путь к корню базы знаний (обязателен для kb)                                                                                                                                             |
-| **KB_HTTP_ADDR**                                                 | Адрес HTTP-сервера (по умолчанию :8080)                                                                                                                                                         |
-| **KB_MCP_API_KEY**                                               | API-ключ для MCP endpoint `/api/mcp` (заголовок `Authorization: Bearer <key>`). Если пустой/не задан — MCP endpoint отключён                                                                     |
-| **KB_MCP_DEBUG_API_KEY**                                         | API-ключ для debug MCP endpoint `/api/mcp/debug` (заголовок `Authorization: Bearer <key>`). Если пустой/не задан — debug MCP endpoint отключён                                                   |
-| **KB_TELEGRAM_RAW_LOG_ENABLED**                                  | Включить запись сырых Telegram update payload в `.kb/telegram-raw/*.ndjson` и периодическую очистку файлов старше 14 дней                                                                       |
-| **KB_GIT_DISABLED**                                              | Отключить git (коммиты и sync)                                                                                                                                                                  |
-| **KB_LOGIN**, **KB_PASSWORD**                                    | Пароль: при задании **обоих** включается `password` в `auth_methods` (можно вместе с OAuth)                                                                                                    |
-| **KB_GOOGLE_OAUTH_CLIENT_ID**, **KB_GOOGLE_OAUTH_CLIENT_SECRET** | Google OAuth: клиент типа **Web application** в Google Cloud Console                                                                                                                          |
-| **KB_GOOGLE_OAUTH_REDIRECT_URL**                                 | Google OAuth: redirect URI — `https://<хост API>/api/auth/google/callback`                                                                                                                    |
-| **KB_YANDEX_OAUTH_CLIENT_ID**, **KB_YANDEX_OAUTH_CLIENT_SECRET** | Yandex OAuth: приложение на [oauth.yandex.com](https://oauth.yandex.com/)                                                                                                                     |
-| **KB_YANDEX_OAUTH_REDIRECT_URL**                                 | Yandex OAuth: redirect — `https://<хост API>/api/auth/yandex/callback`                                                                                                                        |
-| **KB_OAUTH_STATE_SECRET**                                        | Любой OAuth: секрет подписи `state` (CSRF), ≥16 байт                                                                                                                                            |
-| **KB_AUTH_ALLOWED_EMAILS**                                       | Любой OAuth: allowlist email через запятую (общий для Google и Yandex)                                                                                                                          |
-| **KB_SESSION_TTL**                                               | TTL сессии (по умолчанию 8h)                                                                                                                                                                    |
-| **TELEGRAM_TOKEN**                                               | Токен Telegram-бота (опционально)                                                                                                                                                               |
-| **TELEGRAM_OWNER_ID**                                            | Telegram user ID владельца (обязателен при TELEGRAM_TOKEN)                                                                                                                                      |
-| **KB_PUBLIC_WEB_BASE_URL**                                       | Публичный URL SPA без `/` (например `https://kb.example`); **обязателен при любом OAuth** (редирект после callback), в Telegram — «Открыть на сайте»                                           |
-| **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL**                  | LLM для ingestion (OpenAI-совместимый API)                                                                                                                                                      |
-| **JINA_API_KEY**                                                 | Ключ Jina для эмбеддингов (опционально)                                                                                                                                                         |
-| **KB_EMBEDDING_ENABLED**                                         | Включить RAG и чат-бота (true/false, по умолчанию false)                                                                                                                                        |
-| **KB_EMBEDDING_API_URL**                                         | URL API для эмбеддингов (Ollama: http://localhost:11434)                                                                                                                                        |
-| **KB_EMBEDDING_API_KEY**                                         | API key для эмбеддингов (Ollama: пустой)                                                                                                                                                        |
-| **KB_EMBEDDING_MODEL**                                           | Модель для эмбеддингов (по умолчанию text-embedding-3-small)                                                                                                                                    |
-| **KB_CHAT_MODEL**                                                | Модель для чат-бота (например llama3, mistral)                                                                                                                                                 |
-| **KB_CHAT_API_URL**                                              | URL API для чата (если отличается от KB_EMBEDDING_API_URL)                                                                                                                                      |
-| **KB_CHAT_API_KEY**                                              | API key для чата                                                                                                                                                                               |
-| **KB_EMBEDDING_RATE_LIMIT**                                     | Rate limit между запросами к API эмбеддингов (по умолчанию 1s)                                                                                                                                |
-| **LOG_LEVEL**                                                    | Уровень логирования: debug, info, warn, error (по умолчанию info)                                                                                                                             |
-| **GIT_SYNC_INTERVAL**                                            | Интервал git sync (по умолчанию 5m)                                                                                                                                                           |
-| **VITE_API_URL**                                                 | URL API для web (по умолчанию [http://localhost:8080](http://localhost:8080))                                                                                                                   |
-| **ALLOWED_CORS_ORIGIN**                                          | CORS origin для dev (например [http://localhost:5173](http://localhost:5173))                                                                                                                   |
+### Core
 
-### MCP endpoint
+| Переменная | Описание |
+| ---------- | -------- |
+| **KB_DATA_PATH** | Корень базы знаний (обязателен для `serve`) |
+| **KB_UPLOADS_DIR** | Каталог импорта (сессии Telegram JSON); без него import API недоступен |
+| **KB_HTTP_ADDR** | Адрес HTTP (по умолчанию `:8080`) |
+| **KB_GIT_DISABLED** | Отключить git commit/sync |
+| **GIT_SYNC_INTERVAL** | Интервал фонового sync (по умолчанию `5m`) |
+| **LOG_LEVEL** | `debug`, `info`, `warn`, `error` |
+| **ALLOWED_CORS_ORIGIN** | CORS для dev (например `http://localhost:5173`) |
+| **VITE_API_URL** | URL API при сборке web (по умолчанию `http://localhost:8080`) |
 
-- MCP доступен по `POST/GET /api/mcp` на том же сервере.
-- Для доступа обязателен Bearer-токен из `KB_MCP_API_KEY`:
-  - `Authorization: Bearer <KB_MCP_API_KEY>`
-- При отсутствии/невалидном токене сервер возвращает `401 Unauthorized`.
-- Если `KB_MCP_API_KEY` пустой или не задан, маршрут `/api/mcp` не обслуживается (MCP отключён).
+### Ingestion / LLM
 
-### Debug MCP endpoint
+| Переменная | Описание |
+| ---------- | -------- |
+| **LLM_API_URL**, **LLM_API_KEY**, **LLM_MODEL** | OpenAI-совместимый API для ingestion |
+| **JINA_API_KEY** | Jina (опционально) |
+| **KB_AUTO_TRANSLATE** | Автоперевод при ingestion (по умолчанию `true`) |
+| **KB_INGEST_EXPAND_URLS** | Раскрытие URL после LLM (по умолчанию `true`) |
 
-- Debug MCP доступен по `POST/GET /api/mcp/debug`.
-- Для доступа обязателен Bearer-токен из `KB_MCP_DEBUG_API_KEY`.
-- Если `KB_MCP_DEBUG_API_KEY` пустой или не задан, debug endpoint не обслуживается.
+### Telegram
 
+| Переменная | Описание |
+| ---------- | -------- |
+| **TELEGRAM_TOKEN** | Токен бота (без токена бот не стартует) |
+| **TELEGRAM_OWNER_ID** | User ID владельца; при `TELEGRAM_TOKEN` значение `0` — **ошибка старта** |
+| **KB_PUBLIC_WEB_BASE_URL** | URL SPA без `/` (ссылки в боте, OAuth redirect) |
+| **KB_TELEGRAM_RAW_LOG_ENABLED** | Сырые update в `.kb/telegram-raw/*.ndjson` |
 
-## Режимы запуска
+### MCP
 
-### Веб-авторизация
+| Переменная | Описание |
+| ---------- | -------- |
+| **KB_MCP_API_KEY** | Bearer для `/api/mcp`; пусто — endpoint выключен |
+| **KB_MCP_DEBUG_API_KEY** | Bearer для `/api/mcp/debug` |
 
-Способы входа **независимы**: каждый включается полным набором env для этого способа. `GET /api/auth/session` возвращает `auth_methods` — массив в порядке `password`, `google`, `yandex` (только настроенные). Поле `auth_mode` устарело: один способ → его имя; несколько → `multi`.
+### Auth (кратко)
 
-| Способ | Что задать |
+Способы входа независимы; `GET /api/auth/session` → `auth_methods`.
+
+| Способ | Переменные |
 | ------ | ---------- |
-| **password** | `KB_LOGIN` и `KB_PASSWORD` |
-| **google** | `KB_GOOGLE_OAUTH_*` + `KB_OAUTH_STATE_SECRET` + непустой `KB_AUTH_ALLOWED_EMAILS` + `KB_PUBLIC_WEB_BASE_URL` |
-| **yandex** | `KB_YANDEX_OAUTH_*` + те же общие OAuth-переменные |
+| password | `KB_LOGIN` + `KB_PASSWORD` |
+| google | `KB_GOOGLE_OAUTH_*` + общие OAuth |
+| yandex | `KB_YANDEX_OAUTH_*` + общие OAuth |
 
-Частичный набор внутри одного способа или «висящие» `KB_OAUTH_STATE_SECRET` / `KB_AUTH_ALLOWED_EMAILS` без полного Google/Yandex — сервер **не стартует**.
+Общие для OAuth: `KB_OAUTH_STATE_SECRET`, `KB_AUTH_ALLOWED_EMAILS`, `KB_PUBLIC_WEB_BASE_URL`, `KB_SESSION_TTL`.
+
+Частичный набор внутри одного способа — сервер **не стартует**. Подробности — раздел [Веб-авторизация](#веб-авторизация) ниже.
+
+### Embeddings / RAG
+
+| Переменная | Описание |
+| ---------- | -------- |
+| **KB_EMBEDDING_ENABLED** | RAG и чат (по умолчанию `false`) |
+| **KB_EMBEDDING_API_URL**, **KB_EMBEDDING_API_KEY**, **KB_EMBEDDING_MODEL** | API эмбеддингов; при `ENABLED=true` URL и **непустой** key обязательны |
+| **KB_CHAT_MODEL**, **KB_CHAT_API_URL**, **KB_CHAT_API_KEY** | Чат (если URL чата задан — key обязателен) |
+| **KB_SEARCH_REWRITE_ENABLED** | Переписывание запроса перед векторным поиском |
+| **KB_EMBEDDING_RATE_LIMIT** | Пауза между запросами к embedding API (по умолчанию `1s`) |
+
+## Веб-авторизация
+
+Способы входа **независимы**. `GET /api/auth/session` возвращает `auth_methods` — массив в порядке `password`, `google`, `yandex`. Поле `auth_mode` устарело.
 
 **Открытый доступ** (по умолчанию): ни один способ не настроен.
 
@@ -190,27 +226,13 @@ KB_DATA_PATH=/path/to/data ./kb serve
 KB_DATA_PATH=/path/to/data KB_LOGIN=admin KB_PASSWORD=secret ./kb serve
 ```
 
-**Общие OAuth-переменные** (при полном Google и/или Yandex): `KB_OAUTH_STATE_SECRET`, `KB_AUTH_ALLOWED_EMAILS`, `KB_PUBLIC_WEB_BASE_URL` (URL SPA без `/`, куда редиректить после callback).
+**Google OAuth:** [Google Cloud Console](https://console.cloud.google.com/) → Web application → redirect `KB_GOOGLE_OAUTH_REDIRECT_URL` (`…/api/auth/google/callback`). Вход при `email_verified` и email из allowlist.
 
-**Google OAuth**
+**Yandex OAuth:** [oauth.yandex.com](https://oauth.yandex.com/) → redirect `…/api/auth/yandex/callback`, право email. Allowlist по `default_email`.
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → OAuth client **Web application**.
-2. Redirect URI = `KB_GOOGLE_OAUTH_REDIRECT_URL` (например `https://api.example.com/api/auth/google/callback` или `http://localhost:8080/api/auth/google/callback` в test mode).
-3. Вход только при `email_verified` и email из allowlist.
+**Production:** HTTPS, `X-Forwarded-Proto`, `ALLOWED_CORS_ORIGIN` = origin SPA, минимальный allowlist, не оставляйте слабый пароль на публичном инстансе.
 
-**Yandex OAuth**
-
-1. [oauth.yandex.com](https://oauth.yandex.com/) → приложение, право **доступ к email**.
-2. Redirect URI = `KB_YANDEX_OAUTH_REDIRECT_URL` → `/api/auth/yandex/callback`.
-3. Allowlist по полю `default_email` из userinfo (нет `email_verified` как у Google).
-
-**Production:** не оставляйте `KB_LOGIN`/`KB_PASSWORD` на публичном инстансе без необходимости; HTTPS и `X-Forwarded-Proto`; `ALLOWED_CORS_ORIGIN` = origin SPA; ротируйте `KB_OAUTH_STATE_SECRET`; минимальный allowlist.
-
-**Dev:** пароль + OAuth на localhost — задайте `KB_PUBLIC_WEB_BASE_URL=http://localhost:5173` и callback на `:8080` для Google/Yandex.
-
-**Безопасность:** при пароле и OAuth — два канала атаки; rate limit на `POST /api/auth/login`; OAuth только с allowlist.
-
-**Миграция:** раньше пароль и Google были взаимоисключающими — теперь можно добавить `KB_LOGIN`/`KB_PASSWORD` к существующему Google без смены OAuth env. Клиентам UI: использовать `auth_methods`, не только `auth_mode`.
+**Dev с OAuth:** `KB_PUBLIC_WEB_BASE_URL=http://localhost:5173`, callback на `:8080`.
 
 ```bash
 export KB_DATA_PATH=/path/to/data
@@ -223,124 +245,63 @@ export KB_AUTH_ALLOWED_EMAILS=you@example.com
 ./kb serve
 ```
 
-CORS: `ALLOWED_CORS_ORIGIN` для production. OAuth-кнопки ведут на `GET /api/auth/google` и `GET /api/auth/yandex` (тот же origin, что API, или прокси). TLS обязателен вне localhost (`Secure` cookie).
-
 ## RAG и чат-бот
 
-Сервер поддерживает семантический поиск и чат-бот на основе RAG (Retrieval Augmented Generation). Работает с локальными LLM через Ollama и LM Studio.
+Семантический поиск и чат (Ollama, LM Studio, OpenAI-compatible API).
 
-**Полезные переменные окружения:**
+`LOG_LEVEL=debug` — подробные логи sync индекса. `KB_EMBEDDING_RATE_LIMIT=500ms` — ускорить переиндексацию (осторожно с лимитами API).
 
-- `LOG_LEVEL=debug` — подробное логирование синхронизации индекса
-- `KB_EMBEDDING_RATE_LIMIT=500ms` — rate limit между запросами (по умолчанию 1s)
-
-### Быстрый старт с локальными моделями
-
-**1. Запустите Ollama** (для эмбеддингов):
+### Быстрый старт (Ollama + LM Studio)
 
 ```bash
-ollama serve
-ollama pull bge-m3
-```
+ollama serve && ollama pull bge-m3
+# LM Studio: локальный сервер на http://localhost:1234/v1
 
-**2. Запустите LM Studio** (для чата):
-
-- Скачайте LM Studio с https://lmstudio.ai
-- Загрузите модель (llama3, mistral и т.п.)
-- Запустите локальный сервер (кнопка в левом нижнем углу)
-- По умолчанию: http://localhost:1234/v1
-
-**3. Запустите kb**:
-
-```bash
 export KB_DATA_PATH=/path/to/data
 export KB_EMBEDDING_ENABLED=true
 export KB_EMBEDDING_API_URL=http://localhost:11434
-export KB_EMBEDDING_API_KEY=""
+export KB_EMBEDDING_API_KEY="-"
 export KB_EMBEDDING_MODEL=bge-m3
 export KB_CHAT_MODEL=openai/gpt-oss-20b
 export KB_CHAT_API_URL=http://localhost:1234/v1
 export KB_CHAT_API_KEY="-"
-
 ./kb serve
 ```
 
-### API эндпоинты
+### API (основное)
 
-- `GET /api/chats` — список чат-сессий
-- `POST /api/chats` — создать чат-сессию (`{ "title": "..." }`, title опционален)
-- `GET /api/chats/{id}` — получить чат и сообщения
-- `PATCH /api/chats/{id}` — переименовать чат (`{ "title": "..." }`)
-- `DELETE /api/chats/{id}` — удалить чат
-- `POST /api/chat` — отправить сообщение в чат-сессию (SSE stream)
-  - body: `{ "session_id": "...", "message": "...", "source_paths": ["optional/path"] }`
-  - summary-сообщения служебные и не возвращаются в пользовательской ленте
-- `GET /api/search?q=запрос` — семантический поиск
-- `GET /api/index/status` — статус индекса
-
-### Web UI (чат)
-
-- Чаты работают как список сессий: создать, выбрать, переименовать, удалить.
-- На мобильных устройствах список чатов открывается через выезжающий сайдбар.
-- Источники в ответах чата кликабельны и открываются в новой вкладке.
+- `GET /api/search`, `POST /api/search` — поиск
+- `GET /api/chats`, `POST /api/chats`, `GET/PATCH/DELETE /api/chats/{id}`
+- `POST /api/chat` — сообщение (SSE), body: `{ "session_id", "message", "source_paths"? }`
+- `GET /api/index/status`, `POST /api/index/rebuild`
+- `GET /healthz`, `GET /readyz` — health checks
 
 ### Переиндексация
 
-При старте сервера автоматически выполняется полная синхронизация индекса с файловой системой. После добавления новых записей можно запустить переиндексацию вручную:
+При старте — полный reconcile. Вручную:
 
 ```bash
-# без запущенного сервера (нужны KB_EMBEDDING_* из .env)
 KB_DATA_PATH=/path/to/data ./kb rebuild-index
-
-# или через API при работающем kb serve
-curl -X POST http://localhost:8080/api/index/rebuild
+# или: curl -X POST http://localhost:8080/api/index/rebuild
 ```
-
-### Логирование синхронизации индекса
-
-При уровне `LOG_LEVEL=debug` логируются все операции синхронизации:
-
-- `sync: performing initial full reconcile` — начальный reconcile при старте
-- `sync: event queued` — событие поставлено в очередь
-- `sync: event received` — событие получено на обработку
-- `sync: processing node` — обработка ноды
-- `sync: node deleted from index` — нода удалена из индекса
-- `sync: node unchanged, skipping` — хеши совпали, нода пропущена
-- `sync: node indexed` — нода успешно проиндексирована
-- `sync: embedding article chunks` — чанкинг article
-- `sync: article chunks indexed` — чанки проиндексированы
-- `sync: full reconcile complete` — финальная статистика (total_nodes, stale_deleted, duration_ms)
 
 ## Docker
 
-Образ собирается в GitHub Actions при push в `main` и публикуется в [GitHub Container Registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+Образ публикуется в GHCR при успешном CI на `main`: `ghcr.io/strider2038/knowledge-db:latest`.
 
 ```bash
-# Сборка локально
 docker build -t kb .
-
-# Запуск (база — volume)
 docker run -d -p 8080:8080 \
   -v /path/to/knowledge-base:/data \
   -e KB_DATA_PATH=/data \
-  ghcr.io/OWNER/knowledge-db:latest
+  ghcr.io/strider2038/knowledge-db:latest
 ```
 
-Образ устанавливает `cursor-agent` на этапе сборки (`curl https://cursor.com/install -fsS | bash`).
+В образе установлен `cursor-agent` (фоновые jobs нормализации/редактирования узлов в UI).
 
-### Настройка Git в Docker
+### Git в Docker
 
-Сервер выполняет `git push` и `git fetch` для синхронизации базы с remote. Для доступа к репозиторию по SSH нужны учётные данные внутри контейнера.
-
-**Вариант 1: Deploy key (рекомендуется)**
-
-Создайте отдельный SSH-ключ для репозитория и смонтируйте его в контейнер:
-
-```bash
-# На хосте
-ssh-keygen -t ed25519 -f /opt/kb-deploy/key -N "" -C "kb-deploy"
-# Добавьте /opt/kb-deploy/key.pub как deploy key в GitLab/GitHub
-```
+**Deploy key (рекомендуется):**
 
 ```bash
 docker run -d -p 8080:8080 \
@@ -348,45 +309,24 @@ docker run -d -p 8080:8080 \
   -v /opt/kb-deploy:/opt/kb-deploy:ro \
   -e KB_DATA_PATH=/data \
   -e GIT_SSH_COMMAND="ssh -i /opt/kb-deploy/key -o StrictHostKeyChecking=accept-new" \
-  ghcr.io/OWNER/knowledge-db:latest
+  ghcr.io/strider2038/knowledge-db:latest
 ```
 
-**Вариант 2: Монтирование ~/.ssh**
+**Без git:** `-e KB_GIT_DISABLED=true`
 
-Контейнер работает от пользователя `kb`. Монтируйте SSH в `/home/kb/.ssh`:
+Перед первым запуском клонируйте базу на хост и задайте `git config user.name` / `user.email` в репозитории.
+
+## Для разработчиков
+
+- [AGENTS.md](AGENTS.md) — правила для AI-агентов, в т.ч. синхронизация frontmatter
+- [docs/adr/](docs/adr/) — архитектурные решения
+- [openspec/](openspec/) — спецификации и changes
 
 ```bash
-docker run -d -p 8080:8080 \
-  -v /path/to/knowledge-base:/data \
-  -v ~/.ssh:/home/kb/.ssh:ro \
-  -e KB_DATA_PATH=/data \
-  ghcr.io/OWNER/knowledge-db:latest
+task test
+task lint
+go test ./... -race
 ```
-
-Права на хосте: `~/.ssh` — 700, ключи — 600.
-
-**Вариант 3: Без git**
-
-Если push/fetch не нужны (например, только локальная база):
-
-```bash
-docker run -d -p 8080:8080 \
-  -v /path/to/knowledge-base:/data \
-  -e KB_DATA_PATH=/data \
-  -e KB_GIT_DISABLED=true \
-  ghcr.io/OWNER/knowledge-db:latest
-```
-
-**Подготовка репозитория на хосте**
-
-Перед первым запуском клонируйте базу на хост:
-
-```bash
-mkdir -p /path/to/knowledge-base
-git clone git@gitlab.com:user/my-knowledge-base.git /path/to/knowledge-base
-```
-
-Убедитесь, что `git config user.name` и `user.email` заданы в репозитории — они нужны для коммитов.
 
 ## Лицензия
 

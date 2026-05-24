@@ -28,15 +28,15 @@ The project supports two main operating modes:
 
 ```text
 knowledge-db/
-├── cmd/
-│   ├── kb-server/   # HTTP API, embedded UI, Telegram bot, MCP endpoint
-│   └── kb-cli/      # validate, init and maintenance commands
+├── cmd/kb/          # unified CLI (serve, validate, init, maintenance)
 ├── internal/
-│   ├── api/         # HTTP handlers and routing
 │   ├── bootstrap/   # application wiring and config
-│   ├── index/       # local search index, retrieval, embeddings
-│   ├── ingestion/   # ingestion pipeline, fetchers, LLM orchestration
+│   ├── api/         # HTTP handlers and routing
 │   ├── kb/          # filesystem store, frontmatter, validation, tree
+│   ├── ingestion/   # ingestion pipeline, fetchers, LLM orchestration
+│   ├── index/       # local search index, retrieval, embeddings
+│   ├── chat/        # RAG chat sessions (SQLite)
+│   ├── telegram/    # Telegram bot
 │   ├── mcp/         # MCP endpoint
 │   └── ui/          # embedded frontend static files
 ├── web/             # React + Vite frontend
@@ -53,7 +53,7 @@ knowledge-db/
 3. **Offline-first**: validation, browsing, keyword search, and core knowledge-base operations should work without internet access. Embeddings and remote LLM calls are optional enhancements.
 4. **Git as source of truth**: prefer mergeable text formats and preserve meaningful diffs.
 5. **Process information into knowledge**: ingestion should preserve sources while adding structure, annotations, keywords, placement, and searchability.
-6. **Local by default**: `kb-server`, web UI, Telegram bot, and MCP are designed around localhost/private or self-hosted use.
+6. **Local by default**: `kb serve`, web UI, Telegram bot, and MCP are designed around localhost/private or self-hosted use.
 7. **Small, explicit changes**: keep implementation scoped to the relevant package and update specs/docs when behavior or contracts change.
 
 ## Language Conventions
@@ -110,10 +110,26 @@ Start with **`openspec-apply-change`** for implementation; use **`openspec-explo
 ## Working With The Knowledge Base
 
 - Do not assume the knowledge base is in `./data`. Use `KB_DATA_PATH` or the path provided by the user.
+- The knowledge base is usually a **separate git repository**; `kb init --path <kb>` creates `.gitignore` and installs `.agents/skills/knowledge-db/SKILL.md` inside that repo.
 - Reading and writing knowledge-base files directly is allowed only when it is part of the requested workflow.
 - Keep markdown/frontmatter compatible with the current specs and validator.
-- When introducing new frontmatter fields, entry formats, or persistence behavior, update OpenSpec and relevant documentation.
 - Apply markdown normalization rules from `.cursor/rules/markdown-normalization.mdc` when normalizing entries, OpenSpec documents, or notes in an opened knowledge-base repository.
+
+### Frontmatter contract (keep in sync)
+
+Any change to the **node frontmatter contract** (required/optional YAML fields, validation rules, translation file rules, ingestion persistence, or web/API edit surfaces) MUST update these artifacts in the **same change**:
+
+| Artifact | Why |
+|----------|-----|
+| `openspec/specs/knowledge-storage/spec.md` (+ `node-identity`, `article-translation`, or deltas in the active change) | Spec source of truth |
+| `internal/kb/` (validate, create/update, frontmatter helpers) | Runtime validation |
+| `internal/ingestion/`, `internal/api/`, `web/` (if the field is written or edited in UI/API) | Write and display paths |
+| `.agents/skills/knowledge-db/SKILL.md` | Canonical agent instructions (English) |
+| `internal/cliapp/embedskill/SKILL.md` | Must match the canonical skill byte-for-byte (`TestEmbeddedSkillMatchesCanonicalAgentsSkill`) |
+| `internal/cliapp/init.go` (`--example` node) | Example must stay valid |
+| `README.md` | Brief user-facing note only when the public contract changes |
+
+After changing the skill template, users with existing KB repos should re-run `kb init --path <KB>` (overwrites `{KB}/.agents/skills/knowledge-db/SKILL.md`) or copy the skill manually.
 
 ## Backend Guidelines
 
@@ -149,18 +165,15 @@ openspec status --change <change-name>
 
 ```bash
 # Run the server locally
-go run ./cmd/kb-server
-KB_DATA_PATH=/path/to/kb go run ./cmd/kb-server
-KB_GIT_DISABLED=true go run ./cmd/kb-server
+KB_DATA_PATH=/path/to/kb go run ./cmd/kb serve
+KB_GIT_DISABLED=true KB_DATA_PATH=/path/to/kb go run ./cmd/kb serve
 
 # CLI
-go run ./cmd/kb-cli validate --path /path/to/kb
-go run ./cmd/kb-cli init --path /path/to/kb
+go run ./cmd/kb validate --path /path/to/kb
+go run ./cmd/kb init --path /path/to/kb
 
 # Build
 task build
-task build-server
-task build-cli
 
 # Tests and linters
 go test ./...
@@ -198,3 +211,4 @@ Before reporting a task as done:
 - If a check cannot be run, state the reason clearly in the final response.
 - Do not archive an OpenSpec change until tasks are complete, validation passes, and the user agrees to archive.
 - When adding/changing environment variables or auth/access parameters, update both `README.md` and `.env.example` in the same change.
+- If the change touches node frontmatter (fields, validation, or persistence): update OpenSpec specs, `.agents/skills/knowledge-db/SKILL.md`, `internal/cliapp/embedskill/SKILL.md`, and related code/tests; note whether users should re-run `kb init` on existing KB repos.

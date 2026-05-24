@@ -23,7 +23,7 @@ CLI ДОЛЖЕН (SHALL) предоставлять подкоманду `init` 
 #### Сценарий: Init в указанной директории
 
 - **WHEN** `kb init --path /path/to/base`
-- **THEN** создаётся `.gitignore` с правилами `**/.local/`, `**/.local/**`, копируются agent skills в `~/.cursor/skills/` с подстановкой пути
+- **THEN** создаётся `.gitignore` с правилами `**/.local/`, `**/.local/**`, `.kb/`, и в `{base}/.agents/skills/knowledge-db/SKILL.md` записывается skill `knowledge-db` с подстановкой `{{DATA_PATH}}` → фактический путь к базе
 
 #### Сценарий: Init в текущей директории
 
@@ -37,7 +37,7 @@ CLI ДОЛЖЕН (SHALL) предоставлять подкоманду `init` 
 #### Сценарий: Повторный init
 
 - **WHEN** `kb init` вызывается повторно в той же директории
-- **THEN** `.gitignore` и skills обновляются, без потери данных
+- **THEN** `.gitignore` и `{base}/.agents/skills/knowledge-db/SKILL.md` перезаписываются, без потери данных узлов
 
 ### Requirement: Валидация файлов переводов
 

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/strider2038/knowledge-db/internal/cliapp/embedskill"
 	"github.com/urfave/cli/v3"
 )
 
@@ -32,15 +33,18 @@ Thumbs.db
 `
 
 const exampleNodeContent = `---
+id: "01900000-0000-7000-8000-000000000001"
 keywords: [example]
 created: "2024-01-01T00:00:00Z"
 updated: "2024-01-01T00:00:00Z"
-annotation: "Пример узла для проверки структуры"
+type: note
+title: "Sample node"
+annotation: "Example node to verify KB structure"
 ---
 
-# Пример узла
+# Sample node
 
-Замените этот контент своим текстом.
+Replace this content with your own text.
 `
 
 const exampleNodeName = "sample-node"
@@ -48,7 +52,7 @@ const exampleNodeName = "sample-node"
 func initCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "init",
-		Usage: "Инициализировать базу знаний (.gitignore, agent skills)",
+		Usage: "Инициализировать базу знаний (.gitignore, agent skill в .agents/skills/)",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "path",
@@ -57,7 +61,7 @@ func initCmd() *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:  "example",
-				Usage: "создать пример узла (example/topic/example-node/)",
+				Usage: "создать пример узла (example/topic/sample-node.md)",
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -88,47 +92,30 @@ func initCmd() *cli.Command {
 				fmt.Printf("Создан пример узла: example/topic/%s.md\n", exampleNodeName)
 			}
 
-			sourceSkill := findSourceSkill()
-			if sourceSkill != "" {
-				home := os.Getenv("HOME")
-				if home == "" {
-					return errors.New("HOME not set")
-				}
-				skillsDest := filepath.Join(home, ".cursor", "skills")
-				destSkill := filepath.Join(skillsDest, "knowledge-db")
-				_ = os.MkdirAll(destSkill, 0o755)
-				skillPath := filepath.Join(sourceSkill, "SKILL.md")
-				if _, err := os.Stat(skillPath); err == nil {
-					data, _ := os.ReadFile(skillPath)
-					replaced := strings.ReplaceAll(string(data), "{{DATA_PATH}}", basePath)
-					destFile := filepath.Join(destSkill, "SKILL.md")
-					if err := os.WriteFile(destFile, []byte(replaced), 0o644); err != nil {
-						return fmt.Errorf("copy skill: %w", err)
-					}
-					fmt.Printf("Skill скопирован в %s\n", destSkill)
-				}
+			destFile, err := installKnowledgeDBSkill(basePath)
+			if err != nil {
+				return err
 			}
+			fmt.Printf("Skill установлен: %s\n", destFile)
 
 			return nil
 		},
 	}
 }
 
-func findSourceSkill() string {
-	cwd, _ := os.Getwd()
-	exec, _ := os.Executable()
-	execDir := filepath.Dir(exec)
-	candidates := []string{
-		filepath.Join(cwd, ".cursor", "skills", "knowledge-db"),
-		filepath.Join(execDir, ".cursor", "skills", "knowledge-db"),
-		filepath.Join(execDir, "..", ".cursor", "skills", "knowledge-db"),
-		filepath.Join(execDir, "..", "..", ".cursor", "skills", "knowledge-db"),
+func installKnowledgeDBSkill(basePath string) (string, error) {
+	if len(embedskill.KnowledgeDB) == 0 {
+		return "", errors.New("embedded knowledge-db skill template is empty")
 	}
-	for _, c := range candidates {
-		if _, err := os.Stat(filepath.Join(c, "SKILL.md")); err == nil {
-			return c
-		}
+	destDir := filepath.Join(basePath, ".agents", "skills", "knowledge-db")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", fmt.Errorf("create skill dir: %w", err)
+	}
+	replaced := strings.ReplaceAll(string(embedskill.KnowledgeDB), "{{DATA_PATH}}", basePath)
+	destFile := filepath.Join(destDir, "SKILL.md")
+	if err := os.WriteFile(destFile, []byte(replaced), 0o644); err != nil {
+		return "", fmt.Errorf("write skill: %w", err)
 	}
 
-	return ""
+	return destFile, nil
 }

@@ -24,9 +24,18 @@ Skill ДОЛЖЕН (SHALL) содержать путь к базе знаний,
 
 ### Requirement: Инструкции по созданию узлов
 
-Skill MUST описывать структуру узла (annotation.md, content.md, metadata.json, notes/, images/, .local/) и правила создания.
+Skill MUST описывать структуру узла согласно `knowledge-storage`: плоский файл `{theme}/{slug}.md` с YAML frontmatter (обязательные поля `id`, `keywords`, `created`, `updated`, `type`, `title`), опциональная директория `{slug}/` для вложений (`images/`, `notes/`), `.local/` в gitignore.
 
 #### Сценарий: Агент создаёт узел
 
 - **WHEN** агент создаёт новый узел по инструкциям skill
-- **THEN** создаётся папка с обязательными файлами в правильном формате
+- **THEN** создаётся `{theme}/{slug}.md` с валидным frontmatter и телом; при необходимости — вложения в `{slug}/`
+
+### Requirement: Расположение skill в базе знаний
+
+Канонический шаблон skill хранится в репозитории приложения (`.agents/skills/knowledge-db/SKILL.md`, embedded в `kb`). `kb init` MUST копировать только skill `knowledge-db` в `{KB}/.agents/skills/knowledge-db/SKILL.md`, не в `~/.cursor/skills/`.
+
+#### Сценарий: Init устанавливает skill в базу
+
+- **WHEN** `kb init --path /path/to/kb`
+- **THEN** файл `{kb}/.agents/skills/knowledge-db/SKILL.md` существует и не содержит плейсхолдер `{{DATA_PATH}}`
