@@ -130,6 +130,36 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 	assert.Equal(t, "note", node.Metadata["type"])
 }
 
+func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodesChangedNotifierCalled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"go"},
+			Annotation: "Notes",
+			ThemePath:  "go",
+			Slug:       "notify-test",
+			Type:       "note",
+			Content:    "Body",
+			Title:      "Notify Test",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+	var notified []string
+	pipeline.SetNodesChangedNotifier(func(_ context.Context, paths ...string) {
+		notified = append(notified, paths...)
+	})
+
+	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes."})
+	require.NoError(t, err)
+	require.Equal(t, []string{"go/notify-test"}, notified)
+}
+
 func TestPipelineIngester_IngestText_WhenFileFallbackAvailable_ExpectPlacementContext(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

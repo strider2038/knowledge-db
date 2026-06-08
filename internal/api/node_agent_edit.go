@@ -207,6 +207,7 @@ func (h *Handler) runNodeAgentEditJob(ctx context.Context, jobID string, node *k
 		return
 	}
 
+	h.notifyIndexNodesChanged(node.Path)
 	h.jobs.SetStage(jobID, "sync")
 	h.jobs.AppendLog(jobID, "system", "stage: sync")
 	if h.gitDisabled || h.gitCommitter == nil {

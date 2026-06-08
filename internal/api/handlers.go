@@ -208,9 +208,7 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.SingleNodeEvent{Path: path})
-	}
+	h.notifyIndexNodesChanged(path)
 	writeJSON(w, map[string]any{"path": path, "deleted": true})
 }
 
@@ -329,9 +327,7 @@ func (h *Handler) RefreshDescription(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
-	}
+	h.notifyIndexNodesChanged(node.Path)
 
 	writeJSON(w, node)
 }
@@ -436,9 +432,7 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.SingleNodeEvent{Path: path})
-	}
+	h.notifyIndexNodesChanged(path)
 	writeJSON(w, node)
 }
 
@@ -686,9 +680,7 @@ func (h *Handler) PostGitSync(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.GitSyncDiffEvent{})
-	}
+	h.notifyIndexGitSyncReconcile()
 	clog.Info(r.Context(), "git sync: manual pull completed")
 	writeJSON(w, map[string]any{
 		"synced":  true,

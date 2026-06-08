@@ -144,6 +144,8 @@ func (h *Handler) runNodeDumpImagesJob(ctx context.Context, jobID, nodePath stri
 	}
 	if !modified {
 		h.jobs.AppendLog(jobID, "system", "no remote images found or no markdown updates required")
+	} else {
+		h.notifyIndexNodesChanged(nodePath)
 	}
 
 	h.jobs.SetStage(jobID, "sync")

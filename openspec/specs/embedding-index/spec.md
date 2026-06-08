@@ -114,6 +114,26 @@ Embedding-индекс на SQLite: генерация векторных пре
 - **WHEN** API handler создаёт ноду через kb.Store
 - **THEN** SyncWorker получает событие SingleNode и индексирует ноду по node_id
 
+#### Scenario: Триггер после ingest
+
+- **WHEN** ingestion pipeline создаёт или обновляет ноду на диске (UI `/api/ingest`, Telegram, импорт Telegram)
+- **THEN** SyncWorker получает событие SingleNode для path ноды
+
+#### Scenario: Триггер после удаления ноды через API
+
+- **WHEN** `DELETE /api/nodes/{path}` успешно удаляет markdown-файл
+- **THEN** SyncWorker получает событие SingleNode для path ноды и удаляет запись из индекса (включая `node_source_urls`)
+
+#### Scenario: Триггер после изменения контента job-операциями
+
+- **WHEN** node normalization, agent edit или dump images успешно изменили markdown узла на диске
+- **THEN** SyncWorker получает событие SingleNode для path ноды
+
+#### Scenario: Триггер после перевода статьи
+
+- **WHEN** translation worker создал файл перевода или обновил оригинал
+- **THEN** SyncWorker получает событие SingleNode для path оригинала и path перевода (`{slug}.ru`)
+
 #### Scenario: Триггер после перемещения ноды
 
 - **WHEN** API handler успешно перемещает ноду из `old/path` в `new/path` с неизменным `id`

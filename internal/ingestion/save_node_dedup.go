@@ -93,6 +93,7 @@ func (p *PipelineIngester) updateExistingNode(ctx context.Context, existing *kb.
 	if err := p.committer.CommitNode(ctx, nodeMdPath, "update: "+existing.Path); err != nil {
 		clog.Errorf(ctx, "update existing node: git commit failed: %w", err)
 	}
+	p.notifyNodesChanged(ctx, node.Path)
 
 	return node, nil
 }

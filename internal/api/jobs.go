@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/muonsoft/errors"
-	"github.com/strider2038/knowledge-db/internal/index"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/ingestion/translationqueue"
 	"github.com/strider2038/knowledge-db/internal/kb"
@@ -405,10 +404,7 @@ func (h *Handler) startRefreshDescriptionJob(ctx context.Context, path string) (
 			return
 		}
 		h.jobs.SetStage(jobID, "sync")
-		if h.syncWorker != nil {
-			//nolint:contextcheck // sync worker API accepts event-only contract
-			h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
-		}
+		h.notifyIndexNodesChanged(node.Path)
 		h.jobs.CompleteSuccess(jobID, "done", map[string]any{
 			"result_path": node.Path,
 		})
@@ -459,6 +455,8 @@ func (h *Handler) startTranslateJob(ctx context.Context, path string) (Job, erro
 			st, errMsg := h.translationQueue.GetStatus(themePath, slug)
 			h.jobs.SetStage(jobID, st)
 			if st == translationqueue.StatusDone {
+				themePath, slug := splitArticlePath(path)
+				h.notifyIndexNodesChanged(path, themePath+"/"+slug+".ru")
 				h.jobs.CompleteSuccess(jobID, "done", nil)
 				h.jobs.AppendLog(jobID, "system", "translation completed")
 
