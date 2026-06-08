@@ -81,6 +81,23 @@ describe('AddPage', () => {
     expect(ingestText).toHaveBeenCalledWith('my note', 'auto', { contentMode: 'auto' })
   })
 
+  it('calls ingestText with content_mode when verbatim selected', async () => {
+    ingestText.mockResolvedValue({ node: { path: 'topic/verbatim' }, content_mode: 'verbatim' })
+    renderAddPage()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Как есть' })[0])
+    fireEvent.change(screen.getByPlaceholderText('Введите текст...'), {
+      target: { value: 'pasted body with https://example.com/article' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
+
+    expect(ingestText).toHaveBeenCalledWith(
+      'pasted body with https://example.com/article',
+      'auto',
+      { contentMode: 'verbatim' }
+    )
+  })
+
   it('calls ingestText with type_hint when article selected', async () => {
     ingestText.mockResolvedValue({ node: { path: 'topic/article' }, content_mode: 'auto' })
     renderAddPage()

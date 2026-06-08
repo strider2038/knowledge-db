@@ -52,3 +52,113 @@ func TestPipelineIngester_IngestText_WhenPasteArticleWithYouTubeURL_ExpectVerbat
 	assert.Equal(t, ingestion.ContentModeVerbatim, result.ContentMode)
 	assert.Equal(t, pasteBody, node.Content)
 }
+
+func TestPipelineIngester_IngestText_WhenTelegramLongForm_ExpectVerbatimBody(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(base, 0o755))
+	store := kb.NewStore(fs)
+
+	longBody := strings.Repeat("Gemma 4 local AI on 8GB VRAM benchmark paragraph. ", 30) +
+		"https://github.com/example/gemma-4"
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"gemma"},
+			Annotation: "Digest rewrite",
+			ThemePath:  "ai",
+			Slug:       "gemma-4-local",
+			Type:       "note",
+			Content:    "conceptual digest should not win",
+			Title:      "Gemma 4",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:      longBody,
+		SourceURL: "https://t.me/ai_channel/42",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Node)
+	assert.Equal(t, ingestion.ContentModeVerbatim, result.ContentMode)
+	assert.Equal(t, longBody, result.Node.Content)
+}
+
+func TestPipelineIngester_IngestText_WhenForwardWithBody_ExpectNonEmptyContent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(base, 0o755))
+	store := kb.NewStore(fs)
+
+	forwardBody := strings.Repeat("Security plugin for Claude discussion paragraph. ", 25) +
+		"https://example.com/security-plugin"
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"security"},
+			Annotation: "Forwarded plugin note",
+			ThemePath:  "security",
+			Slug:       "claude-security-plugin",
+			Type:       "note",
+			Content:    "",
+			Title:      "Security plugin",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:      forwardBody,
+		SourceURL: "https://t.me/security_channel/99",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Node)
+	assert.Equal(t, ingestion.ContentModeVerbatim, result.ContentMode)
+	assert.NotEmpty(t, result.Node.Content)
+	assert.Equal(t, forwardBody, result.Node.Content)
+}
+
+func TestPipelineIngester_IngestText_WhenURLOnlyBookmark_ExpectCompactBody(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(base, 0o755))
+	store := kb.NewStore(fs)
+
+	orc := &sequenceOrchestrator{
+		results: []*llm.ProcessResult{
+			{
+				Keywords:   []string{"bookmark"},
+				Annotation: "Unknown page",
+				ThemePath:  "links",
+				Slug:       "example-page",
+				Type:       "link",
+				Content:    "",
+				Title:      "Example page",
+				SourceURL:  "https://example.invalid/page",
+			},
+			{
+				Keywords:   []string{"bookmark"},
+				Annotation: "Unknown page",
+				ThemePath:  "links",
+				Slug:       "example-page",
+				Type:       "link",
+				Content:    "Compact bookmark body for example.invalid/page.",
+				Title:      "Example page",
+				SourceURL:  "https://example.invalid/page",
+			},
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text: "https://example.invalid/page",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Node)
+	assert.Equal(t, ingestion.ContentModeLinkBookmark, result.ContentMode)
+	assert.Equal(t, "Compact bookmark body for example.invalid/page.", result.Node.Content)
+}

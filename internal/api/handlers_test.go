@@ -683,7 +683,12 @@ type captureIngestRequestIngester struct {
 func (c *captureIngestRequestIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*ingestion.IngestResult, error) {
 	c.capture(req)
 
-	return &ingestion.IngestResult{Node: c.node, ContentMode: ingestion.ContentModeAuto}, nil
+	mode := ingestion.ContentModeAuto
+	if parsed, ok := ingestion.ParseContentMode(req.ContentMode); ok && parsed.Resolved() {
+		mode = parsed
+	}
+
+	return &ingestion.IngestResult{Node: c.node, ContentMode: mode}, nil
 }
 
 func (c *captureIngestRequestIngester) IngestURL(_ context.Context, _ string) (*ingestion.IngestResult, error) {

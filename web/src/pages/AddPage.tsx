@@ -7,6 +7,7 @@ import {
   getImportSession,
   ingestText,
   rejectImportItem,
+  type ContentMode,
   type ImportItem,
 } from '../services/api'
 import { Button } from '@/components/ui/button'
@@ -17,7 +18,6 @@ import { getTypeButtonClass } from '@/lib/type-styles'
 const IMPORT_SESSION_KEY = 'kb-telegram-import-session'
 
 type TypeHint = 'auto' | 'article' | 'link' | 'note'
-type ContentMode = 'auto' | 'verbatim' | 'full_fetch' | 'digest' | 'link_bookmark'
 
 const CONTENT_MODE_OPTIONS: { value: ContentMode; label: string; hint?: string }[] = [
   { value: 'auto', label: 'Авто' },
