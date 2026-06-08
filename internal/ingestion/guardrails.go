@@ -9,7 +9,6 @@ import (
 	"github.com/muonsoft/errors"
 
 	"github.com/strider2038/knowledge-db/internal/ingestion/llm"
-	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
 func (p *PipelineIngester) applyContentModeGuardrails(
@@ -215,42 +214,4 @@ func isEmojiLike(r rune) bool {
 	default:
 		return false
 	}
-}
-
-func requiresModeContent(mode ContentMode, result *llm.ProcessResult) bool {
-	if result == nil {
-		return false
-	}
-	switch mode {
-	case ContentModeDigest:
-		return result.Type == "link" || result.Type == "note"
-	case ContentModeLinkBookmark:
-		return result.Type == "link"
-	default:
-		return false
-	}
-}
-
-func applyModeToFrontmatterTitle(frontmatter map[string]any) {
-	title, ok := frontmatter["title"].(string)
-	if !ok || title == "" {
-		return
-	}
-	normalized := normalizeTitle(title)
-	frontmatter["title"] = normalized
-	if aliases, ok := frontmatter["aliases"].([]string); ok && len(aliases) == 1 {
-		frontmatter["aliases"] = []string{normalized}
-	} else if aliasesAny, ok := frontmatter["aliases"].([]any); ok && len(aliasesAny) == 1 {
-		if s, ok := aliasesAny[0].(string); ok {
-			frontmatter["aliases"] = []string{normalizeTitle(s)}
-		}
-	}
-}
-
-func profileDigestMode(profile kb.ContentProfile) bool {
-	if profile == "" || profile == kb.ContentProfileLinkBookmark {
-		return false
-	}
-
-	return kb.IsValidContentProfile(string(profile))
 }

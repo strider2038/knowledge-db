@@ -60,7 +60,7 @@ func ResolveContentMode(input ResolveInput) ContentMode {
 	}
 
 	typeHint := strings.TrimSpace(input.TypeHint)
-	if typeHint == "article" {
+	if typeHint == nodeTypeArticle {
 		if isURLOnlyInput(text) {
 			return ContentModeFullFetch
 		}
@@ -74,7 +74,7 @@ func ResolveContentMode(input ResolveInput) ContentMode {
 	}
 
 	if isURLOnlyInput(text) {
-		if typeHint == "article" {
+		if typeHint == nodeTypeArticle {
 			return ContentModeFullFetch
 		}
 		if hasDigestProfile(input.Profile) {
@@ -110,7 +110,7 @@ func ResolveRefreshContentMode(nodeType, contentProfile, sourceURL, body string)
 	switch {
 	case nodeType == nodeTypeArticle && sourceURL != "":
 		return ContentModeFullFetch
-	case nodeType == "link":
+	case nodeType == nodeTypeLink:
 		profile := kb.ContentProfile(contentProfile)
 		if profile == "" || profile == kb.ContentProfileLinkBookmark {
 			return ContentModeLinkBookmark
@@ -120,7 +120,7 @@ func ResolveRefreshContentMode(nodeType, contentProfile, sourceURL, body string)
 		}
 
 		return ContentModeLinkBookmark
-	case nodeType == "note" && (contentProfile == string(kb.ContentProfileConceptualDigest) || contentProfile == string(kb.ContentProfileBriefDigest)) && sourceURL != "":
+	case nodeType == nodeTypeNote && (contentProfile == string(kb.ContentProfileConceptualDigest) || contentProfile == string(kb.ContentProfileBriefDigest)) && sourceURL != "":
 		return ContentModeDigest
 	default:
 		if body == "" && sourceURL != "" {
@@ -184,7 +184,7 @@ func hasSubstantialBody(text string) bool {
 
 func stripURLs(text string) string {
 	var parts []string
-	for _, field := range strings.Fields(text) {
+	for field := range strings.FieldsSeq(text) {
 		trimmed := strings.Trim(field, ".,;:!?)>]\"'")
 		lower := strings.ToLower(trimmed)
 		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {

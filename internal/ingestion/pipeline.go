@@ -43,7 +43,11 @@ type PipelineIngester struct {
 	indexStore       index.Store
 }
 
-const nodeTypeArticle = "article"
+const (
+	nodeTypeArticle = "article"
+	nodeTypeLink    = "link"
+	nodeTypeNote    = "note"
+)
 
 // NewPipelineIngester создаёт PipelineIngester.
 // translationQueue — опционально; при nil используется синхронный перевод.
@@ -305,7 +309,7 @@ func (p *PipelineIngester) buildRefreshInput(
 		return text, "", profile, nil
 	default:
 		profile := ClassifySource(sourceURL, "", "", "")
-		if currentType == "note" && currentProfile == "" {
+		if currentType == nodeTypeNote && currentProfile == "" {
 			return baseText, "", profile, nil
 		}
 		text := baseText + "\n\nОбнови metadata. Не переписывай существующее тело без необходимости."
@@ -555,7 +559,7 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 
 		return nil
 	}
-	if result.Type != "article" {
+	if result.Type != nodeTypeArticle {
 		log.Debug("translation: skipped", "reason", "type_not_article", "type", result.Type, "theme", result.ThemePath, "slug", result.Slug)
 
 		return nil
