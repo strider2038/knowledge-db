@@ -9,6 +9,7 @@ import (
 
 	"github.com/muonsoft/api-testing/apitest"
 	"github.com/muonsoft/api-testing/assertjson"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
@@ -128,7 +129,69 @@ func TestImportTelegramAccept_WhenValid(t *testing.T) {
 		j.Node("node", "path").IsString().EqualTo("topic/node1")
 		j.Node("next_item").IsObject()
 		j.Node("next_item", "text").IsString().EqualTo("First")
+		j.Node("content_mode").IsString().EqualTo("auto")
 	})
+}
+
+func TestImportTelegramAccept_WhenInvalidContentMode_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupImportTestHandler(t, &mockIngester{
+		node: &kb.Node{Path: "topic/node1", Metadata: map[string]any{}},
+	})
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var createData struct {
+		SessionID string `json:"session_id"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
+
+	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
+		strings.NewReader(`{"content_mode":"copy"}`),
+		apitest.WithContentType("application/json"))
+	acceptResp.IsBadRequest()
+	acceptResp.HasJSON(func(j *assertjson.AssertJSON) {
+		j.Node("error").IsString().EqualTo("invalid content_mode")
+	})
+}
+
+func TestImportTelegramAccept_WhenVerbatimMode_ExpectPassedToIngester(t *testing.T) {
+	t.Parallel()
+	var lastReq ingestion.IngestRequest
+	ingester := &captureIngestRequestIngester{
+		node: &kb.Node{Path: "topic/node1", Metadata: map[string]any{}},
+		capture: func(req ingestion.IngestRequest) {
+			lastReq = req
+		},
+	}
+	handler := setupImportTestHandler(t, ingester)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "/api/import/telegram", strings.NewReader(validTelegramJSON))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var createData struct {
+		SessionID string `json:"session_id"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
+
+	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
+		strings.NewReader(`{"content_mode":"verbatim","type_hint":"note"}`),
+		apitest.WithContentType("application/json"))
+	acceptResp.IsOK()
+	acceptResp.HasJSON(func(j *assertjson.AssertJSON) {
+		j.Node("content_mode").IsString().EqualTo("verbatim")
+	})
+	assert.Equal(t, "verbatim", lastReq.ContentMode)
+	assert.Equal(t, "note", lastReq.TypeHint)
 }
 
 func TestImportTelegramReject_WhenValid(t *testing.T) {
