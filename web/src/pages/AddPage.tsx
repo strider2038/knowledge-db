@@ -17,6 +17,15 @@ import { getTypeButtonClass } from '@/lib/type-styles'
 const IMPORT_SESSION_KEY = 'kb-telegram-import-session'
 
 type TypeHint = 'auto' | 'article' | 'link' | 'note'
+type ContentMode = 'auto' | 'verbatim' | 'full_fetch' | 'digest' | 'link_bookmark'
+
+const CONTENT_MODE_OPTIONS: { value: ContentMode; label: string; hint?: string }[] = [
+  { value: 'auto', label: 'Авто' },
+  { value: 'verbatim', label: 'Как есть', hint: 'Сохранить вставленный текст без переписывания' },
+  { value: 'full_fetch', label: 'Полная статья', hint: 'Скачать полный текст с URL' },
+  { value: 'digest', label: 'Выжимка', hint: 'Структурированный digest или профиль' },
+  { value: 'link_bookmark', label: 'Закладка', hint: 'Короткое semantic body для ссылки' },
+]
 
 const TYPE_OPTIONS: { value: TypeHint; label: string }[] = [
   { value: 'auto', label: 'Авто' },
@@ -27,6 +36,7 @@ const TYPE_OPTIONS: { value: TypeHint; label: string }[] = [
 
 function ManualAddForm() {
   const [text, setText] = useState('')
+  const [contentMode, setContentMode] = useState<ContentMode>('auto')
   const [typeHint, setTypeHint] = useState<TypeHint>('auto')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,8 +49,8 @@ function ManualAddForm() {
     setError(null)
     setSuccessPath(null)
     try {
-      const node = await ingestText(text.trim(), typeHint)
-      setSuccessPath(node.path)
+      const res = await ingestText(text.trim(), typeHint, { contentMode })
+      setSuccessPath(res.node.path)
       setText('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка')
@@ -52,8 +62,31 @@ function ManualAddForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <label className="text-sm font-medium">Тип контента</label>
-        <div className="flex gap-1">
+        <label className="text-sm font-medium">Режим сохранения</label>
+        <div className="flex flex-wrap gap-1">
+          {CONTENT_MODE_OPTIONS.map(({ value, label }) => (
+            <Button
+              key={value}
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              className={getTypeButtonClass('auto', contentMode === value)}
+              onClick={() => setContentMode(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        {CONTENT_MODE_OPTIONS.find((o) => o.value === contentMode)?.hint && (
+          <p className="text-sm text-muted-foreground">
+            {CONTENT_MODE_OPTIONS.find((o) => o.value === contentMode)?.hint}
+          </p>
+        )}
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Тип контента (подсказка)</label>
+        <div className="flex flex-wrap gap-1">
           {TYPE_OPTIONS.map(({ value, label }) => (
             <Button
               key={value}
@@ -68,7 +101,12 @@ function ManualAddForm() {
             </Button>
           ))}
         </div>
-        {(typeHint === 'article' || typeHint === 'link') && (
+        {contentMode === 'verbatim' && typeHint === 'article' && (
+          <p className="text-sm text-muted-foreground">
+            Сохранит вставленный текст как статью без скачивания URL
+          </p>
+        )}
+        {(typeHint === 'article' || typeHint === 'link') && contentMode !== 'verbatim' && (
           <p className="text-sm text-muted-foreground">
             Вставьте URL в текст
           </p>
@@ -146,6 +184,7 @@ function ImportTab() {
   const [error, setError] = useState<string | null>(null)
   const [successPath, setSuccessPath] = useState<string | null>(null)
   const [typeHint, setTypeHint] = useState<TypeHint>('auto')
+  const [contentMode, setContentMode] = useState<ContentMode>('auto')
   const [completion, setCompletion] = useState<ImportCompletionSummary | null>(
     null
   )
@@ -207,7 +246,7 @@ function ImportTab() {
     setSuccessPath(null)
     setLoading(true)
     try {
-      const res = await acceptImportItem(sessionId, typeHint)
+      const res = await acceptImportItem(sessionId, typeHint, contentMode)
       setSuccessPath(res.node.path)
       const nextProcessed = session.processedCount + 1
       setSession({
@@ -404,8 +443,26 @@ function ImportTab() {
                 {session.currentItem.text}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Тип контента</label>
-                <div className="flex gap-1">
+                <label className="text-sm font-medium">Режим сохранения</label>
+                <div className="flex flex-wrap gap-1">
+                  {CONTENT_MODE_OPTIONS.map(({ value, label }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={loading}
+                      className={getTypeButtonClass('auto', contentMode === value)}
+                      onClick={() => setContentMode(value)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Тип контента (подсказка)</label>
+                <div className="flex flex-wrap gap-1">
                   {TYPE_OPTIONS.map(({ value, label }) => (
                     <Button
                       key={value}

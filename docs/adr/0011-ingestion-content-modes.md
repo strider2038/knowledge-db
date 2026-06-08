@@ -1,6 +1,6 @@
 # ADR 0011: Content modes для ingestion (verbatim / fetch / digest / bookmark)
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-06-08
 - Supersedes: -
 - Superseded-By: -

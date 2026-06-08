@@ -119,7 +119,7 @@ describe('ingestText', () => {
   it('sends text only when typeHint is auto or omitted', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ path: 'topic/node', annotation: '', content: '', metadata: {} }),
+      json: async () => ({ node: { path: 'topic/node', annotation: '', content: '', metadata: {} }, content_mode: 'auto' }),
     })
     const { ingestText } = await import('./api')
     await ingestText('my note')
@@ -135,7 +135,7 @@ describe('ingestText', () => {
   it('sends type_hint when typeHint is article', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ path: 'topic/article', annotation: '', content: '', metadata: {} }),
+      json: async () => ({ node: { path: 'topic/article', annotation: '', content: '', metadata: {} }, content_mode: 'auto' }),
     })
     const { ingestText } = await import('./api')
     await ingestText('https://example.com/article', 'article')
@@ -151,7 +151,7 @@ describe('ingestText', () => {
   it('sends type_hint when typeHint is link or note', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ path: 'topic/link', annotation: '', content: '', metadata: {} }),
+      json: async () => ({ node: { path: 'topic/link', annotation: '', content: '', metadata: {} }, content_mode: 'auto' }),
     })
     const { ingestText } = await import('./api')
     await ingestText('https://pkg.go.dev/net/http', 'link')
@@ -186,7 +186,7 @@ describe('patchNodeMetadata', () => {
   it('sends PATCH payload with title and keywords', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ path: 'topic/node', annotation: '', content: '', metadata: {} }),
+      json: async () => ({ node: { path: 'topic/node', annotation: '', content: '', metadata: {} }, content_mode: 'auto' }),
     })
 
     await patchNodeMetadata('topic/node', {

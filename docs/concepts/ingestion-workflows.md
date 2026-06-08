@@ -1,6 +1,6 @@
 # Ingestion workflows: четыре режима обработки контента
 
-Статус: **концепт** (реализация — change `2026-06-08-ingestion-content-modes`).
+Статус: **реализовано** (change `2026-06-08-ingestion-content-modes`).
 
 ## Проблема
 
