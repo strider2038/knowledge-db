@@ -135,3 +135,9 @@ Pipeline SHALL preserve the existing full-article behavior only when resolved co
 ### Requirement: Type-aware refresh внешних узлов
 
 RefreshDescription SHALL infer content mode from stored `type`, `content_profile`, and `source_url`, then apply `applyContentModeGuardrails`. This replaces refresh behavior that always assumes digest generation for every external node. Ordinary notes without digest profile are refreshed in `verbatim` mode and SHALL NOT have their body rewritten.
+
+#### Scenario: Refresh ordinary note without digest profile
+
+- **WHEN** refresh runs for a stored node with `type=note`, no digest `content_profile`, and non-empty body
+- **THEN** inferred refresh mode is `verbatim`
+- **AND** the persisted markdown body is not rewritten into a digest

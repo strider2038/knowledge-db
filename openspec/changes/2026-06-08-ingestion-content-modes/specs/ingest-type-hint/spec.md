@@ -14,4 +14,15 @@
 
 ### Requirement: Передача type_hint через API
 
-Unknown `type_hint` values continue to be treated as `auto` for compatibility. This compatibility rule does not apply to `content_mode`; invalid non-empty `content_mode` values are rejected by the REST API.
+Unknown `type_hint` values SHALL continue to be treated as `auto` for compatibility. This compatibility rule does not apply to `content_mode`; invalid non-empty `content_mode` values SHALL be rejected by the REST API with HTTP 400.
+
+#### Scenario: Unknown type_hint remains compatible
+
+- **WHEN** client POSTs `{"text":"...","type_hint":"unknown-value"}`
+- **THEN** API treats `type_hint` as `auto`
+- **AND** ingest proceeds without HTTP 400 for the unknown type hint
+
+#### Scenario: Invalid content_mode is rejected
+
+- **WHEN** client POSTs `{"text":"...","content_mode":"copy"}`
+- **THEN** API returns HTTP 400 with `invalid content_mode`
