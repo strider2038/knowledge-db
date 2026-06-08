@@ -262,7 +262,7 @@ func TestSyncWorker_Send_ExpectNonBlocking(t *testing.T) {
 	worker := NewSyncWorker(noopStore{}, provider, "/data", "model", time.Second)
 
 	for range 200 {
-		worker.Send(SingleNodeEvent{Path: "test/path"})
+		worker.Send(context.Background(), SingleNodeEvent{Path: "test/path"})
 	}
 }
 

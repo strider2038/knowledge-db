@@ -395,8 +395,9 @@ func (h *Handler) startRefreshDescriptionJob(ctx context.Context, path string) (
 	h.jobs.SetRunning(job.ID, "fetch")
 	h.jobs.AppendLog(job.ID, "system", "refresh description started")
 	go func(jobID string) {
+		jobCtx := context.WithoutCancel(ctx)
 		h.jobs.AppendLog(jobID, "system", "stage: llm")
-		node, err := refresher.RefreshDescription(context.WithoutCancel(ctx), path)
+		node, err := refresher.RefreshDescription(jobCtx, path)
 		if err != nil {
 			h.jobs.CompleteError(jobID, "refresh", err.Error(), nil)
 			h.jobs.AppendLog(jobID, "system", "refresh description failed: "+err.Error())
@@ -404,7 +405,7 @@ func (h *Handler) startRefreshDescriptionJob(ctx context.Context, path string) (
 			return
 		}
 		h.jobs.SetStage(jobID, "sync")
-		h.notifyIndexNodesChanged(node.Path)
+		h.notifyIndexNodesChanged(jobCtx, node.Path)
 		h.jobs.CompleteSuccess(jobID, "done", map[string]any{
 			"result_path": node.Path,
 		})
@@ -439,9 +440,9 @@ func (h *Handler) startTranslateJob(ctx context.Context, path string) (Job, erro
 	})
 	h.jobs.SetRunning(job.ID, "queue")
 	h.jobs.AppendLog(job.ID, "system", "translation job started")
-	//nolint:contextcheck // translation queue is intentionally decoupled from request cancellation
 	go func(jobID string) {
-		if _, err := kb.GetNode(context.Background(), h.dataPath, translationPath); err == nil {
+		jobCtx := context.WithoutCancel(ctx)
+		if _, err := kb.GetNode(jobCtx, h.dataPath, translationPath); err == nil {
 			h.jobs.CompleteSuccess(jobID, "done", nil)
 			h.jobs.AppendLog(jobID, "system", "translation already exists")
 
@@ -456,7 +457,7 @@ func (h *Handler) startTranslateJob(ctx context.Context, path string) (Job, erro
 			h.jobs.SetStage(jobID, st)
 			if st == translationqueue.StatusDone {
 				themePath, slug := splitArticlePath(path)
-				h.notifyIndexNodesChanged(path, themePath+"/"+slug+".ru")
+				h.notifyIndexNodesChanged(jobCtx, path, themePath+"/"+slug+".ru")
 				h.jobs.CompleteSuccess(jobID, "done", nil)
 				h.jobs.AppendLog(jobID, "system", "translation completed")
 

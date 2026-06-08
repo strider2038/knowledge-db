@@ -489,7 +489,7 @@ func (h *Handler) PostIndexRebuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.syncWorker.Send(index.ManualRebuildEvent{})
+	h.syncWorker.Send(r.Context(), index.ManualRebuildEvent{})
 	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]any{"status": "rebuild started"})
 }

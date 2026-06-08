@@ -1,12 +1,13 @@
 package api
 
 import (
+	"context"
 	"strings"
 
 	"github.com/strider2038/knowledge-db/internal/index"
 )
 
-func (h *Handler) notifyIndexNodesChanged(paths ...string) {
+func (h *Handler) notifyIndexNodesChanged(ctx context.Context, paths ...string) {
 	if h.syncWorker == nil {
 		return
 	}
@@ -20,13 +21,13 @@ func (h *Handler) notifyIndexNodesChanged(paths ...string) {
 			continue
 		}
 		seen[path] = struct{}{}
-		h.syncWorker.Send(index.SingleNodeEvent{Path: path})
+		h.syncWorker.Send(ctx, index.SingleNodeEvent{Path: path})
 	}
 }
 
-func (h *Handler) notifyIndexGitSyncReconcile() {
+func (h *Handler) notifyIndexGitSyncReconcile(ctx context.Context) {
 	if h.syncWorker == nil {
 		return
 	}
-	h.syncWorker.Send(index.GitSyncDiffEvent{})
+	h.syncWorker.Send(ctx, index.GitSyncDiffEvent{})
 }

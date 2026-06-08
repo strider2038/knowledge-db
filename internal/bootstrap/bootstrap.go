@@ -153,8 +153,8 @@ func Run() error {
 	if !cfg.GitDisabled && cfg.LLM.IsConfigured() {
 		var onGitSynced func(context.Context)
 		if syncWorker != nil {
-			onGitSynced = func(context.Context) {
-				syncWorker.Send(index.GitSyncDiffEvent{})
+			onGitSynced = func(ctx context.Context) {
+				syncWorker.Send(ctx, index.GitSyncDiffEvent{})
 			}
 		}
 		syncRunner := igit.NewGitSyncRunner(committer, cfg.GitSyncInterval, onGitSynced)
@@ -226,17 +226,18 @@ func wireIndexNodeNotifications(syncWorker *index.SyncWorker, ingester ingestion
 	if !ok {
 		return
 	}
-	pipeline.SetNodesChangedNotifier(func(_ context.Context, paths ...string) {
+	pipeline.SetNodesChangedNotifier(func(ctx context.Context, paths ...string) {
 		for _, path := range paths {
-			syncWorker.Send(index.SingleNodeEvent{Path: path})
+			syncWorker.Send(ctx, index.SingleNodeEvent{Path: path})
 		}
 	})
 	if translationWorker == nil {
 		return
 	}
 	translationWorker.SetOnNodesChanged(func(originalPath, translationPath string) {
-		syncWorker.Send(index.SingleNodeEvent{Path: originalPath})
-		syncWorker.Send(index.SingleNodeEvent{Path: translationPath})
+		ctx := context.Background()
+		syncWorker.Send(ctx, index.SingleNodeEvent{Path: originalPath})
+		syncWorker.Send(ctx, index.SingleNodeEvent{Path: translationPath})
 	})
 }
 
