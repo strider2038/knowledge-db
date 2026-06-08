@@ -208,6 +208,7 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	h.notifyIndexNodesChanged(r.Context(), path)
 	writeJSON(w, map[string]any{"path": path, "deleted": true})
 }
 
@@ -285,7 +286,7 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.syncWorker != nil && node.ID != "" {
-		h.syncWorker.Send(index.NodeMovedEvent{
+		h.syncWorker.Send(r.Context(), index.NodeMovedEvent{
 			NodeID:  node.ID,
 			OldPath: nodePath,
 			NewPath: node.Path,
@@ -326,9 +327,7 @@ func (h *Handler) RefreshDescription(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.SingleNodeEvent{Path: node.Path})
-	}
+	h.notifyIndexNodesChanged(r.Context(), node.Path)
 
 	writeJSON(w, node)
 }
@@ -433,9 +432,7 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.SingleNodeEvent{Path: path})
-	}
+	h.notifyIndexNodesChanged(r.Context(), path)
 	writeJSON(w, node)
 }
 
@@ -683,9 +680,7 @@ func (h *Handler) PostGitSync(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if h.syncWorker != nil {
-		h.syncWorker.Send(index.GitSyncDiffEvent{})
-	}
+	h.notifyIndexGitSyncReconcile(r.Context())
 	clog.Info(r.Context(), "git sync: manual pull completed")
 	writeJSON(w, map[string]any{
 		"synced":  true,

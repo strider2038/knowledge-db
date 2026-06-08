@@ -2,6 +2,7 @@ package ingestion_test
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -127,6 +128,36 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 	assert.Equal(t, "go/concurrency/goroutine-basics", node.Path)
 	assert.Equal(t, "Notes about Go concurrency", node.Annotation)
 	assert.Equal(t, "note", node.Metadata["type"])
+}
+
+func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodesChangedNotifierCalled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"go"},
+			Annotation: "Notes",
+			ThemePath:  "go",
+			Slug:       "notify-test",
+			Type:       "note",
+			Content:    "Body",
+			Title:      "Notify Test",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+	var notified []string
+	pipeline.SetNodesChangedNotifier(func(_ context.Context, paths ...string) {
+		notified = append(notified, paths...)
+	})
+
+	_, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes."})
+	require.NoError(t, err)
+	require.Equal(t, []string{"go/notify-test"}, notified)
 }
 
 func TestPipelineIngester_IngestText_WhenFileFallbackAvailable_ExpectPlacementContext(t *testing.T) {
@@ -470,6 +501,55 @@ func TestPipelineIngester_IngestURL_WhenDuplicateSourceURL_ExpectSameIDAndPath(t
 	all, err := store.ListAllNodes(ctx, base)
 	require.NoError(t, err)
 	assert.Len(t, all, 1)
+}
+
+func TestPipelineIngester_IngestText_WhenStaleIndexSourceURL_ExpectNewNodeCreated(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	articleURL := "https://www.youtube.com/watch?v=EJm8Ka-gVOc"
+	staleNodeID := sqlite.TestNodeID("ai/agentic-coding/hermes-desktop")
+	indexStore, err := sqlite.NewStore(context.Background(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = indexStore.Close() })
+	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, indexStore.UpsertNode(ctx, staleNodeID, "ai/agentic-coding/hermes-desktop", "h1", "bh1", embID))
+	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, staleNodeID, kb.NormalizeSourceURLForDedup(articleURL)))
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"hermes", "agentic"},
+			Annotation: "Обзор Hermes Desktop",
+			ThemePath:  "ai/agentic-coding",
+			Slug:       "hermes-desktop-obzor-i-rekomendatsii",
+			Type:       "article",
+			Content:    "# Hermes Desktop\n\nNew content.",
+			Title:      "Hermes Desktop: обзор",
+			SourceURL:  articleURL,
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+	pipeline.SetPlacementIndexStore(indexStore)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:        "Hermes Desktop review " + articleURL,
+		ContentMode: string(ingestion.ContentModeVerbatim),
+	})
+	require.NoError(t, err)
+	node := result.Node
+	assert.Equal(t, "ai/agentic-coding/hermes-desktop-obzor-i-rekomendatsii", node.Path)
+
+	all, err := store.ListAllNodes(ctx, base)
+	require.NoError(t, err)
+	assert.Len(t, all, 1)
+
+	_, err = indexStore.FindBySourceURL(ctx, kb.NormalizeSourceURLForDedup(articleURL))
+	assert.ErrorIs(t, err, sql.ErrNoRows)
 }
 
 func TestPipelineIngester_IngestText_WhenNodeIDSet_ExpectUpdateExisting(t *testing.T) {

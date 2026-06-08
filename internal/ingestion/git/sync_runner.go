@@ -11,15 +11,16 @@ import (
 type GitSyncRunner struct {
 	committer GitCommitter
 	interval  time.Duration
+	onSynced  func(context.Context)
 }
 
 // NewGitSyncRunner создаёт GitSyncRunner.
-func NewGitSyncRunner(committer GitCommitter, interval time.Duration) *GitSyncRunner {
+func NewGitSyncRunner(committer GitCommitter, interval time.Duration, onSynced func(context.Context)) *GitSyncRunner {
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
 
-	return &GitSyncRunner{committer: committer, interval: interval}
+	return &GitSyncRunner{committer: committer, interval: interval, onSynced: onSynced}
 }
 
 // Run выполняет периодический Sync с заданным интервалом.
@@ -41,6 +42,9 @@ func (r *GitSyncRunner) Run(ctx context.Context) error {
 				clog.Errorf(ctx, "git sync: %w", err)
 			} else {
 				logger.Info("git sync: completed")
+				if r.onSynced != nil {
+					r.onSynced(ctx)
+				}
 			}
 		}
 	}

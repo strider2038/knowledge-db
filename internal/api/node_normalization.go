@@ -171,6 +171,7 @@ func (h *Handler) runNodeNormalizationJob(ctx context.Context, jobID string, nod
 		return
 	}
 
+	h.notifyIndexNodesChanged(ctx, node.Path)
 	h.jobs.SetStage(jobID, "sync")
 	if h.gitDisabled || h.gitCommitter == nil {
 		h.jobs.CompleteSuccess(jobID, "done", map[string]any{

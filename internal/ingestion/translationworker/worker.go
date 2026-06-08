@@ -21,11 +21,17 @@ const translateTimeout = 5 * time.Minute
 
 // Worker — фоновой воркер перевода статей.
 type Worker struct {
-	queue      *translationqueue.Queue
-	store      *kb.Store
-	translator translation.Translator
-	committer  git.GitCommitter
-	basePath   string
+	queue          *translationqueue.Queue
+	store          *kb.Store
+	translator     translation.Translator
+	committer      git.GitCommitter
+	basePath       string
+	onNodesChanged func(originalPath, translationPath string)
+}
+
+// SetOnNodesChanged registers a callback after a translation file is created or the original is updated.
+func (w *Worker) SetOnNodesChanged(fn func(originalPath, translationPath string)) {
+	w.onNodesChanged = fn
 }
 
 // New создаёт Worker.
@@ -132,6 +138,10 @@ func (w *Worker) doTranslate(ctx context.Context, themePath, slug string) error 
 	originalFilePath := filepath.Join(w.basePath, filepath.FromSlash(themePath), slug+".md")
 	if err := w.committer.CommitNode(ctx, originalFilePath, fmt.Sprintf("add: %s/%s (translation link)", themePath, slug)); err != nil {
 		return errors.Errorf("git commit original: %w", err)
+	}
+
+	if w.onNodesChanged != nil {
+		w.onNodesChanged(themePath+"/"+slug, themePath+"/"+slug+".ru")
 	}
 
 	return nil

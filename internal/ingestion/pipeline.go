@@ -41,6 +41,7 @@ type PipelineIngester struct {
 	titleGenerator   TitleGenerator
 	translationQueue *translationqueue.Queue
 	indexStore       index.Store
+	nodesChanged     NodesChangedNotifier
 }
 
 const (
@@ -271,6 +272,7 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 	}
 
 	clog.Info(ctx, "refresh description: complete", "path", path)
+	p.notifyNodesChanged(ctx, path)
 
 	return node, nil
 }
@@ -486,6 +488,7 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 	if err := p.committer.CommitNode(ctx, nodeMdPath, commitMsg); err != nil {
 		clog.Errorf(ctx, "save node: git commit failed: %w", err)
 	}
+	p.notifyNodesChanged(ctx, node.Path)
 
 	return node, nil
 }
@@ -653,6 +656,7 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 	}
 
 	log.Info("translation: complete", "theme", result.ThemePath, "slug", result.Slug, "translation_slug", result.Slug+".ru", "save_duration_ms", time.Since(saveStart).Milliseconds())
+	p.notifyNodesChanged(ctx, node.Path, result.ThemePath+"/"+result.Slug+".ru")
 
 	return nil
 }

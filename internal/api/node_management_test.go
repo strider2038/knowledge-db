@@ -92,6 +92,64 @@ func TestMoveNode_WhenValidTarget_ExpectOK(t *testing.T) {
 	})
 }
 
+func TestDeleteNode_WhenIndexWorkerConfigured_ExpectRemovedFromIndex(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	themeDir := filepath.Join(tmp, "topic")
+	require.NoError(t, os.MkdirAll(themeDir, 0o755))
+	content := injectTestNodeID(`---
+keywords: [test]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+type: note
+title: My Node
+annotation: "Test annotation"
+---
+
+Content here`, "topic/my-node.md")
+	require.NoError(t, os.WriteFile(filepath.Join(themeDir, "my-node.md"), []byte(content), 0o644))
+
+	store, err := indexSqlite.NewStore(context.Background(), filepath.Join(tmp, "index.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+	worker := index.NewSyncWorker(store, &testEmbeddingProvider{vector: []float32{1, 0, 0}}, tmp, "model", 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() {
+		done <- worker.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		require.NoError(t, <-done)
+	})
+
+	require.Eventually(t, func() bool {
+		_, err := store.GetNodeByPath(context.Background(), "topic/my-node")
+
+		return err == nil
+	}, time.Second, 10*time.Millisecond)
+
+	h := api.NewHandler(tmp, &ingestion.StubIngester{})
+	h.SetIndexComponents(store, worker, &testEmbeddingProvider{vector: []float32{1, 0, 0}}, config.Embedding{
+		Enabled: true,
+		APIKey:  "key",
+		APIURL:  "http://localhost",
+		Model:   "text-embedding-3-small",
+	})
+	mux, err := api.NewMux(h, nil)
+	require.NoError(t, err)
+
+	resp := apitest.HandleDELETE(t, mux, "/api/nodes/topic/my-node")
+	resp.IsOK()
+
+	require.Eventually(t, func() bool {
+		_, err := store.GetNodeByPath(context.Background(), "topic/my-node")
+
+		return errors.Is(err, sql.ErrNoRows)
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestMoveNode_WhenIndexWorkerConfigured_ExpectReindexOldAndNewPaths(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()

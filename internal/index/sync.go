@@ -79,12 +79,12 @@ func NewSyncWorker(store Store, provider EmbeddingProvider, dataPath, model stri
 }
 
 // Send отправляет событие в очередь синхронизации.
-func (w *SyncWorker) Send(event SyncEvent) {
+func (w *SyncWorker) Send(ctx context.Context, event SyncEvent) {
 	select {
 	case w.events <- event:
-		clog.Debug(context.Background(), "sync: event queued", "event", fmt.Sprintf("%T", event))
+		clog.Debug(ctx, "sync: event queued", "event", fmt.Sprintf("%T", event))
 	default:
-		clog.Info(context.Background(), "sync: event dropped (queue full)", "event", fmt.Sprintf("%T", event))
+		clog.Info(ctx, "sync: event dropped (queue full)", "event", fmt.Sprintf("%T", event))
 	}
 }
 

@@ -76,6 +76,7 @@ func Run() error {
 	var embeddingProvider index.EmbeddingProvider
 	indexStore, syncWorker, embeddingProvider = buildIndexComponents(context.Background(), cfg)
 	ingester, translationWorker := buildIngester(cfg, committer, translationQueue, indexStore)
+	wireIndexNodeNotifications(syncWorker, ingester, translationWorker)
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
 	apiHandler.SetNodeNormalizer(api.NewCursorNodeNormalizer())
@@ -150,7 +151,13 @@ func Run() error {
 	}
 
 	if !cfg.GitDisabled && cfg.LLM.IsConfigured() {
-		syncRunner := igit.NewGitSyncRunner(committer, cfg.GitSyncInterval)
+		var onGitSynced func(context.Context)
+		if syncWorker != nil {
+			onGitSynced = func(ctx context.Context) {
+				syncWorker.Send(ctx, index.GitSyncDiffEvent{})
+			}
+		}
+		syncRunner := igit.NewGitSyncRunner(committer, cfg.GitSyncInterval, onGitSynced)
 		m.Register(syncRunner)
 	}
 	if translationWorker != nil {
@@ -209,6 +216,29 @@ func buildIngester(
 	}
 
 	return pipeline, worker
+}
+
+func wireIndexNodeNotifications(syncWorker *index.SyncWorker, ingester ingestion.Ingester, translationWorker *translationworker.Worker) {
+	if syncWorker == nil {
+		return
+	}
+	pipeline, ok := ingester.(*ingestion.PipelineIngester)
+	if !ok {
+		return
+	}
+	pipeline.SetNodesChangedNotifier(func(ctx context.Context, paths ...string) {
+		for _, path := range paths {
+			syncWorker.Send(ctx, index.SingleNodeEvent{Path: path})
+		}
+	})
+	if translationWorker == nil {
+		return
+	}
+	translationWorker.SetOnNodesChanged(func(originalPath, translationPath string) {
+		ctx := context.Background()
+		syncWorker.Send(ctx, index.SingleNodeEvent{Path: originalPath})
+		syncWorker.Send(ctx, index.SingleNodeEvent{Path: translationPath})
+	})
 }
 
 func buildContentFetcher(cfg *config.Config) fetcher.ContentFetcher {

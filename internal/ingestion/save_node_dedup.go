@@ -27,12 +27,8 @@ func (p *PipelineIngester) resolveExistingNode(ctx context.Context, result *llm.
 
 			return nil, errors.Errorf("resolve existing node by id: %w", err)
 		}
-		file, err := p.store.GetNodeFile(ctx, p.basePath, node.Path)
-		if err != nil {
-			return nil, errors.Errorf("resolve existing node by id: %w", err)
-		}
 
-		return file, nil
+		return p.loadExistingNodeFile(ctx, node.Path, node.ID, "by id")
 	}
 	if p.indexStore == nil {
 		return nil, errNoExistingNodeForIngest
@@ -50,12 +46,34 @@ func (p *PipelineIngester) resolveExistingNode(ctx context.Context, result *llm.
 
 		return nil, errors.Errorf("resolve existing node: %w", err)
 	}
-	file, err := p.store.GetNodeFile(ctx, p.basePath, match.Path)
+
+	return p.loadExistingNodeFile(ctx, match.Path, match.NodeID, "by source_url")
+}
+
+func (p *PipelineIngester) loadExistingNodeFile(ctx context.Context, nodePath, nodeID, lookup string) (*kb.NodeFile, error) {
+	file, err := p.store.GetNodeFile(ctx, p.basePath, nodePath)
 	if err != nil {
-		return nil, errors.Errorf("resolve existing node: %w", err)
+		if stderrors.Is(err, kb.ErrNodeNotFound) {
+			clog.Warn(ctx, "ingest: indexed node missing on disk, will create new",
+				"path", nodePath, "node_id", nodeID, "lookup", lookup)
+			p.deleteStaleIndexNode(ctx, nodeID)
+
+			return nil, errNoExistingNodeForIngest
+		}
+
+		return nil, errors.Errorf("resolve existing node %s: %w", lookup, err)
 	}
 
 	return file, nil
+}
+
+func (p *PipelineIngester) deleteStaleIndexNode(ctx context.Context, nodeID string) {
+	if p.indexStore == nil || strings.TrimSpace(nodeID) == "" {
+		return
+	}
+	if err := p.indexStore.DeleteNodeByID(ctx, nodeID); err != nil {
+		clog.Errorf(ctx, "ingest: delete stale index node: %w", err)
+	}
 }
 
 func (p *PipelineIngester) updateExistingNode(ctx context.Context, existing *kb.NodeFile, result *llm.ProcessResult) (*kb.Node, error) {
@@ -75,6 +93,7 @@ func (p *PipelineIngester) updateExistingNode(ctx context.Context, existing *kb.
 	if err := p.committer.CommitNode(ctx, nodeMdPath, "update: "+existing.Path); err != nil {
 		clog.Errorf(ctx, "update existing node: git commit failed: %w", err)
 	}
+	p.notifyNodesChanged(ctx, node.Path)
 
 	return node, nil
 }
