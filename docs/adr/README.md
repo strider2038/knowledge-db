@@ -55,3 +55,4 @@
 | [0008](/home/strider/projects/knowledge-db/docs/adr/0008-web-auth-strategy-password-and-google-oauth.md) | Auth strategy: optional session auth + Google OAuth | accepted | 2026-03-14-add-optional-web-session-auth, 2026-04-25-google-oauth-web-auth | - | - |
 | [0009](/home/strider/projects/knowledge-db/docs/adr/0009-web-ui-build-and-embed-pipeline.md) | Web UI build/embed pipeline (Vite -> embedded static) | accepted | 2026-03-06-initial-project-scaffold, 2026-03-29-pwa-friendly | - | - |
 | [0010](/home/strider/projects/knowledge-db/docs/adr/0010-link-article-digest-for-retrieval.md) | Эволюция link/article digest для retrieval и RAG | accepted | 2026-05-12-add-link-profile-digests | - | - |
+| [0011](/home/strider/projects/knowledge-db/docs/adr/0011-ingestion-content-modes.md) | Content modes для ingestion (verbatim / fetch / digest / bookmark) | proposed | 2026-06-08-ingestion-content-modes | - | - |
