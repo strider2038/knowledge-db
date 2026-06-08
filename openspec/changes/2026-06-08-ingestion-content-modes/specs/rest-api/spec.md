@@ -55,6 +55,18 @@ Successful ingest response SHALL be an envelope with `node` and `content_mode`. 
 
 `POST /api/ingest` SHALL return the envelope `{ "node": <node>, "content_mode": "<resolved>" }` instead of a bare node when this change is implemented. The request field `type_hint` remains a storage-form hint; body handling is controlled by resolved `content_mode`.
 
+#### Scenario: Successful ingest returns envelope
+
+- **WHEN** client POSTs `{"text":"..."}` and ingest succeeds
+- **THEN** response body contains `node` and `content_mode`
+- **AND** `content_mode` reflects the resolved mode after `auto` resolution
+
 ### Requirement: Обновление описания узла из источника
 
 `POST /api/nodes/{path}/refresh-description` SHALL keep requiring `source_url` for source-based refresh and SHALL return the updated node object. Its internal behavior SHALL use refresh mode inference from the ingestion-pipeline spec instead of always treating refresh as digest generation. For ordinary notes without digest profile, refresh SHALL NOT rewrite the markdown body into a digest.
+
+#### Scenario: Refresh ordinary note preserves body
+
+- **WHEN** client POSTs refresh for a stored `type=note` without digest profile and with non-empty body
+- **THEN** API returns the updated node
+- **AND** refresh does not rewrite the note body into a digest

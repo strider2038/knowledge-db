@@ -25,12 +25,20 @@ type mockIngester struct {
 	err  error
 }
 
-func (m *mockIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*kb.Node, error) {
-	return m.node, m.err
+func (m *mockIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*ingestion.IngestResult, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return &ingestion.IngestResult{Node: m.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
-func (m *mockIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
-	return m.node, m.err
+func (m *mockIngester) IngestURL(_ context.Context, _ string) (*ingestion.IngestResult, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return &ingestion.IngestResult{Node: m.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
 type mockRefreshIngester struct {
@@ -39,11 +47,11 @@ type mockRefreshIngester struct {
 	path string
 }
 
-func (m *mockRefreshIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*kb.Node, error) {
+func (m *mockRefreshIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*ingestion.IngestResult, error) {
 	return nil, ingestion.ErrNotImplemented
 }
 
-func (m *mockRefreshIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
+func (m *mockRefreshIngester) IngestURL(_ context.Context, _ string) (*ingestion.IngestResult, error) {
 	return nil, ingestion.ErrNotImplemented
 }
 
@@ -622,8 +630,9 @@ func TestIngest_WhenSuccess_ExpectOKWithNode(t *testing.T) {
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
-		json.Node("path").IsString().EqualTo("go/concurrency/goroutine-leak")
-		json.Node("annotation").IsString().EqualTo("Article about goroutine leaks")
+		json.Node("node", "path").IsString().EqualTo("go/concurrency/goroutine-leak")
+		json.Node("node", "annotation").IsString().EqualTo("Article about goroutine leaks")
+		json.Node("content_mode").IsString().EqualTo("auto")
 	})
 }
 
@@ -671,14 +680,27 @@ type captureIngestRequestIngester struct {
 	capture func(ingestion.IngestRequest)
 }
 
-func (c *captureIngestRequestIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+func (c *captureIngestRequestIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*ingestion.IngestResult, error) {
 	c.capture(req)
 
-	return c.node, nil
+	return &ingestion.IngestResult{Node: c.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
-func (c *captureIngestRequestIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
-	return c.node, nil
+func (c *captureIngestRequestIngester) IngestURL(_ context.Context, _ string) (*ingestion.IngestResult, error) {
+	return &ingestion.IngestResult{Node: c.node, ContentMode: ingestion.ContentModeAuto}, nil
+}
+
+func TestIngest_WhenInvalidContentMode_Expect400(t *testing.T) {
+	t.Parallel()
+	handler := setupTestHandlerWithIngester(t, &mockIngester{
+		node: &kb.Node{Path: "go/test", Metadata: map[string]any{}},
+	})
+
+	resp := apitest.HandlePOST(t, handler, "/api/ingest",
+		strings.NewReader(`{"text":"note","content_mode":"article"}`),
+		apitest.WithContentType("application/json"))
+
+	resp.IsBadRequest()
 }
 
 func TestIngest_WhenIngesterError_Expect500(t *testing.T) {

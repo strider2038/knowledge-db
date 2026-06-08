@@ -51,7 +51,7 @@ func (s *Session) CurrentItem() *ImportItem {
 type SessionStore interface {
 	Create(ctx context.Context, items []ImportItem) (*Session, error)
 	Get(ctx context.Context, id string) (*Session, error)
-	Accept(ctx context.Context, id string, typeHint string) (*kb.Node, *ImportItem, error)
+	Accept(ctx context.Context, id string, typeHint, contentMode string) (*kb.Node, string, *ImportItem, error)
 	Reject(ctx context.Context, id string) (*ImportItem, error)
 }
 
@@ -116,41 +116,43 @@ func (s *fileStore) Get(ctx context.Context, id string) (*Session, error) {
 	return &sess, nil
 }
 
-func (s *fileStore) Accept(ctx context.Context, id string, typeHint string) (*kb.Node, *ImportItem, error) {
+func (s *fileStore) Accept(ctx context.Context, id string, typeHint, contentMode string) (*kb.Node, string, *ImportItem, error) {
 	if err := s.checkConfigured(); err != nil {
-		return nil, nil, err
+		return nil, "", nil, err
 	}
 
 	sess, err := s.Get(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, "", nil, err
 	}
 
 	item := sess.CurrentItem()
 	if item == nil {
-		return nil, nil, errors.Errorf("accept: %w", ErrNoCurrentItem)
+		return nil, "", nil, errors.Errorf("accept: %w", ErrNoCurrentItem)
 	}
 
-	node, err := s.ingester.IngestText(ctx, ingestion.IngestRequest{
+	result, err := s.ingester.IngestText(ctx, ingestion.IngestRequest{
 		Text:         item.Text,
 		SourceURL:    item.SourceURL,
 		SourceAuthor: item.SourceAuthor,
 		TypeHint:     typeHint,
+		ContentMode:  contentMode,
 	})
 	if err != nil {
-		return nil, nil, errors.Errorf("ingest: %w", err)
+		return nil, "", nil, errors.Errorf("ingest: %w", err)
 	}
+	node := result.Node
 
 	sess.ProcessedIDs = append(sess.ProcessedIDs, item.ID)
 	sess.CurrentIndex++
 
 	if err := s.save(sess); err != nil {
-		return nil, nil, errors.Errorf("save session: %w", err)
+		return nil, "", nil, errors.Errorf("save session: %w", err)
 	}
 
 	next := sess.CurrentItem()
 
-	return node, next, nil
+	return node, string(result.ContentMode), next, nil
 }
 
 func (s *fileStore) Reject(ctx context.Context, id string) (*ImportItem, error) {

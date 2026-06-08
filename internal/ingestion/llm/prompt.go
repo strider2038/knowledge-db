@@ -16,6 +16,7 @@ func buildSystemPrompt(input ProcessInput) string {
 	if input.SourceKind != "" || input.ContentProfile != "" || input.RecommendedType != "" {
 		fmt.Fprintf(&sb, "Предварительная классификация источника: source_kind=%s, content_profile=%s, рекомендуемый type=%s. Учитывай её при create_node; меняй только если доступный источник явно противоречит классификации.\n\n", input.SourceKind, input.ContentProfile, input.RecommendedType)
 	}
+	writeContentModeInstructions(&sb, input)
 
 	sb.WriteString(`Ты — ассистент для управления базой знаний. Твоя задача — проанализировать входные данные (текст, URL или их сочетание) и сохранить их как структурированный узел базы знаний.
 
@@ -34,8 +35,8 @@ func buildSystemPrompt(input ProcessInput) string {
 - Если пользователь явно просит полную локальную копию или type hint article, сохраняй type: article и используй полный fetch_url_content.
 
 ## Правила для notes
-- Для type: note сохраняй markdown-разметку (bold, italic, code, ссылки) в content без изменений — она может приходить из Telegram и других источников.
-- Для note с content_profile conceptual_digest или brief_digest создай новое markdown-тело digest на русском языке, а не копируй источник целиком.
+- Для content_mode=verbatim сохраняй markdown-разметку (bold, italic, code, ссылки) в content без изменений — она может приходить из Telegram и других источников.
+- Для content_mode=digest и note с content_profile conceptual_digest или brief_digest создай новое markdown-тело digest на русском языке, а не копируй источник целиком.
 
 ## Правила выбора типа
 - Если в тексте есть URL на блог-пост, туториал или статью и нет явного запроса полной копии → type: note, source_kind: article, content_profile: conceptual_digest, вызови fetch_url_content только как материал для выжимки
@@ -103,6 +104,34 @@ func buildSystemPrompt(input ProcessInput) string {
 	sb.WriteString("Always call create_node as your final action to save the content.")
 
 	return sb.String()
+}
+
+func writeContentModeInstructions(sb *strings.Builder, input ProcessInput) {
+	switch input.ContentMode {
+	case "verbatim":
+		sb.WriteString("## Content mode: verbatim\n")
+		sb.WriteString("- Сохрани исходный пользовательский текст в content без переписывания и без digest.\n")
+		sb.WriteString("- Не вызывай fetch_url_content для замены тела. fetch_url_meta допустим только для annotation/keywords, если есть source_url.\n")
+		sb.WriteString("- LLM заполняет metadata и placement; тело берётся из ввода.\n\n")
+	case "full_fetch":
+		sb.WriteString("## Content mode: full_fetch\n")
+		sb.WriteString("- Установи source_url и type=article. Полное тело статьи подставит код из fetch/cache.\n")
+		sb.WriteString("- В create_node оставь content пустым (\"\"), если использовал fetch_url_content.\n")
+		sb.WriteString("- Не подменяй тело краткой выжимкой.\n\n")
+	case "digest":
+		sb.WriteString("## Content mode: digest\n")
+		sb.WriteString("- Создай структурированный markdown digest по content_profile на русском языке.\n")
+		sb.WriteString("- fetch_url_content или fetch_url_meta можно использовать как материал для digest, но не копируй источник целиком.\n")
+		sb.WriteString("- Поле content обязательно и не может быть пустым.\n\n")
+	case "link_bookmark":
+		sb.WriteString("## Content mode: link_bookmark\n")
+		sb.WriteString("- Создай короткое semantic body из доступных фактов: title, URL, host/path, metadata, preview.\n")
+		sb.WriteString("- Используй fetch_url_meta; fetch_url_content для full-copy не вызывай.\n")
+		sb.WriteString("- Поле content обязательно, компактное и пригодное для semantic search.\n\n")
+	default:
+		sb.WriteString("## Content mode: auto (resolved by pipeline)\n")
+		sb.WriteString("- Следуй классификации источника и инструкциям выше.\n\n")
+	}
 }
 
 func hasPlacementContext(ctx PlacementContext) bool {

@@ -9,6 +9,7 @@ import (
 	"github.com/muonsoft/errors"
 	"github.com/strider2038/knowledge-db/internal/import/session"
 	"github.com/strider2038/knowledge-db/internal/import/telegram"
+	"github.com/strider2038/knowledge-db/internal/ingestion"
 )
 
 const maxImportBodySize = 10 * 1024 * 1024 // 10 MB
@@ -131,11 +132,21 @@ func (h *Handler) ImportTelegramAccept(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		TypeHint string `json:"type_hint"`
+		TypeHint    string `json:"type_hint"`
+		ContentMode string `json:"content_mode"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+	contentMode := req.ContentMode
+	if contentMode == "" {
+		contentMode = string(ingestion.ContentModeAuto)
+	}
+	if _, ok := ingestion.ParseContentMode(contentMode); !ok {
+		writeError(w, http.StatusBadRequest, "invalid content_mode")
 
-	node, nextItem, err := h.sessionStore.Accept(r.Context(), id, req.TypeHint)
+		return
+	}
+
+	node, resolvedMode, nextItem, err := h.sessionStore.Accept(r.Context(), id, req.TypeHint, contentMode)
 	if err != nil {
 		if errors.Is(err, session.ErrImportNotConfigured) {
 			clog.Warn(r.Context(), "import telegram accept: not configured")
@@ -159,10 +170,11 @@ func (h *Handler) ImportTelegramAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clog.Info(r.Context(), "import telegram: accept", "session_id", id, "path", node.Path)
+	clog.Info(r.Context(), "import telegram: accept", "session_id", id, "path", node.Path, "content_mode", resolvedMode)
 	resp := map[string]any{
-		"node":      node,
-		"next_item": nextItem,
+		"node":         node,
+		"next_item":    nextItem,
+		"content_mode": resolvedMode,
 	}
 	writeJSON(w, resp)
 }

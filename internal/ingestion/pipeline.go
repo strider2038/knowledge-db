@@ -79,23 +79,38 @@ func (p *PipelineIngester) SetPlacementIndexStore(indexStore index.Store) {
 }
 
 // IngestText обрабатывает входной текст через LLM-оркестратор и сохраняет узел.
-func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*kb.Node, error) {
-	clog.Info(ctx, "ingest text: start", "text_len", len(req.Text))
+func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*IngestResult, error) {
+	rawContent := req.Text
+	profile := ClassifySource(req.SourceURL, "", rawContent, req.TypeHint)
+	requestedMode, ok := ParseContentMode(req.ContentMode)
+	if !ok {
+		return nil, errors.Errorf("ingest text: %w", ErrInvalidContentMode)
+	}
+	resolvedMode := ResolveContentMode(ResolveInput{
+		RawContent:  rawContent,
+		SourceURL:   req.SourceURL,
+		TypeHint:    req.TypeHint,
+		ContentMode: requestedMode,
+		Profile:     profile,
+	})
+	clog.Info(ctx, "ingest text: start", "text_len", len(rawContent), "content_mode", resolvedMode)
 
-	profile := ClassifySource(req.SourceURL, "", req.Text, req.TypeHint)
-	processInput, err := p.buildProcessInput(ctx, req.Text, req.SourceURL, req.SourceAuthor, req.TypeHint, profile)
+	processInput, err := p.buildProcessInput(ctx, rawContent, req.SourceURL, req.SourceAuthor, req.TypeHint, profile, resolvedMode)
 	if err != nil {
 		return nil, errors.Errorf("ingest text: build context: %w", err)
 	}
 
 	llmStart := time.Now()
-	clog.Info(ctx, "ingest: llm process")
+	clog.Info(ctx, "ingest: llm process", "content_mode", resolvedMode)
 	result, err := p.orchestrator.Process(ctx, processInput)
 	if err != nil {
 		return nil, errors.Errorf("ingest text: orchestrate: %w", err)
 	}
 	applyProfileToResult(result, profile)
-	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
+	if err := p.applyContentModeGuardrails(ctx, resolvedMode, rawContent, processInput, result); err != nil {
+		return nil, errors.Errorf("ingest text: guardrails: %w", err)
+	}
+	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds(), "content_mode", resolvedMode)
 
 	if id := strings.TrimSpace(req.NodeID); id != "" {
 		result.NodeID = id
@@ -107,13 +122,13 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
 		clog.Errorf(ctx, "ingest text: translation failed: %w", err)
 	}
-	clog.Info(ctx, "ingest text: complete", "theme", result.ThemePath, "slug", result.Slug)
+	clog.Info(ctx, "ingest text: complete", "theme", result.ThemePath, "slug", result.Slug, "content_mode", resolvedMode)
 
-	return node, nil
+	return &IngestResult{Node: node, ContentMode: resolvedMode}, nil
 }
 
 // IngestURL явно загружает контент по URL через ContentFetcher, затем обрабатывает через LLM.
-func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
+func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*IngestResult, error) {
 	if url != "" {
 		if normalized, err := urlutil.NormalizeURL(ctx, url); err == nil {
 			url = normalized
@@ -146,19 +161,27 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 		content = fetchResult.Content
 	}
 	profile := ClassifySource(url, title, content, "")
-	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor, "", profile)
+	resolvedMode := ResolveContentMode(ResolveInput{
+		RawContent: text,
+		SourceURL:  url,
+		Profile:    profile,
+	})
+	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor, "", profile, resolvedMode)
 	if err != nil {
 		return nil, errors.Errorf("ingest url: build context: %w", err)
 	}
 
 	llmStart := time.Now()
-	clog.Info(ctx, "ingest: llm process")
+	clog.Info(ctx, "ingest: llm process", "content_mode", resolvedMode)
 	result, err := p.orchestrator.Process(ctx, processInput)
 	if err != nil {
 		return nil, errors.Errorf("ingest url: orchestrate: %w", err)
 	}
 	applyProfileToResult(result, profile)
-	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds())
+	if err := p.applyContentModeGuardrails(ctx, resolvedMode, text, processInput, result); err != nil {
+		return nil, errors.Errorf("ingest url: guardrails: %w", err)
+	}
+	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds(), "content_mode", resolvedMode)
 
 	node, err := p.saveNode(ctx, result)
 	if err != nil {
@@ -167,9 +190,9 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*kb.Node,
 	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
 		clog.Errorf(ctx, "ingest url: translation failed: %w", err)
 	}
-	clog.Info(ctx, "ingest url: complete", "url", url, "theme", result.ThemePath, "slug", result.Slug)
+	clog.Info(ctx, "ingest url: complete", "url", url, "theme", result.ThemePath, "slug", result.Slug, "content_mode", resolvedMode)
 
-	return node, nil
+	return &IngestResult{Node: node, ContentMode: resolvedMode}, nil
 }
 
 func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) (*kb.Node, error) {
@@ -187,15 +210,18 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 
 	currentType, _ := current.Frontmatter["type"].(string)
 	currentProfile, _ := current.Frontmatter["content_profile"].(string)
-	text, sourceAuthor, profile, err := p.buildRefreshInput(ctx, sourceURL, currentType, currentProfile)
+	currentBody := strings.TrimSpace(current.Content)
+	resolvedMode := ResolveRefreshContentMode(currentType, currentProfile, sourceURL, currentBody)
+	text, sourceAuthor, profile, err := p.buildRefreshInput(ctx, sourceURL, currentType, currentProfile, resolvedMode)
 	if err != nil {
 		return nil, errors.Errorf("refresh description: build input: %w", err)
 	}
-	processInput, err := p.buildProcessInput(ctx, text, sourceURL, sourceAuthor, "", profile)
+	processInput, err := p.buildProcessInput(ctx, text, sourceURL, sourceAuthor, "", profile, resolvedMode)
 	if err != nil {
 		return nil, errors.Errorf("refresh description: build context: %w", err)
 	}
 
+	clog.Info(ctx, "refresh description: llm process", "content_mode", resolvedMode)
 	result, err := p.orchestrator.Process(ctx, processInput)
 	if err != nil {
 		return nil, errors.Errorf("refresh description: orchestrate: %w", err)
@@ -203,7 +229,14 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 	if result == nil {
 		return nil, errors.New("refresh description: empty orchestrator result")
 	}
-	if err := p.ensureDigestContent(ctx, result, processInput); err != nil {
+	rawContent := currentBody
+	if rawContent == "" {
+		rawContent = text
+	}
+	if resolvedMode == ContentModeVerbatim && currentBody != "" {
+		result.Content = currentBody
+	}
+	if err := p.applyContentModeGuardrails(ctx, resolvedMode, rawContent, processInput, result); err != nil {
 		return nil, errors.Errorf("refresh description: %w", err)
 	}
 	applyProfileToResult(result, profile)
@@ -241,10 +274,11 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 func (p *PipelineIngester) buildRefreshInput(
 	ctx context.Context,
 	sourceURL, currentType, currentProfile string,
+	mode ContentMode,
 ) (string, string, SourceProfile, error) {
 	baseText := "URL: " + sourceURL
-	switch {
-	case currentType == nodeTypeArticle:
+	switch mode {
+	case ContentModeFullFetch:
 		fetchResult, err := p.contentFetcher.Fetch(ctx, sourceURL)
 		if err != nil {
 			return "", "", SourceProfile{}, errors.Errorf("fetch source: %w", err)
@@ -253,7 +287,7 @@ func (p *PipelineIngester) buildRefreshInput(
 		profile := ClassifySource(sourceURL, fetchResult.Title, fetchResult.Content, "")
 
 		return text, fetchResult.Author, profile, nil
-	case currentType == "note" && (currentProfile == string(kb.ContentProfileConceptualDigest) || currentProfile == string(kb.ContentProfileBriefDigest)):
+	case ContentModeDigest:
 		fetchResult, _ := p.contentFetcher.Fetch(ctx, sourceURL)
 		if fetchResult == nil {
 			profile := ClassifySource(sourceURL, "", "", "")
@@ -264,15 +298,29 @@ func (p *PipelineIngester) buildRefreshInput(
 		profile := ClassifySource(sourceURL, fetchResult.Title, fetchResult.Content, "")
 
 		return text, fetchResult.Author, profile, nil
+	case ContentModeLinkBookmark:
+		profile := ClassifySource(sourceURL, "", "", "")
+		text := baseText + "\n\nОбнови metadata и compact semantic body для link-узла. Вызови fetch_url_meta и используй его факты."
+
+		return text, "", profile, nil
 	default:
 		profile := ClassifySource(sourceURL, "", "", "")
-		text := baseText + "\n\nОбнови metadata и markdown digest для link-узла. Вызови fetch_url_meta и используй его факты."
+		if currentType == "note" && currentProfile == "" {
+			return baseText, "", profile, nil
+		}
+		text := baseText + "\n\nОбнови metadata. Не переписывай существующее тело без необходимости."
 
 		return text, "", profile, nil
 	}
 }
 
-func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceURL, sourceAuthor, typeHint string, profile SourceProfile) (llm.ProcessInput, error) {
+func (p *PipelineIngester) buildProcessInput(
+	ctx context.Context,
+	rawContent, sourceURL, sourceAuthor, typeHint string,
+	profile SourceProfile,
+	mode ContentMode,
+) (llm.ProcessInput, error) {
+	text := rawContent
 	if sourceURL != "" || sourceAuthor != "" {
 		var sourcePrefix string
 		if strings.HasPrefix(sourceURL, "https://t.me/") {
@@ -311,9 +359,11 @@ func (p *PipelineIngester) buildProcessInput(ctx context.Context, text, sourceUR
 
 	return llm.ProcessInput{
 		Text:             text,
+		RawContent:       rawContent,
 		SourceURL:        sourceURL,
 		SourceAuthor:     sourceAuthor,
 		TypeHint:         typeHint,
+		ContentMode:      string(mode),
 		SourceKind:       string(profile.SourceKind),
 		ContentProfile:   string(profile.ContentProfile),
 		RecommendedType:  profile.RecommendedType,
@@ -389,7 +439,7 @@ func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResu
 		title = slugToTitle(result.Slug)
 	}
 	if title != "" {
-		title = stripMarkdownFromTitle(title)
+		title = normalizeTitle(title)
 		frontmatter["title"] = title
 		frontmatter["aliases"] = []string{title}
 	}
@@ -442,7 +492,7 @@ func (p *PipelineIngester) applyResultToExistingFrontmatter(ctx context.Context,
 	frontmatter["keywords"] = result.Keywords
 	frontmatter["annotation"] = result.Annotation
 	if result.Title != "" {
-		title := stripMarkdownFromTitle(result.Title)
+		title := normalizeTitle(result.Title)
 		frontmatter["title"] = title
 		frontmatter["aliases"] = []string{title}
 	}
@@ -480,45 +530,6 @@ func applyProfileToResult(result *llm.ProcessResult, profile SourceProfile) {
 	if result.Type == "" {
 		result.Type = profile.RecommendedType
 	}
-}
-
-func (p *PipelineIngester) ensureDigestContent(
-	ctx context.Context,
-	result *llm.ProcessResult,
-	processInput llm.ProcessInput,
-) error {
-	if !requiresDigestContent(result) {
-		return nil
-	}
-	if strings.TrimSpace(result.Content) != "" {
-		return nil
-	}
-
-	retryInput := processInput
-	retryInput.Text += "\n\nКритично: для profile link узла поле content обязательно и должно содержать markdown digest. Пустой content недопустим."
-	retried, err := p.orchestrator.Process(ctx, retryInput)
-	if err != nil {
-		return errors.Errorf("%w: retry failed: %v", ErrDigestContentEmpty, err)
-	}
-	if !requiresDigestContent(retried) || strings.TrimSpace(retried.Content) != "" {
-		*result = *retried
-
-		return nil
-	}
-
-	return ErrDigestContentEmpty
-}
-
-func requiresDigestContent(result *llm.ProcessResult) bool {
-	if result == nil || result.Type != "link" {
-		return false
-	}
-	profile := kb.ContentProfile(strings.TrimSpace(result.ContentProfile))
-	if profile == "" || profile == kb.ContentProfileLinkBookmark {
-		return false
-	}
-
-	return kb.IsValidContentProfile(string(profile))
 }
 
 func applyProfileToFrontmatter(frontmatter map[string]any, sourceKind, contentProfile string) {

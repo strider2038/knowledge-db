@@ -29,9 +29,9 @@ describe('AddPage', () => {
     vi.clearAllMocks()
   })
 
-  it('renders form with type selector, textarea and submit button', () => {
+  it('renders form with mode and type selectors, textarea and submit button', () => {
     renderAddPage()
-    expect(screen.getByRole('button', { name: 'Авто' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Авто' }).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByRole('button', { name: 'Статья' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ссылка' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Заметка' })).toBeInTheDocument()
@@ -56,21 +56,21 @@ describe('AddPage', () => {
     renderAddPage()
     expect(screen.queryByText('Вставьте URL в текст')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Статья' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Статья' })[0])
     expect(screen.getByText('Вставьте URL в текст')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ссылка' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ссылка' })[0])
     expect(screen.getByText('Вставьте URL в текст')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Заметка' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Заметка' })[0])
     expect(screen.queryByText('Вставьте URL в текст')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Авто' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Авто' })[1])
     expect(screen.queryByText('Вставьте URL в текст')).not.toBeInTheDocument()
   })
 
   it('calls ingestText with text and typeHint on submit', async () => {
-    ingestText.mockResolvedValue({ path: 'topic/new-node' })
+    ingestText.mockResolvedValue({ node: { path: 'topic/new-node' }, content_mode: 'auto' })
     renderAddPage()
 
     fireEvent.change(screen.getByPlaceholderText('Введите текст...'), {
@@ -78,24 +78,24 @@ describe('AddPage', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
 
-    expect(ingestText).toHaveBeenCalledWith('my note', 'auto')
+    expect(ingestText).toHaveBeenCalledWith('my note', 'auto', { contentMode: 'auto' })
   })
 
   it('calls ingestText with type_hint when article selected', async () => {
-    ingestText.mockResolvedValue({ path: 'topic/article' })
+    ingestText.mockResolvedValue({ node: { path: 'topic/article' }, content_mode: 'auto' })
     renderAddPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Статья' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Статья' })[0])
     fireEvent.change(screen.getByPlaceholderText('Введите текст...'), {
       target: { value: 'https://example.com/article' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
 
-    expect(ingestText).toHaveBeenCalledWith('https://example.com/article', 'article')
+    expect(ingestText).toHaveBeenCalledWith('https://example.com/article', 'article', { contentMode: 'auto' })
   })
 
   it('shows success with link to node on successful submit', async () => {
-    ingestText.mockResolvedValue({ path: 'go/concurrency/new-note' })
+    ingestText.mockResolvedValue({ node: { path: 'go/concurrency/new-note' }, content_mode: 'auto' })
     renderAddPage()
 
     fireEvent.change(screen.getByPlaceholderText('Введите текст...'), {
@@ -121,7 +121,7 @@ describe('AddPage', () => {
   })
 
   it('shows loading state during submit', async () => {
-    let resolveIngest: (value: { path: string }) => void
+    let resolveIngest: (value: { node: { path: string }; content_mode: string }) => void
     ingestText.mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -138,7 +138,7 @@ describe('AddPage', () => {
     expect(screen.getByRole('button', { name: /Обработка/ })).toBeInTheDocument()
     expect(screen.getByPlaceholderText('Введите текст...')).toBeDisabled()
 
-    resolveIngest!({ path: 'done' })
+    resolveIngest!({ node: { path: 'done' }, content_mode: 'auto' })
     await screen.findByText(/Добавлено/)
   })
 })

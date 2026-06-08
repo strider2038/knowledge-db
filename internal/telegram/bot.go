@@ -530,7 +530,7 @@ func (b *Bot) processIngest(ctx context.Context, text string, chatID int64, sour
 	if chatID != 0 {
 		_ = b.sendMessage(ctx, chatID, "Принял, обрабатываю...")
 	}
-	node, err := b.ingester.IngestText(ctx, ingestion.IngestRequest{
+	result, err := b.ingester.IngestText(ctx, ingestion.IngestRequest{
 		Text:         text,
 		SourceURL:    sourceURL,
 		SourceAuthor: sourceAuthor,
@@ -543,6 +543,8 @@ func (b *Bot) processIngest(ctx context.Context, text string, chatID int64, sour
 
 		return
 	}
+	node := result.Node
+	clog.Info(ctx, "telegram bot: ingest complete", "content_mode", result.ContentMode)
 	if chatID != 0 && node != nil {
 		confirmation := b.buildConfirmation(node)
 		_ = b.sendMessage(ctx, chatID, confirmation)
