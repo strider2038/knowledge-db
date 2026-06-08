@@ -23,12 +23,20 @@ type mockIngester struct {
 	err  error
 }
 
-func (m *mockIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*kb.Node, error) {
-	return m.node, m.err
+func (m *mockIngester) IngestText(_ context.Context, _ ingestion.IngestRequest) (*ingestion.IngestResult, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return &ingestion.IngestResult{Node: m.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
-func (m *mockIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
-	return m.node, m.err
+func (m *mockIngester) IngestURL(_ context.Context, _ string) (*ingestion.IngestResult, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return &ingestion.IngestResult{Node: m.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
 type spyRawLogger struct {
@@ -634,13 +642,13 @@ type callTrackingIngester struct {
 	called *atomic.Bool
 }
 
-func (c *callTrackingIngester) IngestText(ctx context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+func (c *callTrackingIngester) IngestText(ctx context.Context, req ingestion.IngestRequest) (*ingestion.IngestResult, error) {
 	c.called.Store(true)
 
 	return c.inner.IngestText(ctx, req)
 }
 
-func (c *callTrackingIngester) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
+func (c *callTrackingIngester) IngestURL(ctx context.Context, url string) (*ingestion.IngestResult, error) {
 	c.called.Store(true)
 
 	return c.inner.IngestURL(ctx, url)
@@ -652,14 +660,14 @@ type callTrackingIngesterWithCapture struct {
 	capturedText *atomic.Value
 }
 
-func (c *callTrackingIngesterWithCapture) IngestText(ctx context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+func (c *callTrackingIngesterWithCapture) IngestText(ctx context.Context, req ingestion.IngestRequest) (*ingestion.IngestResult, error) {
 	c.called.Store(true)
 	c.capturedText.Store(req.Text)
 
 	return c.inner.IngestText(ctx, req)
 }
 
-func (c *callTrackingIngesterWithCapture) IngestURL(ctx context.Context, url string) (*kb.Node, error) {
+func (c *callTrackingIngesterWithCapture) IngestURL(ctx context.Context, url string) (*ingestion.IngestResult, error) {
 	c.called.Store(true)
 
 	return c.inner.IngestURL(ctx, url)
@@ -670,14 +678,14 @@ type captureAllIngester struct {
 	capture func(text string)
 }
 
-func (c *captureAllIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+func (c *captureAllIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*ingestion.IngestResult, error) {
 	c.capture(req.Text)
 
-	return c.node, nil
+	return &ingestion.IngestResult{Node: c.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
-func (c *captureAllIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
-	return c.node, nil
+func (c *captureAllIngester) IngestURL(_ context.Context, _ string) (*ingestion.IngestResult, error) {
+	return &ingestion.IngestResult{Node: c.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
 func TestParseForwardOrigin_WhenChannel_ExpectURLAndAuthor(t *testing.T) {
@@ -770,12 +778,12 @@ type captureRequestIngester struct {
 	capture func(ingestion.IngestRequest)
 }
 
-func (c *captureRequestIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*kb.Node, error) {
+func (c *captureRequestIngester) IngestText(_ context.Context, req ingestion.IngestRequest) (*ingestion.IngestResult, error) {
 	c.capture(req)
 
-	return c.node, nil
+	return &ingestion.IngestResult{Node: c.node, ContentMode: ingestion.ContentModeAuto}, nil
 }
 
-func (c *captureRequestIngester) IngestURL(_ context.Context, _ string) (*kb.Node, error) {
-	return c.node, nil
+func (c *captureRequestIngester) IngestURL(_ context.Context, _ string) (*ingestion.IngestResult, error) {
+	return &ingestion.IngestResult{Node: c.node, ContentMode: ingestion.ContentModeAuto}, nil
 }

@@ -705,6 +705,7 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 		SourceURL    string `json:"source_url"`
 		SourceAuthor string `json:"source_author"`
 		TypeHint     string `json:"type_hint"`
+		ContentMode  string `json:"content_mode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -725,11 +726,21 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 	if !isSupportedTypeHint {
 		typeHint = ""
 	}
-	node, err := h.ingester.IngestText(r.Context(), ingestion.IngestRequest{
+	contentMode := req.ContentMode
+	if contentMode == "" {
+		contentMode = string(ingestion.ContentModeAuto)
+	}
+	if _, ok := ingestion.ParseContentMode(contentMode); !ok {
+		writeError(w, http.StatusBadRequest, "invalid content_mode")
+
+		return
+	}
+	result, err := h.ingester.IngestText(r.Context(), ingestion.IngestRequest{
 		Text:         req.Text,
 		SourceURL:    sourceURL,
 		SourceAuthor: req.SourceAuthor,
 		TypeHint:     typeHint,
+		ContentMode:  contentMode,
 	})
 	if err != nil {
 		if errors.Is(err, ingestion.ErrNotImplemented) {
@@ -743,8 +754,11 @@ func (h *Handler) Ingest(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	clog.Info(r.Context(), "ingest: complete", "path", node.Path)
-	writeJSON(w, node)
+	clog.Info(r.Context(), "ingest: complete", "path", result.Node.Path, "content_mode", result.ContentMode)
+	writeJSON(w, map[string]any{
+		"node":         result.Node,
+		"content_mode": string(result.ContentMode),
+	})
 }
 
 func (h *Handler) handleArticleTranslate(w http.ResponseWriter, r *http.Request, isPost bool) {

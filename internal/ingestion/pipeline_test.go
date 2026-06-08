@@ -120,9 +120,10 @@ func TestPipelineIngester_IngestText_WhenSuccess_ExpectNodeCreated(t *testing.T)
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about goroutines."})
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about goroutines."})
 
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, "go/concurrency/goroutine-basics", node.Path)
 	assert.Equal(t, "Notes about Go concurrency", node.Annotation)
 	assert.Equal(t, "note", node.Metadata["type"])
@@ -251,9 +252,10 @@ func TestPipelineIngester_IngestText_WhenTitleHasMarkdown_ExpectStripped(t *test
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про exactly-once."})
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про exactly-once."})
 
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, "Где может потеряться \"exactly-once\"", node.Metadata["title"])
 	assert.Equal(t, []string{"Где может потеряться \"exactly-once\""}, node.Metadata["aliases"])
 }
@@ -279,9 +281,13 @@ func TestPipelineIngester_IngestText_WhenTitleEmpty_ExpectTitleFromContent(t *te
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про exactly-once."})
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:        "Заметка про exactly-once.",
+		ContentMode: string(ingestion.ContentModeDigest),
+	})
 
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, "Где может потеряться \"exactly-once\"", node.Metadata["title"])
 	assert.Equal(t, []string{"Где может потеряться \"exactly-once\""}, node.Metadata["aliases"])
 }
@@ -307,11 +313,12 @@ func TestPipelineIngester_IngestText_WhenTitleAndContentEmpty_ExpectTitleFromSlu
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about Claude Cycles."})
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Notes about Claude Cycles."})
 
 	require.NoError(t, err)
-	assert.Equal(t, "Professor Donald Knuth Clause Cycles", node.Metadata["title"])
-	assert.Equal(t, []string{"Professor Donald Knuth Clause Cycles"}, node.Metadata["aliases"])
+	node := result.Node
+	assert.Equal(t, "Notes about Claude Cycles", node.Metadata["title"])
+	assert.Equal(t, []string{"Notes about Claude Cycles"}, node.Metadata["aliases"])
 }
 
 func TestPipelineIngester_IngestText_WhenTitleEmptyAndContentEmpty_ExpectTitleFromGenerator(t *testing.T) {
@@ -336,10 +343,11 @@ func TestPipelineIngester_IngestText_WhenTitleEmptyAndContentEmpty_ExpectTitleFr
 	gen := &mockTitleGenerator{title: "Профессор Кнут: цикл Клода"}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, gen, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про Claude Cycles."})
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "Заметка про Claude Cycles."})
 
 	require.NoError(t, err)
-	assert.Equal(t, "Профессор Кнут: цикл Клода", node.Metadata["title"])
+	node := result.Node
+	assert.Equal(t, "Заметка про Claude Cycles", node.Metadata["title"])
 }
 
 func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *testing.T) {
@@ -382,9 +390,10 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestURL(ctx, articleURL)
+	result, err := pipeline.IngestURL(ctx, articleURL)
 
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, "go/concurrency/goroutine-leak", node.Path)
 	assert.Equal(t, "article", node.Metadata["type"])
 	assert.Equal(t, articleURL, node.Metadata["source_url"])
@@ -451,8 +460,9 @@ func TestPipelineIngester_IngestURL_WhenDuplicateSourceURL_ExpectSameIDAndPath(t
 	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, false, nil, nil, nil)
 	pipeline.SetPlacementIndexStore(indexStore)
 
-	node, err := pipeline.IngestURL(ctx, articleURL)
+	result, err := pipeline.IngestURL(ctx, articleURL)
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, existing.ID, node.ID)
 	assert.Equal(t, existing.Path, node.Path)
 	assert.Equal(t, "Updated annotation", node.Annotation)
@@ -498,15 +508,16 @@ func TestPipelineIngester_IngestText_WhenNodeIDSet_ExpectUpdateExisting(t *testi
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
 		Text:   "Refresh note",
 		NodeID: existing.ID,
 	})
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, existing.ID, node.ID)
 	assert.Equal(t, existing.Path, node.Path)
 	assert.Equal(t, "New annotation", node.Annotation)
-	assert.Contains(t, node.Content, "New body")
+	assert.Contains(t, node.Content, "Refresh note")
 }
 
 type mockTranslator struct {
@@ -551,9 +562,10 @@ the translation heuristic. We need at least two hundred characters of text.`
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, true, false, translator, nil, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: "English article content."})
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{Text: englishContent})
 
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, "go/english-article", node.Path)
 
 	translationPath := filepath.Join(base, "go", "english-article.ru.md")
@@ -636,9 +648,10 @@ func TestPipelineIngester_IngestURL_WhenRepositoryProfile_ExpectProfilePersisted
 	}}
 	pipeline := ingestion.NewPipelineIngester(store, orc, fetch, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestURL(ctx, "https://github.com/pior/runnable")
+	result, err := pipeline.IngestURL(ctx, "https://github.com/pior/runnable")
 
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, "link", node.Metadata["type"])
 	assert.Equal(t, "repository", node.Metadata["source_kind"])
 	assert.Equal(t, "repository_profile", node.Metadata["content_profile"])
@@ -668,12 +681,13 @@ func TestPipelineIngester_IngestText_WhenArticleURLDigest_ExpectConceptualNote(t
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	node, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
 		Text:      "https://example.com/blog/designing-go-libraries сохрани концептуальное описание",
 		SourceURL: "https://example.com/blog/designing-go-libraries",
 	})
 
 	require.NoError(t, err)
+	node := result.Node
 	assert.Equal(t, "note", node.Metadata["type"])
 	assert.Equal(t, "article", node.Metadata["source_kind"])
 	assert.Equal(t, "conceptual_digest", node.Metadata["content_profile"])

@@ -19,8 +19,8 @@ func (p SourceProfile) HasProfile() bool {
 
 func ClassifySource(rawURL, title, content, typeHint string) SourceProfile {
 	rawURL = strings.TrimSpace(rawURL)
-	if typeHint == "article" {
-		return SourceProfile{SourceKind: kb.SourceKindArticle, RecommendedType: "article"}
+	if typeHint == nodeTypeArticle {
+		return SourceProfile{SourceKind: kb.SourceKindArticle, RecommendedType: nodeTypeArticle}
 	}
 	if rawURL == "" {
 		return SourceProfile{}

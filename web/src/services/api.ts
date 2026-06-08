@@ -552,20 +552,31 @@ export async function getTranslateStatus(path: string): Promise<TranslateStatus>
   return res.json();
 }
 
+export type ContentMode = 'auto' | 'verbatim' | 'full_fetch' | 'digest' | 'link_bookmark';
+
 export interface IngestTextOptions {
   typeHint?: 'auto' | 'article' | 'link' | 'note';
+  contentMode?: ContentMode;
   sourceUrl?: string;
   sourceAuthor?: string;
+}
+
+export interface IngestResponse {
+  node: Node;
+  content_mode: ContentMode;
 }
 
 export async function ingestText(
   text: string,
   typeHint?: 'auto' | 'article' | 'link' | 'note',
-  options?: Pick<IngestTextOptions, 'sourceUrl' | 'sourceAuthor'>
-): Promise<Node> {
+  options?: Pick<IngestTextOptions, 'sourceUrl' | 'sourceAuthor' | 'contentMode'>
+): Promise<IngestResponse> {
   const body: Record<string, string> = { text };
   if (typeHint && typeHint !== 'auto') {
     body.type_hint = typeHint;
+  }
+  if (options?.contentMode && options.contentMode !== 'auto') {
+    body.content_mode = options.contentMode;
   }
   if (options?.sourceUrl) {
     body.source_url = options.sourceUrl;
@@ -612,6 +623,7 @@ export interface ImportSessionState {
 export interface ImportAcceptResponse {
   node: Node;
   next_item: ImportItem | null;
+  content_mode: ContentMode;
 }
 
 export interface ImportRejectResponse {
@@ -642,9 +654,16 @@ export async function getImportSession(id: string): Promise<ImportSessionState> 
 
 export async function acceptImportItem(
   id: string,
-  typeHint?: 'auto' | 'article' | 'link' | 'note'
+  typeHint?: 'auto' | 'article' | 'link' | 'note',
+  contentMode?: ContentMode
 ): Promise<ImportAcceptResponse> {
-  const body = typeHint && typeHint !== 'auto' ? { type_hint: typeHint } : {};
+  const body: Record<string, string> = {};
+  if (typeHint && typeHint !== 'auto') {
+    body.type_hint = typeHint;
+  }
+  if (contentMode && contentMode !== 'auto') {
+    body.content_mode = contentMode;
+  }
   const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/accept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

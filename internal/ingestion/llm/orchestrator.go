@@ -28,9 +28,11 @@ type LLMOrchestrator interface {
 // ProcessInput — входные данные для LLM-оркестратора.
 type ProcessInput struct {
 	Text             string
+	RawContent       string
 	SourceURL        string
 	SourceAuthor     string
 	TypeHint         string // auto, article, link, note
+	ContentMode      string // resolved: verbatim, full_fetch, digest, link_bookmark
 	SourceKind       string
 	ContentProfile   string
 	RecommendedType  string
@@ -255,7 +257,9 @@ func (o *OpenAIOrchestrator) processResponse(
 			applyProfileFallback(input, result)
 
 			applyCanonicalSourceURL(ctx, input, result)
-			o.ensureArticleContent(ctx, result, fetchCache)
+			if input.ContentMode == "full_fetch" {
+				o.ensureArticleContent(ctx, result, fetchCache)
+			}
 
 			return result, nil, nil
 
@@ -400,16 +404,23 @@ func (o *OpenAIOrchestrator) executeFetchURLMeta(ctx context.Context, argsJSON s
 		Description: meta.Description,
 		Source:      source,
 	}
+	var metaPreview string
 	if meta.ContentPreview != "" {
-		output.ContentPreview = buildContentPreview(cleanMetaPreviewContent(meta.ContentPreview), 4000)
+		metaPreview = buildContentPreview(cleanMetaPreviewContent(meta.ContentPreview), 4000)
+		output.ContentPreview = metaPreview
 	}
 
 	if o.contentFetcher != nil {
 		result, fetchErr := o.contentFetcher.Fetch(ctx, args.URL)
 		if fetchErr == nil {
 			const previewLen = 2000
-			output.ContentPreview = buildContentPreview(cleanMetaPreviewContent(result.Content), previewLen)
-			output.Source = "content_fallback"
+			fallbackPreview := buildContentPreview(cleanMetaPreviewContent(result.Content), previewLen)
+			if len(metaPreview) >= len(fallbackPreview) {
+				output.ContentPreview = metaPreview
+			} else {
+				output.ContentPreview = fallbackPreview
+				output.Source = "content_fallback"
+			}
 			if output.Title == "" {
 				output.Title = result.Title
 			}

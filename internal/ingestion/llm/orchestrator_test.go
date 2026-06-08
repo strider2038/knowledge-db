@@ -396,8 +396,9 @@ func TestOpenAIOrchestrator_WhenForcedArticleAndEmptyContent_ExpectFetchBySource
 	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", mockFetcher)
 
 	result, err := orch.Process(ctx, llm.ProcessInput{
-		Text:     "https://openai.com/ru-RU/index/harness-engineering/",
-		TypeHint: "article",
+		Text:        "https://openai.com/ru-RU/index/harness-engineering/",
+		TypeHint:    "article",
+		ContentMode: "full_fetch",
 	})
 
 	require.NoError(t, err)
@@ -434,8 +435,9 @@ func TestOpenAIOrchestrator_WhenForcedArticleAndTruncatedPreview_ExpectFetchBySo
 	orch := llm.NewTestOrchestrator(mockClient, "gpt-4o", mockFetcher)
 
 	result, err := orch.Process(ctx, llm.ProcessInput{
-		Text:     "https://openai.com/ru-RU/index/harness-engineering/",
-		TypeHint: "article",
+		Text:        "https://openai.com/ru-RU/index/harness-engineering/",
+		TypeHint:    "article",
+		ContentMode: "full_fetch",
 	})
 
 	require.NoError(t, err)
