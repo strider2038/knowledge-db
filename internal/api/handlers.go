@@ -208,6 +208,9 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	if h.syncWorker != nil {
+		h.syncWorker.Send(index.SingleNodeEvent{Path: path})
+	}
 	writeJSON(w, map[string]any{"path": path, "deleted": true})
 }
 
