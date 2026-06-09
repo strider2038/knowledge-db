@@ -678,16 +678,30 @@ func collectThemes(tree *kb.TreeNode) []string {
 // stripMarkdownFromTitle убирает markdown-разметку (**bold**, __bold__, `code`) из заголовка.
 func stripMarkdownFromTitle(s string) string {
 	s = strings.TrimSpace(s)
+	s = unwrapInlineTitleMarkers(s, "**")
+	s = unwrapInlineTitleMarkers(s, "__")
+	s = unwrapInlineTitleMarkers(s, "`")
+
+	return strings.TrimSpace(s)
+}
+
+func unwrapInlineTitleMarkers(s, marker string) string {
 	for {
 		before := s
-		if strings.HasPrefix(s, "**") && strings.HasSuffix(s, "**") && len(s) > 4 {
-			s = strings.TrimPrefix(strings.TrimSuffix(s, "**"), "**")
+		if strings.HasPrefix(s, marker) && strings.HasSuffix(s, marker) && len(s) > 2*len(marker) {
+			s = strings.TrimPrefix(strings.TrimSuffix(s, marker), marker)
 		}
-		if strings.HasPrefix(s, "__") && strings.HasSuffix(s, "__") && len(s) > 4 {
-			s = strings.TrimPrefix(strings.TrimSuffix(s, "__"), "__")
-		}
-		if strings.HasPrefix(s, "`") && strings.HasSuffix(s, "`") && len(s) > 2 {
-			s = strings.TrimPrefix(strings.TrimSuffix(s, "`"), "`")
+		start := strings.Index(s, marker)
+		if start >= 0 {
+			rest := s[start+len(marker):]
+			end := strings.Index(rest, marker)
+			if end >= 0 {
+				end += start + len(marker)
+				inner := s[start+len(marker) : end]
+				s = strings.TrimSpace(s[:start] + inner + s[end+len(marker):])
+			} else {
+				s = strings.ReplaceAll(s, marker, "")
+			}
 		}
 		s = strings.TrimSpace(s)
 		if s == before {

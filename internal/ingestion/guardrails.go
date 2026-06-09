@@ -126,9 +126,10 @@ func normalizeResultTitle(result *llm.ProcessResult) {
 
 // normalizeTitle strips markdown noise and moves leading emoji to the end.
 func normalizeTitle(title string) string {
+	title = normalizeTitleDecorators(title)
 	title = stripMarkdownFromTitle(title)
 	title = stripMarkdownLinkFromTitle(title)
-	title = normalizeTitleDecorators(title)
+	title = stripMarkdownFromTitle(title)
 	title = strings.TrimSpace(title)
 	title = strings.TrimRight(title, ".,;:!?")
 
