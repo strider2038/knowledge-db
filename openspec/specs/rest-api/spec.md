@@ -128,7 +128,7 @@ V1 MAY хранить jobs только в памяти процесса (без
 REST API ДОЛЖЕН (SHALL) поддерживать запуск `refresh-description` в job-модели через `POST /api/jobs` с `type=refresh_description`.
 Выполнение job SHOULD публиковать системные этапы как минимум: `start`, `classify`, `fetch/meta`, `llm`, `retry_digest_if_needed`, `save`, `sync`, `done` (или `error`).
 
-Для профильных `link`-узлов с digest-профилями (`repository_profile`, `learning_resource_profile` и т.п.) job MUST предотвращать сохранение пустого markdown-тела: при пустом результате MUST выполнить один retry с усиленной инструкцией к LLM; при повторном пустом результате MUST завершиться `error` без мутации узла.
+Для профильных `link`-узлов с digest-профилями (`repository_profile`, `learning_resource_profile` и т.п.) job MUST предотвращать сохранение пустого markdown-тела: при пустом результате MUST выполнить один retry с усиленной инструкцией к LLM. При повторном пустом результате job MUST построить минимальный fallback digest из доступных фактов (`annotation`, `title`, `source_url`) и сохранить узел, если факты есть; иначе MUST завершиться `error` без мутации узла.
 
 #### Сценарий: Async refresh через jobs
 
@@ -138,7 +138,9 @@ REST API ДОЛЖЕН (SHALL) поддерживать запуск `refresh-des
 #### Сценарий: Пустой digest для профильного link
 
 - **WHEN** refresh job получил пустой `content` для профильного `type=link`
-- **THEN** выполняется один retry; при повторной пустоте job завершается `error`, а файл узла не изменяется
+- **THEN** выполняется один retry
+- **AND** при повторной пустоте job сохраняет минимальный fallback digest, если доступны факты
+- **AND** при отсутствии фактов job завершается `error`, а файл узла не изменяется
 
 ### Requirement: Legacy-совместимость async endpoint-ов
 

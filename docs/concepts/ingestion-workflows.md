@@ -127,14 +127,18 @@ flowchart TD
 
 Детали — в [design.md](../../openspec/changes/2026-06-08-ingestion-content-modes/design.md).
 
+## Устойчивость LLM-оркестратора
+
+Иногда модель отвечает обычным текстом без `create_node` и без tool calls. Оркестратор не завершает ingest сразу: добавляет ответ в историю диалога и nudge «вызови create_node», затем продолжает цикл (в пределах лимита итераций). Это снижает плавающие ошибки при нестабильных провайдерах (OpenRouter и др.).
+
 ## Post-LLM guardrails по mode
 
 | Mode | Правило после LLM |
 |------|-------------------|
 | `verbatim` | Тело из ввода; не вызывать fetch для замены content |
 | `full_fetch` | Тело из fetch/cache; explicit full fetch может заменить paste fetch-результатом |
-| `digest` | `ensureModeContent` на ingest и refresh, structured digest обязателен |
-| `link_bookmark` | `ensureModeContent` на ingest и refresh, compact semantic body обязательно |
+| `digest` | `ensureModeContent` на ingest и refresh: retry → при пустом ответе минимальный fallback digest из фактов (annotation/title/source_url) |
+| `link_bookmark` | `ensureModeContent` на ingest и refresh: retry → при пустом ответе compact fallback body из фактов |
 
 ## Каналы ввода
 
