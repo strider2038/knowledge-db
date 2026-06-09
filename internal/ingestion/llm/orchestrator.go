@@ -295,6 +295,12 @@ func (o *OpenAIOrchestrator) processResponse(
 	}
 
 	if len(functionCalls) == 0 {
+		if nextInputItems, ok := buildCreateNodeNudgeInputItems(inputItems, resp); ok {
+			clog.Info(ctx, "ingest: llm text-only response, nudging create_node")
+
+			return nil, nextInputItems, nil
+		}
+
 		return nil, nil, nil
 	}
 
@@ -698,6 +704,29 @@ func functionCallOutputAsInputItem(callID, output string) responses.ResponseInpu
 	}
 
 	return responses.ResponseInputItemUnionParam{OfFunctionCallOutput: &o}
+}
+
+const createNodeNudgeMessage = "Финальным действием обязательно должен быть вызов create_node через function calling. " +
+	"Не отвечай обычным текстом. Заполни все обязательные поля, включая content для digest и link_bookmark."
+
+func buildCreateNodeNudgeInputItems(inputItems responses.ResponseInputParam, resp *responses.Response) (responses.ResponseInputParam, bool) {
+	if resp == nil {
+		return nil, false
+	}
+
+	text := strings.TrimSpace(resp.OutputText())
+	nextInputItems := make(responses.ResponseInputParam, 0, len(inputItems)+2)
+	nextInputItems = append(nextInputItems, inputItems...)
+	if text != "" {
+		nextInputItems = append(nextInputItems,
+			responses.ResponseInputItemParamOfMessage(text, responses.EasyInputMessageRoleAssistant),
+		)
+	}
+	nextInputItems = append(nextInputItems,
+		responses.ResponseInputItemParamOfMessage(createNodeNudgeMessage, responses.EasyInputMessageRoleUser),
+	)
+
+	return nextInputItems, true
 }
 
 func jsonError(msg string) string {

@@ -18,10 +18,16 @@ The system SHALL use `content_mode` as an operational ingest axis separate from 
 
 ### Requirement: Non-empty persisted body
 
-Every persisted node body created or repaired by ingestion SHALL be non-empty. `link_bookmark` mode SHALL create compact semantic body for search, not an empty bookmark.
+Every persisted node body created or repaired by ingestion SHALL be non-empty. `link_bookmark` mode SHALL create compact semantic body for search, not an empty bookmark. For `digest` and `link_bookmark`, if LLM returns empty `content` even after one retry, the pipeline SHALL build a minimal honest fallback body from available facts (`annotation`, `title`, `source_url`, source text excerpt) rather than failing when those facts exist.
 
 #### Scenario: Link bookmark body
 
 - **WHEN** resolver chooses `link_bookmark`
 - **THEN** the saved node body contains compact factual text derived from URL, metadata, source text, or other available source facts
 - **AND** the saved node body is suitable for semantic search
+
+#### Scenario: Digest fallback after empty LLM body
+
+- **WHEN** resolved mode is `digest` and LLM `content` is empty after retry, but title or annotation or source URL are available
+- **THEN** the saved node body contains a minimal structured digest built from those facts
+- **AND** the body remains non-empty and suitable for search

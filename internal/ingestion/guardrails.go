@@ -108,6 +108,22 @@ func (p *PipelineIngester) ensureModeContent(
 		return nil
 	}
 
+	if strings.TrimSpace(result.SourceURL) == "" {
+		result.SourceURL = strings.TrimSpace(processInput.SourceURL)
+	}
+
+	fallback := buildFallbackModeContent(mode, result, processInput.RawContent)
+	if strings.TrimSpace(fallback) != "" {
+		clog.Warn(ctx, "ingest: mode content empty after retry, using fallback body",
+			"content_mode", mode,
+			"content_profile", result.ContentProfile,
+			"content_len", len(fallback),
+		)
+		result.Content = fallback
+
+		return nil
+	}
+
 	return ErrDigestContentEmpty
 }
 

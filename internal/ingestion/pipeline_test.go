@@ -966,14 +966,14 @@ Old body
 	assert.Equal(t, "## Чему учит\n\nПрактика AI-заметок во время встреч.", node.Content)
 }
 
-func TestPipelineIngester_RefreshDescription_WhenProfileLinkDigestEmptyAfterRetry_ExpectErrorAndNoMutation(t *testing.T) {
+func TestPipelineIngester_RefreshDescription_WhenProfileLinkDigestEmptyAfterRetry_ExpectFallbackBody(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	fs := afero.NewMemMapFs()
 	base := testBasePath
 	nodePath := filepath.Join(base, "go/packages/runnable.md")
 	require.NoError(t, fs.MkdirAll(filepath.Dir(nodePath), 0o755))
-	original := `---
+	original := testNodeYAML(`---
 title: Runnable
 keywords: [go]
 created: "2024-01-01T00:00:00Z"
@@ -986,7 +986,7 @@ content_profile: repository_profile
 ---
 
 Old body
-`
+`)
 	require.NoError(t, afero.WriteFile(fs, nodePath, []byte(original), 0o644))
 	store := kb.NewStore(fs)
 	orc := &sequenceOrchestrator{
@@ -1013,13 +1013,59 @@ Old body
 	}
 	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
 
-	_, err := pipeline.RefreshDescription(ctx, "go/packages/runnable")
+	node, err := pipeline.RefreshDescription(ctx, "go/packages/runnable")
 
-	require.Error(t, err)
-	require.ErrorIs(t, err, ingestion.ErrDigestContentEmpty)
-	data, readErr := afero.ReadFile(fs, nodePath)
-	require.NoError(t, readErr)
-	assert.Equal(t, original, string(data))
+	require.NoError(t, err)
 	require.Len(t, orc.inputs, 2)
 	assert.Contains(t, strings.ToLower(orc.inputs[1].Text), "пустой content недопустим")
+	assert.Contains(t, node.Content, "## Назначение")
+	assert.Contains(t, node.Content, "Empty digest")
+	assert.Contains(t, node.Content, "https://github.com/pior/runnable")
+}
+
+func TestPipelineIngester_RefreshDescription_WhenProfileLinkDigestEmptyWithoutLLMFacts_ExpectSourceURLFallback(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	nodePath := filepath.Join(base, "go/packages/empty.md")
+	require.NoError(t, fs.MkdirAll(filepath.Dir(nodePath), 0o755))
+	original := testNodeYAML(`---
+title: Runnable
+keywords: [go]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+annotation: "Old"
+type: link
+source_url: "https://github.com/pior/runnable"
+source_kind: repository
+content_profile: repository_profile
+---
+
+Old body
+`)
+	require.NoError(t, afero.WriteFile(fs, nodePath, []byte(original), 0o644))
+	store := kb.NewStore(fs)
+	orc := &sequenceOrchestrator{
+		results: []*llm.ProcessResult{
+			{
+				Type:           "link",
+				SourceKind:     "repository",
+				ContentProfile: "repository_profile",
+				Content:        "",
+			},
+			{
+				Type:           "link",
+				SourceKind:     "repository",
+				ContentProfile: "repository_profile",
+				Content:        "",
+			},
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.RefreshDescription(ctx, "go/packages/empty")
+
+	require.NoError(t, err)
+	assert.Contains(t, node.Content, "https://github.com/pior/runnable")
 }

@@ -548,6 +548,39 @@ func TestOpenAIOrchestrator_WhenTelegramDeliveryAndWrongLLMSourceURL_ExpectURLFr
 	assert.Equal(t, "https://github.com/SunWeb3Sec/llm-sast-scanner", result.SourceURL)
 }
 
+func TestOpenAIOrchestrator_WhenTextOnlyResponse_ExpectNudgeThenCreateNode(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	textResp := buildMessageResponse(t, "Сохраню как узел базы знаний.")
+	createNodeArgs := map[string]any{
+		"keywords":   []any{"go"},
+		"annotation": "A note",
+		"theme_path": "go",
+		"slug":       "test-note",
+		"type":       "note",
+		"content":    "Some note content",
+		"title":      "Test",
+	}
+	secondResp := buildCreateNodeResponse(t, "resp2", "call2", createNodeArgs)
+
+	callCount := 0
+	seqClient := &sequenceMockClient{
+		responses: []*responses.Response{textResp, secondResp},
+		idx:       &callCount,
+	}
+	orch := llm.NewTestOrchestrator(seqClient, "gpt-4o", nil)
+
+	result, err := orch.Process(ctx, llm.ProcessInput{
+		Text: "Some note content",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "note", result.Type)
+	assert.Equal(t, "test-note", result.Slug)
+	assert.Equal(t, 2, callCount)
+}
+
 func TestOpenAIOrchestrator_WhenLinkInput_ExpectFetchMetaThenCreateNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
