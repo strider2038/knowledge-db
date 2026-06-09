@@ -53,6 +53,43 @@ func TestPipelineIngester_IngestText_WhenPasteArticleWithYouTubeURL_ExpectVerbat
 	assert.Equal(t, pasteBody, node.Content)
 }
 
+func TestPipelineIngester_IngestText_WhenPasteArticleWithYouTubeURL_AutoMode_ExpectVerbatimBody(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(base, 0o755))
+	store := kb.NewStore(fs)
+
+	pasteBody := strings.Repeat("Hermes desktop talk transcript paragraph. ", 40) + "https://www.youtube.com/watch?v=EJm8Ka-gVOc"
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"hermes"},
+			Annotation: "Talk transcript",
+			ThemePath:  "ai",
+			Slug:       "hermes-desktop-obzory",
+			Type:       "link",
+			Content:    "short bookmark digest should not win",
+			Title:      "Hermes Agent Desktop",
+			SourceURL:  "https://www.youtube.com/watch?v=EJm8Ka-gVOc",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{
+		result: &fetcher.FetchResult{
+			Title:   "YouTube",
+			Content: "scraped youtube description",
+		},
+	}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text: pasteBody,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Node)
+	assert.Equal(t, ingestion.ContentModeVerbatim, result.ContentMode)
+	assert.Equal(t, pasteBody, result.Node.Content)
+}
+
 func TestPipelineIngester_IngestText_WhenTelegramLongForm_ExpectVerbatimBody(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

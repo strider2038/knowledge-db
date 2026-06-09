@@ -122,7 +122,8 @@ flowchart TD
 4. `type_hint=article` + существенное тело (порог ~500 символов / ~80 слов) → `verbatim`.
 5. Telegram `t.me` + длинный текст → `verbatim`.
 6. Только URL → `full_fetch` при `type_hint=article`; `digest` для профильных источников; `link_bookmark` для неизвестных/минимальных закладок.
-7. Fallback: digest для внешних источников с profile, `link_bookmark` для URL без profile, `verbatim` для чистого текста.
+7. Существенное тело (порог ~500 символов / ~80 слов вне URL) или long-form текст → `verbatim`, даже если в paste есть URL.
+8. Fallback: digest для внешних источников с profile, `link_bookmark` для URL без profile, `verbatim` для чистого текста.
 
 Детали — в [design.md](../../openspec/changes/2026-06-08-ingestion-content-modes/design.md).
 

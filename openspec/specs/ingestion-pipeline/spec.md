@@ -369,6 +369,12 @@ The ingestion pipeline SHALL resolve a **content mode** for each ingest request 
 - **AND** post-LLM `ensureArticleContent` SHALL NOT replace body with URL fetch
 - **AND** the persisted body is restored from original user body, not from prompt text with system/source prefixes
 
+#### Scenario: Paste with substantial body and embedded URL in auto mode
+
+- **WHEN** ingest receives substantial user body with an embedded URL, `content_mode=auto`, and no explicit `type_hint=article`
+- **THEN** resolved mode is `verbatim`
+- **AND** the persisted body is restored from original user body, not rewritten into `link_bookmark` or digest
+
 #### Scenario: URL only without body
 
 - **WHEN** ingest receives a URL and no user body beyond the URL/instruction text
