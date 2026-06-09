@@ -84,6 +84,10 @@ func ResolveContentMode(input ResolveInput) ContentMode {
 		return ContentModeLinkBookmark
 	}
 
+	if hasSubstantialBody(text) || looksLikeLongFormMessage("", text) {
+		return ContentModeVerbatim
+	}
+
 	if strings.TrimSpace(input.SourceURL) != "" || containsHTTPURL(text) {
 		if hasDigestProfile(input.Profile) {
 			return ContentModeDigest

@@ -41,6 +41,7 @@ function ManualAddForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successPath, setSuccessPath] = useState<string | null>(null)
+  const [resolvedContentMode, setResolvedContentMode] = useState<ContentMode | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,9 +49,11 @@ function ManualAddForm() {
     setLoading(true)
     setError(null)
     setSuccessPath(null)
+    setResolvedContentMode(null)
     try {
       const res = await ingestText(text.trim(), typeHint, { contentMode })
       setSuccessPath(res.node.path)
+      setResolvedContentMode(res.content_mode)
       setText('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка')
@@ -146,7 +149,17 @@ function ManualAddForm() {
         >
           <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            Добавлено.{' '}
+            Добавлено
+            {resolvedContentMode && (
+              <>
+                {' '}
+                (режим:{' '}
+                {CONTENT_MODE_OPTIONS.find((o) => o.value === resolvedContentMode)?.label ??
+                  resolvedContentMode}
+                )
+              </>
+            )}
+            .{' '}
             <Link
               to={`/node/${successPath}`}
               className="font-medium underline hover:no-underline"

@@ -59,6 +59,17 @@ func TestResolveContentMode_PasteArticleWithURL_ExpectVerbatim(t *testing.T) {
 	assert.Equal(t, ingestion.ContentModeVerbatim, mode)
 }
 
+func TestResolveContentMode_PasteArticleWithURL_AutoMode_ExpectVerbatim(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Repeat("Hermes desktop talk transcript paragraph. ", 40) + "https://www.youtube.com/watch?v=EJm8Ka-gVOc"
+	mode := ingestion.ResolveContentMode(ingestion.ResolveInput{
+		RawContent: body,
+	})
+
+	assert.Equal(t, ingestion.ContentModeVerbatim, mode)
+}
+
 func TestResolveContentMode_TelegramLongForm_ExpectVerbatim(t *testing.T) {
 	t.Parallel()
 
