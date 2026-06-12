@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
-const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMetadata, getKeywordSuggestions, getLabelSuggestions, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
+const { mockNode, mockNavigate, getNode, getNodeAnnotations, patchNodeManualProcessed, patchNodeMetadata, getKeywordSuggestions, getLabelSuggestions, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
   const mockNode = {
     path: 'programming/scaling/load-balancing',
     annotation: 'Annotation **text**',
@@ -30,6 +30,7 @@ const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMeta
     mockNode,
     mockNavigate: vi.fn(),
     getNode: vi.fn().mockResolvedValue(mockNode),
+    getNodeAnnotations: vi.fn().mockResolvedValue([]),
     patchNodeManualProcessed: vi.fn().mockImplementation(async (_path: string, v: boolean) => ({
       ...mockNode,
       metadata: { ...mockNode.metadata, manual_processed: v },
@@ -117,6 +118,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 vi.mock('../services/api', () => ({
   getNode,
+  getNodeAnnotations,
   patchNodeManualProcessed,
   patchNodeMetadata,
   getKeywordSuggestions,
@@ -156,6 +158,8 @@ describe('NodePage', () => {
     mockNavigate.mockClear()
     getNode.mockReset()
     getNode.mockResolvedValue(mockNode)
+    getNodeAnnotations.mockReset()
+    getNodeAnnotations.mockResolvedValue([])
     patchNodeManualProcessed.mockReset()
     patchNodeManualProcessed.mockImplementation(async (_path: string, v: boolean) => ({
       ...mockNode,
@@ -279,6 +283,21 @@ describe('NodePage', () => {
     expect(screen.getAllByText('load-balancing').length).toBeGreaterThan(0)
     expect(screen.getAllByText('scaling').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Сообщить о проблеме' })).toBeInTheDocument()
+    expect(screen.getAllByText('Мои заметки').length).toBeGreaterThan(0)
+  })
+
+  it('shows annotations from API in the panel', async () => {
+    getNodeAnnotations.mockResolvedValueOnce([
+      {
+        id: 'note-1',
+        created: '2024-01-01T00:00:00Z',
+        updated: '2024-01-01T00:00:00Z',
+        body: 'Personal note',
+        anchor: null,
+      },
+    ])
+    renderNodePage()
+    expect(await screen.findByDisplayValue('Personal note')).toBeInTheDocument()
   })
 
   it('edits title via dialog', async () => {

@@ -540,3 +540,52 @@ describe('createDebugIssue', () => {
     )
   })
 })
+
+describe('node annotations API', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('loads annotations for node path', async () => {
+    const { getNodeAnnotations } = await import('./api')
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        notes: [{ id: 'n1', body: 'note', created: '', updated: '', anchor: null }],
+      }),
+    })
+    const notes = await getNodeAnnotations('topic/node')
+    expect(notes).toHaveLength(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/nodes/topic/node/annotations'),
+      expect.anything(),
+    )
+  })
+
+  it('creates annotation via POST', async () => {
+    const { createNodeAnnotation } = await import('./api')
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'n1',
+        body: 'hello',
+        created: '',
+        updated: '',
+        anchor: null,
+      }),
+    })
+    const note = await createNodeAnnotation('topic/node', { body: 'hello' })
+    expect(note.body).toBe('hello')
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/nodes/topic/node/annotations'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+})

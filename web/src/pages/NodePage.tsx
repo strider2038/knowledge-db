@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { getNode, patchNodeManualProcessed, type Node } from '../services/api'
+import { getNode, getNodeAnnotations, patchNodeManualProcessed, updateNodeAnnotation, type Node, type NodeAnnotation, type NodeAnnotationAnchor } from '../services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownContent } from '@/components/MarkdownContent'
@@ -22,7 +22,11 @@ import { KeywordsEditDialog } from '@/components/KeywordsEditDialog'
 import { LabelsEditDialog } from '@/components/LabelsEditDialog'
 import { useGitStatus } from '@/hooks/useGitStatus'
 import { DebugIssueDialog } from '@/components/DebugIssueDialog'
-import { ExternalLink, FileQuestion, Pencil } from 'lucide-react'
+import { NodeAnnotationsPanel } from '@/components/NodeAnnotationsPanel'
+import { AnnotatedMarkdownContent } from '@/components/AnnotatedMarkdownContent'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { annotationsBasePath, scrollToTextQuote } from '@/lib/annotation-anchor'
+import { ExternalLink, FileQuestion, MessageSquare, Pencil } from 'lucide-react'
 
 function formatDate(value: unknown): string {
   if (!value || typeof value !== 'string') return '—'
@@ -63,8 +67,17 @@ export function NodePage() {
   const [titleDialogOpen, setTitleDialogOpen] = useState(false)
   const [keywordsDialogOpen, setKeywordsDialogOpen] = useState(false)
   const [labelsDialogOpen, setLabelsDialogOpen] = useState(false)
+  const [annotations, setAnnotations] = useState<NodeAnnotation[]>([])
+  const [annotationsLoading, setAnnotationsLoading] = useState(false)
+  const [annotationsError, setAnnotationsError] = useState<string | null>(null)
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+  const [pendingAnchor, setPendingAnchor] = useState<NodeAnnotationAnchor | null>(null)
+  const [annotationsSheetOpen, setAnnotationsSheetOpen] = useState(false)
+  const [reanchorNoteId, setReanchorNoteId] = useState<string | null>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const basePath = path.includes('.') ? path.replace(/\.[a-z]{2}$/, '') : path
+  const annotationsPath = annotationsBasePath(path)
   const isTranslation = path !== basePath
 
   useEffect(() => {
@@ -84,6 +97,61 @@ export function NodePage() {
       .then(setOriginalNode)
       .catch(() => setOriginalNode(null))
   }, [isTranslation, basePath])
+
+  useEffect(() => {
+    if (!annotationsPath) return
+    setAnnotationsLoading(true)
+    setAnnotationsError(null)
+    getNodeAnnotations(annotationsPath)
+      .then(setAnnotations)
+      .catch((err) =>
+        setAnnotationsError(err instanceof Error ? err.message : 'Не удалось загрузить заметки')
+      )
+      .finally(() => setAnnotationsLoading(false))
+  }, [annotationsPath])
+
+  const handleJumpToAnchor = (anchor: NodeAnnotationAnchor) => {
+    scrollToTextQuote(contentRef.current, anchor.exact)
+  }
+
+  const handleMarkerClick = (noteId: string) => {
+    setSelectedNoteId(noteId)
+    const note = annotations.find((item) => item.id === noteId)
+    if (note?.anchor) {
+      handleJumpToAnchor(note.anchor)
+    }
+  }
+
+  const handleReanchorNote = async (noteId: string, anchor: NodeAnnotationAnchor) => {
+    setAnnotationsError(null)
+    try {
+      const updated = await updateNodeAnnotation(annotationsPath, noteId, { anchor })
+      setAnnotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+      setReanchorNoteId(null)
+      setSelectedNoteId(updated.id)
+    } catch (err) {
+      setAnnotationsError(err instanceof Error ? err.message : 'Не удалось перепривязать заметку')
+    }
+  }
+
+  const annotationsPanel = (
+    <NodeAnnotationsPanel
+      basePath={annotationsPath}
+      content={node?.content || ''}
+      notes={annotations}
+      loading={annotationsLoading}
+      error={annotationsError}
+      selectedNoteId={selectedNoteId}
+      pendingAnchor={pendingAnchor}
+      onNotesChange={setAnnotations}
+      onError={setAnnotationsError}
+      onSelectNote={setSelectedNoteId}
+      onClearPendingAnchor={() => setPendingAnchor(null)}
+      onJumpToAnchor={handleJumpToAnchor}
+      onReanchorRequest={setReanchorNoteId}
+      reanchorNoteId={reanchorNoteId}
+    />
+  )
 
   const handleManualProcessedToggle = async (next: boolean) => {
     if (!node) return
@@ -267,6 +335,20 @@ export function NodePage() {
             <Pencil className="size-4" />
           </Button>
         </div>
+        <Sheet open={annotationsSheetOpen} onOpenChange={setAnnotationsSheetOpen}>
+          <SheetTrigger asChild>
+            <Button type="button" variant="outline" size="sm" className="lg:hidden">
+              <MessageSquare className="mr-1 size-4" />
+              Заметки ({annotations.length})
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-[92vw] max-w-md p-4">
+            <SheetHeader className="mb-4">
+              <SheetTitle>Мои заметки</SheetTitle>
+            </SheetHeader>
+            {annotationsPanel}
+          </SheetContent>
+        </Sheet>
         <DebugIssueDialog
           page="node"
           title={`Node issue: ${node.path}`}
@@ -408,9 +490,17 @@ export function NodePage() {
             <CardTitle>Содержание</CardTitle>
           </CardHeader>
           <CardContent className={markdownContentClass}>
-            <MarkdownContent
+            <AnnotatedMarkdownContent
               content={node.content || '(нет)'}
               nodePath={basePath}
+              contentPath={path}
+              notes={annotations}
+              selectedNoteId={selectedNoteId}
+              onCreateAnchorNote={setPendingAnchor}
+              onReanchorNote={(noteId, anchor) => void handleReanchorNote(noteId, anchor)}
+              reanchorNoteId={reanchorNoteId}
+              onMarkerClick={handleMarkerClick}
+              contentRef={contentRef}
             />
           </CardContent>
         </Card>
@@ -438,6 +528,11 @@ export function NodePage() {
       />
         </div>
       </div>
+      <aside className="hidden w-72 shrink-0 lg:block">
+        <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-hidden rounded-lg border bg-card p-3 shadow-sm">
+          {annotationsPanel}
+        </div>
+      </aside>
     </div>
     </>
   )

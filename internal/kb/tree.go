@@ -55,3 +55,23 @@ func DeleteNode(ctx context.Context, basePath, nodePath string) error {
 func MoveNode(ctx context.Context, basePath, nodePath, targetPath string) (*Node, error) {
 	return NewStore(afero.NewOsFs()).MoveNode(ctx, basePath, nodePath, targetPath)
 }
+
+// ListNodeAnnotations returns personal annotations for a node.
+func ListNodeAnnotations(ctx context.Context, basePath, nodePath string) ([]NodeAnnotation, error) {
+	return NewStore(afero.NewOsFs()).ListNodeAnnotations(ctx, basePath, nodePath)
+}
+
+// CreateNodeAnnotation adds a personal annotation.
+func CreateNodeAnnotation(ctx context.Context, basePath, nodePath string, params CreateAnnotationParams) (NodeAnnotation, error) {
+	return NewStore(afero.NewOsFs()).CreateNodeAnnotation(ctx, basePath, nodePath, params)
+}
+
+// UpdateNodeAnnotation updates a personal annotation.
+func UpdateNodeAnnotation(ctx context.Context, basePath, nodePath, id string, params UpdateAnnotationParams) (NodeAnnotation, error) {
+	return NewStore(afero.NewOsFs()).UpdateNodeAnnotation(ctx, basePath, nodePath, id, params)
+}
+
+// DeleteNodeAnnotation removes a personal annotation.
+func DeleteNodeAnnotation(ctx context.Context, basePath, nodePath, id string) error {
+	return NewStore(afero.NewOsFs()).DeleteNodeAnnotation(ctx, basePath, nodePath, id)
+}

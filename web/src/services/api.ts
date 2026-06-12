@@ -993,3 +993,82 @@ export function streamChat(
   void fetchChat();
   return controller;
 }
+
+export interface NodeAnnotationAnchor {
+  type: 'text_quote';
+  content_path: string;
+  exact: string;
+  prefix?: string;
+  suffix?: string;
+  heading_id?: string;
+}
+
+export interface NodeAnnotation {
+  id: string;
+  created: string;
+  updated: string;
+  body: string;
+  anchor: NodeAnnotationAnchor | null;
+  resolved?: boolean;
+}
+
+export interface NodeAnnotationsResponse {
+  notes: NodeAnnotation[];
+}
+
+export async function getNodeAnnotations(nodePath: string): Promise<NodeAnnotation[]> {
+  const encoded = nodePath.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/annotations`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to load annotations');
+  }
+  const data = (await res.json()) as NodeAnnotationsResponse;
+  return data.notes ?? [];
+}
+
+export async function createNodeAnnotation(
+  nodePath: string,
+  payload: { body: string; anchor?: NodeAnnotationAnchor | null }
+): Promise<NodeAnnotation> {
+  const encoded = nodePath.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/annotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to create annotation');
+  }
+  return res.json();
+}
+
+export async function updateNodeAnnotation(
+  nodePath: string,
+  id: string,
+  payload: { body?: string; anchor?: NodeAnnotationAnchor | null }
+): Promise<NodeAnnotation> {
+  const encoded = nodePath.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/annotations/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to update annotation');
+  }
+  return res.json();
+}
+
+export async function deleteNodeAnnotation(nodePath: string, id: string): Promise<void> {
+  const encoded = nodePath.split('/').map(encodeURIComponent).join('/');
+  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/annotations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Failed to delete annotation');
+  }
+}

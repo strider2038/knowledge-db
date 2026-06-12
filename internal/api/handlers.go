@@ -172,6 +172,12 @@ func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	if nodePath, ok := annotationsListPath(path); ok {
+		_ = nodePath
+		h.ListNodeAnnotations(w, r)
+
+		return
+	}
 	node, err := kb.GetNode(r.Context(), h.dataPath, path)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
@@ -193,6 +199,13 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	if nodePath, noteID, ok := annotationsItemPath(path); ok {
+		_ = nodePath
+		_ = noteID
+		h.DeleteNodeAnnotation(w, r)
 
 		return
 	}
@@ -237,6 +250,11 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(path, "/dump-images") {
 		h.PostNodeDumpImages(w, r)
+
+		return
+	}
+	if _, ok := annotationsListPath(path); ok {
+		h.CreateNodeAnnotation(w, r)
 
 		return
 	}
@@ -342,6 +360,11 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
+	if _, _, ok := annotationsItemPath(path); ok {
+		h.UpdateNodeAnnotation(w, r)
 
 		return
 	}

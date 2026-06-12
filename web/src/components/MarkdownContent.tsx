@@ -11,6 +11,7 @@ import {
   rehypeHighlightLanguages,
 } from '@/lib/highlight'
 import { cn } from '@/lib/utils'
+import { flattenMarkdownText } from '@/lib/markdown-text'
 
 interface MarkdownContentProps {
   content: string
@@ -20,6 +21,9 @@ interface MarkdownContentProps {
    * иначе картинки из папки `{slug}/images/` не найдутся.
    */
   nodePath?: string
+  className?: string
+  paragraphClassName?: (text: string) => string | undefined
+  paragraphPrefix?: (text: string) => React.ReactNode
 }
 
 function classNameToString(className: unknown): string {
@@ -57,13 +61,7 @@ function resolveImageSrc(src: string | undefined, nodePath: string | undefined):
 
 /** Plain text from markdown <code> children (strings or nested spans from highlight.js). */
 function flattenCodeText(node: React.ReactNode): string {
-  if (node == null || typeof node === 'boolean') return ''
-  if (typeof node === 'string' || typeof node === 'number') return String(node)
-  if (Array.isArray(node)) return node.map(flattenCodeText).join('')
-  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
-    return flattenCodeText(node.props.children)
-  }
-  return ''
+  return flattenMarkdownText(node)
 }
 
 function isBlockMarkdownCode(className: unknown, children: React.ReactNode): boolean {
@@ -73,8 +71,15 @@ function isBlockMarkdownCode(className: unknown, children: React.ReactNode): boo
   return flattenCodeText(children).endsWith('\n')
 }
 
-export function MarkdownContent({ content, nodePath }: MarkdownContentProps) {
+export function MarkdownContent({
+  content,
+  nodePath,
+  className,
+  paragraphClassName,
+  paragraphPrefix,
+}: MarkdownContentProps) {
   return (
+    <div className={className}>
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[
@@ -136,9 +141,21 @@ export function MarkdownContent({ content, nodePath }: MarkdownContentProps) {
             </code>
           )
         },
+        p: ({ children, className, ...props }) => {
+          const text = flattenMarkdownText(children)
+          const extra = paragraphClassName?.(text)
+          const prefix = paragraphPrefix?.(text)
+          return (
+            <p {...props} className={cn(className, extra)}>
+              {prefix}
+              {children}
+            </p>
+          )
+        },
       }}
     >
       {content}
     </ReactMarkdown>
+    </div>
   )
 }
