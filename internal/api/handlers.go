@@ -167,51 +167,52 @@ func (h *Handler) GetNodeByID(w http.ResponseWriter, r *http.Request) {
 // GetNode обрабатывает GET /api/nodes/{path...}.
 func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
-	if path == "" {
+	switch kind, nodePath, ok := classifyNodeGET(path); {
+	case !ok:
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
-	}
-	if nodePath, ok := annotationsListPath(path); ok {
-		_ = nodePath
+	case kind == nodeGETKindAnnotations:
+		r.SetPathValue("path", nodePath)
 		h.ListNodeAnnotations(w, r)
 
 		return
-	}
-	node, err := kb.GetNode(r.Context(), h.dataPath, path)
-	if err != nil {
-		if errors.Is(err, kb.ErrNodeNotFound) {
-			clog.Debug(r.Context(), "get node: not found", "path", path)
-			writeError(w, http.StatusNotFound, "node not found")
+	default:
+		node, err := kb.GetNode(r.Context(), h.dataPath, nodePath)
+		if err != nil {
+			if errors.Is(err, kb.ErrNodeNotFound) {
+				clog.Debug(r.Context(), "get node: not found", "path", nodePath)
+				writeError(w, http.StatusNotFound, "node not found")
+
+				return
+			}
+			clog.Errorf(r.Context(), "get node: %w", err)
+			writeError(w, http.StatusInternalServerError, err.Error())
 
 			return
 		}
-		clog.Errorf(r.Context(), "get node: %w", err)
-		writeError(w, http.StatusInternalServerError, err.Error())
-
-		return
+		writeJSON(w, node)
 	}
-	writeJSON(w, node)
 }
 
 // DeleteNode обрабатывает DELETE /api/nodes/{path...}.
 func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
-	if path == "" {
+	switch kind, nodePath, noteID, ok := classifyNodeDELETE(path); {
+	case !ok:
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
-	}
-	if nodePath, noteID, ok := annotationsItemPath(path); ok {
-		_ = nodePath
-		_ = noteID
+	case kind == nodeDELETEKindAnnotation:
+		r.SetPathValue("path", nodePath)
+		r.SetPathValue("id", noteID)
 		h.DeleteNodeAnnotation(w, r)
 
 		return
-	}
-	if err := kb.DeleteNode(r.Context(), h.dataPath, path); err != nil {
+	default:
+		if err := kb.DeleteNode(r.Context(), h.dataPath, nodePath); err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
-			clog.Debug(r.Context(), "delete node: not found", "path", path)
+			clog.Debug(r.Context(), "delete node: not found", "path", nodePath)
 			writeError(w, http.StatusNotFound, "node not found")
 
 			return
@@ -221,8 +222,9 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	h.notifyIndexNodesChanged(r.Context(), path)
-	writeJSON(w, map[string]any{"path": path, "deleted": true})
+	h.notifyIndexNodesChanged(r.Context(), nodePath)
+	writeJSON(w, map[string]any{"path": nodePath, "deleted": true})
+	}
 }
 
 // MoveNode обрабатывает POST /api/nodes/{path...}/move (matched via POST /api/nodes/{path...}).
@@ -253,10 +255,18 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	if _, ok := annotationsListPath(path); ok {
+	switch kind, nodePath, ok := classifyNodePOST(path); {
+	case !ok:
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	case kind == nodePOSTKindAnnotation:
+		r.SetPathValue("path", nodePath)
 		h.CreateNodeAnnotation(w, r)
 
 		return
+	default:
+		path = nodePath
 	}
 	// Extract actual node path: expected pattern is "{nodePath}/move"
 	nodePath, _ := strings.CutSuffix(path, "/move")
@@ -358,15 +368,19 @@ func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.PathValue("path")
-	if path == "" {
+	switch kind, nodePath, noteID, ok := classifyNodePATCH(path); {
+	case !ok:
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
-	}
-	if _, _, ok := annotationsItemPath(path); ok {
+	case kind == nodePATCHKindAnnotation:
+		r.SetPathValue("path", nodePath)
+		r.SetPathValue("id", noteID)
 		h.UpdateNodeAnnotation(w, r)
 
 		return
+	default:
+		path = nodePath
 	}
 	var raw map[string]json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {

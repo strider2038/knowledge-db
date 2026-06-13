@@ -10,12 +10,10 @@ import (
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
 
-const annotationsPathSuffix = "/annotations"
-
 // ListNodeAnnotations handles GET /api/nodes/{path...}/annotations.
 func (h *Handler) ListNodeAnnotations(w http.ResponseWriter, r *http.Request) {
-	nodePath, ok := annotationsListPath(r.PathValue("path"))
-	if !ok {
+	nodePath := strings.TrimSpace(r.PathValue("path"))
+	if nodePath == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
@@ -31,8 +29,8 @@ func (h *Handler) ListNodeAnnotations(w http.ResponseWriter, r *http.Request) {
 
 // CreateNodeAnnotation handles POST /api/nodes/{path...}/annotations.
 func (h *Handler) CreateNodeAnnotation(w http.ResponseWriter, r *http.Request) {
-	nodePath, ok := annotationsListPath(r.PathValue("path"))
-	if !ok {
+	nodePath := strings.TrimSpace(r.PathValue("path"))
+	if nodePath == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
@@ -61,8 +59,18 @@ func (h *Handler) CreateNodeAnnotation(w http.ResponseWriter, r *http.Request) {
 
 // UpdateNodeAnnotation handles PATCH /api/nodes/{path...}/annotations/{id}.
 func (h *Handler) UpdateNodeAnnotation(w http.ResponseWriter, r *http.Request) {
-	nodePath, noteID, ok := annotationsItemPath(r.PathValue("path"))
-	if !ok {
+	nodePath := strings.TrimSpace(r.PathValue("path"))
+	noteID := strings.TrimSpace(r.PathValue("id"))
+	if noteID == "" {
+		var ok bool
+		nodePath, noteID, ok = annotationsItemPath(nodePath)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "path required")
+
+			return
+		}
+	}
+	if nodePath == "" || noteID == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
@@ -95,8 +103,18 @@ func (h *Handler) UpdateNodeAnnotation(w http.ResponseWriter, r *http.Request) {
 
 // DeleteNodeAnnotation handles DELETE /api/nodes/{path...}/annotations/{id}.
 func (h *Handler) DeleteNodeAnnotation(w http.ResponseWriter, r *http.Request) {
-	nodePath, noteID, ok := annotationsItemPath(r.PathValue("path"))
-	if !ok {
+	nodePath := strings.TrimSpace(r.PathValue("path"))
+	noteID := strings.TrimSpace(r.PathValue("id"))
+	if noteID == "" {
+		var ok bool
+		nodePath, noteID, ok = annotationsItemPath(nodePath)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "path required")
+
+			return
+		}
+	}
+	if nodePath == "" || noteID == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
@@ -107,34 +125,6 @@ func (h *Handler) DeleteNodeAnnotation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"id": noteID, "deleted": true})
-}
-
-func annotationsListPath(path string) (string, bool) {
-	path = strings.TrimSpace(path)
-	if path == "" || !strings.HasSuffix(path, annotationsPathSuffix) {
-		return "", false
-	}
-	nodePath := strings.TrimSuffix(path, annotationsPathSuffix)
-	if nodePath == "" {
-		return "", false
-	}
-
-	return nodePath, true
-}
-
-func annotationsItemPath(path string) (string, string, bool) {
-	path = strings.TrimSpace(path)
-	before, noteID, found := strings.Cut(path, annotationsPathSuffix+"/")
-	if !found {
-		return "", "", false
-	}
-	nodePath := before
-	noteID = strings.TrimSpace(noteID)
-	if nodePath == "" || noteID == "" {
-		return "", "", false
-	}
-
-	return nodePath, noteID, true
 }
 
 func writeAnnotationError(w http.ResponseWriter, r *http.Request, err error) {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { getNode, getNodeAnnotations, patchNodeManualProcessed, updateNodeAnnotation, type Node, type NodeAnnotation, type NodeAnnotationAnchor } from '../services/api'
+import { getNode, patchNodeManualProcessed, type Node } from '../services/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownContent } from '@/components/MarkdownContent'
@@ -25,7 +25,8 @@ import { DebugIssueDialog } from '@/components/DebugIssueDialog'
 import { NodeAnnotationsPanel } from '@/components/NodeAnnotationsPanel'
 import { AnnotatedMarkdownContent } from '@/components/AnnotatedMarkdownContent'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { annotationsBasePath, scrollToTextQuote } from '@/lib/annotation-anchor'
+import { scrollToTextQuote } from '@/lib/annotation-anchor'
+import { useNodeAnnotations } from '@/hooks/useNodeAnnotations'
 import { ExternalLink, FileQuestion, MessageSquare, Pencil } from 'lucide-react'
 
 function formatDate(value: unknown): string {
@@ -67,18 +68,28 @@ export function NodePage() {
   const [titleDialogOpen, setTitleDialogOpen] = useState(false)
   const [keywordsDialogOpen, setKeywordsDialogOpen] = useState(false)
   const [labelsDialogOpen, setLabelsDialogOpen] = useState(false)
-  const [annotations, setAnnotations] = useState<NodeAnnotation[]>([])
-  const [annotationsLoading, setAnnotationsLoading] = useState(false)
-  const [annotationsError, setAnnotationsError] = useState<string | null>(null)
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
-  const [pendingAnchor, setPendingAnchor] = useState<NodeAnnotationAnchor | null>(null)
-  const [annotationsSheetOpen, setAnnotationsSheetOpen] = useState(false)
-  const [reanchorNoteId, setReanchorNoteId] = useState<string | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const basePath = path.includes('.') ? path.replace(/\.[a-z]{2}$/, '') : path
-  const annotationsPath = annotationsBasePath(path)
   const isTranslation = path !== basePath
+
+  const {
+    annotationsPath,
+    annotations,
+    setAnnotations,
+    loading: annotationsLoading,
+    error: annotationsError,
+    setError: setAnnotationsError,
+    selectedNoteId,
+    setSelectedNoteId,
+    pendingAnchor,
+    setPendingAnchor,
+    sheetOpen: annotationsSheetOpen,
+    setSheetOpen: setAnnotationsSheetOpen,
+    reanchorNoteId,
+    setReanchorNoteId,
+    handleReanchorNote,
+  } = useNodeAnnotations(path)
 
   useEffect(() => {
     if (!path) return
@@ -98,19 +109,7 @@ export function NodePage() {
       .catch(() => setOriginalNode(null))
   }, [isTranslation, basePath])
 
-  useEffect(() => {
-    if (!annotationsPath) return
-    setAnnotationsLoading(true)
-    setAnnotationsError(null)
-    getNodeAnnotations(annotationsPath)
-      .then(setAnnotations)
-      .catch((err) =>
-        setAnnotationsError(err instanceof Error ? err.message : 'Не удалось загрузить заметки')
-      )
-      .finally(() => setAnnotationsLoading(false))
-  }, [annotationsPath])
-
-  const handleJumpToAnchor = (anchor: NodeAnnotationAnchor) => {
+  const handleJumpToAnchor = (anchor: { exact: string }) => {
     scrollToTextQuote(contentRef.current, anchor.exact)
   }
 
@@ -119,18 +118,6 @@ export function NodePage() {
     const note = annotations.find((item) => item.id === noteId)
     if (note?.anchor) {
       handleJumpToAnchor(note.anchor)
-    }
-  }
-
-  const handleReanchorNote = async (noteId: string, anchor: NodeAnnotationAnchor) => {
-    setAnnotationsError(null)
-    try {
-      const updated = await updateNodeAnnotation(annotationsPath, noteId, { anchor })
-      setAnnotations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
-      setReanchorNoteId(null)
-      setSelectedNoteId(updated.id)
-    } catch (err) {
-      setAnnotationsError(err instanceof Error ? err.message : 'Не удалось перепривязать заметку')
     }
   }
 

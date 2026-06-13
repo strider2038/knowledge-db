@@ -132,9 +132,10 @@ func (s *Store) ListNodeAnnotations(ctx context.Context, basePath, nodePath stri
 		return nil, err
 	}
 	out := make([]NodeAnnotation, 0, len(file.Notes))
+	bodyCache := map[string]string{}
 	for _, note := range file.Notes {
 		ann := note.toAPI()
-		s.attachResolved(basePath, &ann)
+		s.attachResolved(basePath, &ann, bodyCache)
 		out = append(out, ann)
 	}
 
@@ -178,7 +179,7 @@ func (s *Store) CreateNodeAnnotation(ctx context.Context, basePath, nodePath str
 		return NodeAnnotation{}, err
 	}
 	ann := note.toAPI()
-	s.attachResolved(basePath, &ann)
+	s.attachResolved(basePath, &ann, map[string]string{})
 
 	return ann, nil
 }
@@ -217,7 +218,7 @@ func (s *Store) UpdateNodeAnnotation(ctx context.Context, basePath, nodePath, id
 		return NodeAnnotation{}, err
 	}
 	ann := note.toAPI()
-	s.attachResolved(basePath, &ann)
+	s.attachResolved(basePath, &ann, map[string]string{})
 
 	return ann, nil
 }
@@ -382,16 +383,22 @@ func trimContext(s string) string {
 	return s
 }
 
-func (s *Store) attachResolved(basePath string, ann *NodeAnnotation) {
+func (s *Store) attachResolved(basePath string, ann *NodeAnnotation, bodyCache map[string]string) {
 	if ann == nil || ann.Anchor == nil {
 		return
 	}
-	content, err := s.nodeBodyForPath(basePath, ann.Anchor.ContentPath)
-	if err != nil {
-		resolved := false
-		ann.Resolved = &resolved
+	contentPath := ann.Anchor.ContentPath
+	content, ok := bodyCache[contentPath]
+	if !ok {
+		var err error
+		content, err = s.nodeBodyForPath(basePath, contentPath)
+		if err != nil {
+			resolved := false
+			ann.Resolved = &resolved
 
-		return
+			return
+		}
+		bodyCache[contentPath] = content
 	}
 	resolved := resolveTextQuote(content, ann.Anchor)
 	ann.Resolved = &resolved
@@ -406,83 +413,4 @@ func (s *Store) nodeBodyForPath(basePath, nodePath string) (string, error) {
 	_ = meta
 
 	return content, nil
-}
-
-func resolveTextQuote(content string, anchor *AnnotationAnchor) bool {
-	if anchor == nil || anchor.Exact == "" {
-		return false
-	}
-	candidates := []string{content, collapseWhitespace(content)}
-	for _, text := range candidates {
-		if resolveInText(text, anchor) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func resolveInText(text string, anchor *AnnotationAnchor) bool {
-	exact := anchor.Exact
-	if !strings.Contains(text, exact) {
-		return false
-	}
-	if anchor.Prefix == "" && anchor.Suffix == "" {
-		return true
-	}
-	start := 0
-	for {
-		idx := strings.Index(text[start:], exact)
-		if idx < 0 {
-			return false
-		}
-		pos := start + idx
-		if contextMatches(text, pos, len(exact), anchor.Prefix, anchor.Suffix) {
-			return true
-		}
-		start = pos + 1
-	}
-}
-
-func contextMatches(text string, pos, exactLen int, prefix, suffix string) bool {
-	if prefix != "" {
-		beforeStart := pos - len(prefix)
-		if beforeStart < 0 {
-			return false
-		}
-		if text[beforeStart:pos] != prefix {
-			return false
-		}
-	}
-	if suffix != "" {
-		afterStart := pos + exactLen
-		if afterStart+len(suffix) > len(text) {
-			return false
-		}
-		if text[afterStart:afterStart+len(suffix)] != suffix {
-			return false
-		}
-	}
-
-	return true
-}
-
-func collapseWhitespace(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	space := false
-	for _, r := range s {
-		if unicode.IsSpace(r) {
-			if !space {
-				b.WriteByte(' ')
-				space = true
-			}
-
-			continue
-		}
-		space = false
-		b.WriteRune(r)
-	}
-
-	return b.String()
 }

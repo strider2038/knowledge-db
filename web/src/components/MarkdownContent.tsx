@@ -22,7 +22,11 @@ interface MarkdownContentProps {
    */
   nodePath?: string
   className?: string
+  blockClassName?: (text: string) => string | undefined
+  blockPrefix?: (text: string) => React.ReactNode
+  /** @deprecated Use blockClassName */
   paragraphClassName?: (text: string) => string | undefined
+  /** @deprecated Use blockPrefix */
   paragraphPrefix?: (text: string) => React.ReactNode
 }
 
@@ -75,9 +79,29 @@ export function MarkdownContent({
   content,
   nodePath,
   className,
+  blockClassName,
+  blockPrefix,
   paragraphClassName,
   paragraphPrefix,
 }: MarkdownContentProps) {
+  const resolveClassName = blockClassName ?? paragraphClassName
+  const resolvePrefix = blockPrefix ?? paragraphPrefix
+
+  const renderTextBlock = (
+    Tag: 'p' | 'li' | 'blockquote' | 'h1' | 'h2' | 'h3' | 'h4',
+    { children, className: blockCls, ...props }: React.HTMLAttributes<HTMLElement>
+  ) => {
+    const text = flattenMarkdownText(children)
+    const extra = resolveClassName?.(text)
+    const prefix = resolvePrefix?.(text)
+    return (
+      <Tag {...props} className={cn(blockCls, extra)}>
+        {prefix}
+        {children}
+      </Tag>
+    )
+  }
+
   return (
     <div className={className}>
     <ReactMarkdown
@@ -141,17 +165,13 @@ export function MarkdownContent({
             </code>
           )
         },
-        p: ({ children, className, ...props }) => {
-          const text = flattenMarkdownText(children)
-          const extra = paragraphClassName?.(text)
-          const prefix = paragraphPrefix?.(text)
-          return (
-            <p {...props} className={cn(className, extra)}>
-              {prefix}
-              {children}
-            </p>
-          )
-        },
+        p: (props) => renderTextBlock('p', props),
+        li: (props) => renderTextBlock('li', props),
+        blockquote: (props) => renderTextBlock('blockquote', props),
+        h1: (props) => renderTextBlock('h1', props),
+        h2: (props) => renderTextBlock('h2', props),
+        h3: (props) => renderTextBlock('h3', props),
+        h4: (props) => renderTextBlock('h4', props),
       }}
     >
       {content}

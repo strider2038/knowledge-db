@@ -228,6 +228,43 @@ Body`,
 	notes, err := store.ListNodeAnnotations(ctx, base, "new/node")
 	require.NoError(t, err)
 	require.Len(t, notes, 1)
+	assert.Equal(t, "keep", notes[0].Body)
+}
+
+func TestMoveNode_WhenAnchored_ExpectResolvedAfterMove(t *testing.T) {
+	t.Parallel()
+	store, base := seedMemFS(map[string]string{
+		"old/node.md": `---
+keywords: [a]
+created: "2024-01-01T00:00:00Z"
+updated: "2024-01-01T00:00:00Z"
+type: note
+title: Node
+---
+
+exactly-once delivery works`,
+	})
+	ctx := context.Background()
+	_, err := store.CreateNodeAnnotation(ctx, base, "old/node", kb.CreateAnnotationParams{
+		Body: "Check this",
+		Anchor: &kb.AnnotationAnchor{
+			Type:        "text_quote",
+			ContentPath: "old/node",
+			Exact:       "exactly-once delivery",
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = store.MoveNode(ctx, base, "old/node", "new/node")
+	require.NoError(t, err)
+
+	notes, err := store.ListNodeAnnotations(ctx, base, "new/node")
+	require.NoError(t, err)
+	require.Len(t, notes, 1)
+	require.NotNil(t, notes[0].Anchor)
+	assert.Equal(t, "new/node", notes[0].Anchor.ContentPath)
+	require.NotNil(t, notes[0].Resolved)
+	assert.True(t, *notes[0].Resolved)
 }
 
 func TestDeleteNode_WhenHasAnnotations_ExpectRemoved(t *testing.T) {

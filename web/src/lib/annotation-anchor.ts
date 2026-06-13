@@ -1,72 +1,54 @@
 import type { NodeAnnotation } from '@/services/api'
 
-export function annotationsBasePath(nodePath: string): string {
-  if (!nodePath.includes('.')) return nodePath
-  return nodePath.replace(/\.[a-z]{2}$/, '')
-}
-
-export function isResolvedInContent(
-  content: string,
-  anchor: NonNullable<NodeAnnotation['anchor']>
-): boolean {
-  if (!anchor.exact) return false
-  const candidates = [content, collapseWhitespace(content)]
-  return candidates.some((text) => matchAnchorInText(text, anchor))
-}
-
-function matchAnchorInText(
-  text: string,
-  anchor: NonNullable<NodeAnnotation['anchor']>
-): boolean {
-  const exact = anchor.exact
-  if (!text.includes(exact)) return false
-  if (!anchor.prefix && !anchor.suffix) return true
-  let start = 0
-  while (start < text.length) {
-    const idx = text.indexOf(exact, start)
-    if (idx < 0) return false
-    if (contextMatches(text, idx, exact.length, anchor.prefix ?? '', anchor.suffix ?? '')) {
-      return true
+/** Plain-text view of markdown for anchor matching (mirrors server resolve). */
+export function markdownPlainText(content: string): string {
+  const withoutCode = content.replace(/```[\s\S]*?```/g, ' ')
+  const lines = withoutCode.split('\n')
+  const out: string[] = []
+  for (const line of lines) {
+    const heading = line.match(/^(#{1,6})\s+(.+)$/)
+    if (heading) {
+      out.push(stripInlineMarkdown(heading[2]))
+      continue
     }
-    start = idx + 1
+    out.push(stripInlineMarkdown(line))
   }
-  return false
+  return collapseWhitespace(out.join('\n'))
 }
 
-function contextMatches(
-  text: string,
-  pos: number,
-  exactLen: number,
-  prefix: string,
-  suffix: string
-): boolean {
-  if (prefix) {
-    const beforeStart = pos - prefix.length
-    if (beforeStart < 0 || text.slice(beforeStart, pos) !== prefix) return false
-  }
-  if (suffix) {
-    const afterStart = pos + exactLen
-    if (afterStart + suffix.length > text.length) return false
-    if (text.slice(afterStart, afterStart + suffix.length) !== suffix) return false
-  }
-  return true
+function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/`(.+?)`/g, '$1')
+    .replace(/\[(.+?)\]\([^)]+\)/g, '$1')
+    .trim()
 }
 
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+export function annotationsBasePath(nodePath: string): string {
+  if (!nodePath.includes('.')) return nodePath
+  return nodePath.replace(/\.[a-z]{2}$/, '')
+}
+
 export function buildAnchorFromSelection(
   contentPath: string,
   content: string,
-  exact: string
+  exact: string,
+  headingId?: string
 ): NonNullable<NodeAnnotation['anchor']> {
-  const idx = content.indexOf(exact)
+  const plain = markdownPlainText(content)
+  const idx = plain.indexOf(exact)
   let prefix = ''
   let suffix = ''
   if (idx >= 0) {
-    prefix = content.slice(Math.max(0, idx - 80), idx)
-    suffix = content.slice(idx + exact.length, idx + exact.length + 80)
+    prefix = plain.slice(Math.max(0, idx - 80), idx)
+    suffix = plain.slice(idx + exact.length, idx + exact.length + 80)
   }
   return {
     type: 'text_quote',
@@ -74,13 +56,30 @@ export function buildAnchorFromSelection(
     exact,
     prefix,
     suffix,
+    ...(headingId ? { heading_id: headingId } : {}),
   }
+}
+
+export function findHeadingIdForSelection(
+  root: HTMLElement,
+  range: Range
+): string | undefined {
+  const headings = root.querySelectorAll('h1[id],h2[id],h3[id],h4[id],h5[id],h6[id]')
+  const selectionTop = range.getBoundingClientRect().top
+  let lastId: string | undefined
+  headings.forEach((heading) => {
+    if (heading.getBoundingClientRect().top <= selectionTop + 4) {
+      lastId = heading.id
+    }
+  })
+  return lastId
 }
 
 export function sortAnnotations(
   notes: NodeAnnotation[],
   content: string
 ): NodeAnnotation[] {
+  const plain = markdownPlainText(content)
   const anchored: { note: NodeAnnotation; pos: number }[] = []
   const general: NodeAnnotation[] = []
   for (const note of notes) {
@@ -88,7 +87,7 @@ export function sortAnnotations(
       general.push(note)
       continue
     }
-    const pos = content.indexOf(note.anchor.exact)
+    const pos = plain.indexOf(note.anchor.exact)
     anchored.push({ note, pos: pos >= 0 ? pos : Number.MAX_SAFE_INTEGER })
   }
   anchored.sort((a, b) => a.pos - b.pos)
@@ -119,4 +118,8 @@ export function scrollToTextQuote(
     }
   }
   return false
+}
+
+export function isResolvedAnnotation(note: NodeAnnotation): boolean {
+  return note.resolved === true && !!note.anchor
 }

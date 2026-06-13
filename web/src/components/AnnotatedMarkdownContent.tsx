@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button'
 import { MarkdownContent } from '@/components/MarkdownContent'
 import {
   buildAnchorFromSelection,
-  isResolvedInContent,
+  findHeadingIdForSelection,
+  isResolvedAnnotation,
 } from '@/lib/annotation-anchor'
 import type { NodeAnnotation, NodeAnnotationAnchor } from '@/services/api'
 import { cn } from '@/lib/utils'
@@ -40,10 +41,7 @@ export function AnnotatedMarkdownContent({
   const [selectionText, setSelectionText] = useState('')
   const [toolbarPos, setToolbarPos] = useState<{ top: number; left: number } | null>(null)
 
-  const anchoredNotes = notes.filter(
-    (note): note is NodeAnnotation & { anchor: NodeAnnotationAnchor } =>
-      !!note.anchor && isResolvedInContent(content, note.anchor)
-  )
+  const anchoredNotes = notes.filter(isResolvedAnnotation)
 
   const handleMouseUp = useCallback(() => {
     const sel = window.getSelection()
@@ -69,8 +67,11 @@ export function AnnotatedMarkdownContent({
   }, [rootRef])
 
   const handleCreateFromSelection = () => {
-    if (!selectionText) return
-    const anchor = buildAnchorFromSelection(contentPath, content, selectionText)
+    if (!selectionText || !rootRef.current) return
+    const sel = window.getSelection()
+    const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+    const headingId = range ? findHeadingIdForSelection(rootRef.current, range) : undefined
+    const anchor = buildAnchorFromSelection(contentPath, content, selectionText, headingId)
     if (reanchorNoteId && onReanchorNote) {
       onReanchorNote(reanchorNoteId, anchor)
     } else {
@@ -81,7 +82,7 @@ export function AnnotatedMarkdownContent({
     window.getSelection()?.removeAllRanges()
   }
 
-  const paragraphPrefix = useCallback(
+  const blockPrefix = useCallback(
     (text: string) => {
       const markers = anchoredNotes.filter(
         (note) => note.anchor && text.includes(note.anchor.exact)
@@ -109,6 +110,14 @@ export function AnnotatedMarkdownContent({
     [anchoredNotes, onMarkerClick, selectedNoteId]
   )
 
+  const blockClassName = useCallback(
+    (text: string) =>
+      anchoredNotes.some((note) => note.anchor && text.includes(note.anchor.exact))
+        ? 'scroll-mt-24'
+        : undefined,
+    [anchoredNotes]
+  )
+
   return (
     <div ref={rootRef} className="relative" onMouseUp={handleMouseUp}>
       {toolbarPos && selectionText ? (
@@ -125,12 +134,8 @@ export function AnnotatedMarkdownContent({
         content={content}
         nodePath={nodePath}
         className={className}
-        paragraphClassName={(text) =>
-          anchoredNotes.some((note) => note.anchor && text.includes(note.anchor.exact))
-            ? 'scroll-mt-24'
-            : undefined
-        }
-        paragraphPrefix={paragraphPrefix}
+        blockClassName={blockClassName}
+        blockPrefix={blockPrefix}
       />
     </div>
   )

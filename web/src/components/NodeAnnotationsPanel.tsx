@@ -26,7 +26,7 @@ export interface NodeAnnotationsPanelProps {
   error: string | null
   selectedNoteId: string | null
   pendingAnchor: NodeAnnotationAnchor | null
-  onNotesChange: (notes: NodeAnnotation[]) => void
+  onNotesChange: (notes: NodeAnnotation[] | ((prev: NodeAnnotation[]) => NodeAnnotation[])) => void
   onError: (message: string | null) => void
   onSelectNote: (id: string | null) => void
   onClearPendingAnchor: () => void
@@ -42,6 +42,94 @@ function formatAnnotationDate(value: string): string {
   } catch {
     return value
   }
+}
+
+function NoteEditor({
+  note,
+  selected,
+  saving,
+  onSelect,
+  onSave,
+  onDelete,
+  onJumpToAnchor,
+  onReanchorRequest,
+}: {
+  note: NodeAnnotation
+  selected: boolean
+  saving: boolean
+  onSelect: () => void
+  onSave: (body: string) => Promise<void>
+  onDelete: () => void
+  onJumpToAnchor: (anchor: NodeAnnotationAnchor) => void
+  onReanchorRequest?: () => void
+}) {
+  const [body, setBody] = useState(note.body)
+  const debouncedBody = useDebounce(body, 500)
+
+  useEffect(() => {
+    if (debouncedBody === note.body) return
+    void onSave(debouncedBody)
+  }, [debouncedBody, note.body, onSave])
+
+  return (
+    <article
+      className={cn(
+        'rounded-lg border bg-card p-3 shadow-sm transition-colors',
+        selected && 'border-primary'
+      )}
+    >
+      {note.anchor ? (
+        <div className="mb-2 space-y-1">
+          <button
+            type="button"
+            className="line-clamp-2 text-left text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => onJumpToAnchor(note.anchor!)}
+          >
+            «{note.anchor.exact}»
+          </button>
+          {note.resolved === false ? (
+            <div className="space-y-1">
+              <p className="text-xs text-amber-700 dark:text-amber-300">Привязка устарела</p>
+              {onReanchorRequest ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={onReanchorRequest}
+                >
+                  Перепривязать
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <textarea
+        value={body}
+        onFocus={onSelect}
+        onChange={(e) => setBody(e.target.value)}
+        rows={4}
+        className="w-full resize-y rounded-md border bg-background px-2 py-1.5 text-sm"
+      />
+      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span>{formatAnnotationDate(note.updated)}</span>
+        <div className="flex items-center gap-2">
+          {saving ? <span>Сохранение...</span> : null}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            aria-label="Удалить заметку"
+            onClick={onDelete}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      </div>
+    </article>
+  )
 }
 
 export function NodeAnnotationsPanel({
@@ -89,7 +177,7 @@ export function NodeAnnotationsPanel({
           anchor: draft.anchor,
         })
         if (cancelled) return
-        onNotesChange([...notes, created])
+        onNotesChange((prev) => [...prev, created])
         setDraft(null)
         onSelectNote(created.id)
       } catch (err) {
@@ -104,7 +192,7 @@ export function NodeAnnotationsPanel({
     return () => {
       cancelled = true
     }
-  }, [basePath, debouncedDraftBody, draft, notes, onError, onNotesChange, onSelectNote, savingId])
+  }, [basePath, debouncedDraftBody, draft, onError, onNotesChange, onSelectNote, savingId])
 
   const saveExistingNote = async (note: NodeAnnotation, body: string) => {
     if (body === note.body) return
@@ -112,7 +200,7 @@ export function NodeAnnotationsPanel({
     onError(null)
     try {
       const updated = await updateNodeAnnotation(basePath, note.id, { body })
-      onNotesChange(notes.map((item) => (item.id === updated.id ? updated : item)))
+      onNotesChange((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Не удалось сохранить заметку')
     } finally {
@@ -124,7 +212,7 @@ export function NodeAnnotationsPanel({
     onError(null)
     try {
       await deleteNodeAnnotation(basePath, note.id)
-      onNotesChange(notes.filter((item) => item.id !== note.id))
+      onNotesChange((prev) => prev.filter((item) => item.id !== note.id))
       if (selectedNoteId === note.id) onSelectNote(null)
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Не удалось удалить заметку')
@@ -184,66 +272,21 @@ export function NodeAnnotationsPanel({
           <p className="text-sm text-muted-foreground">Пока нет заметок.</p>
         ) : null}
         {sortedNotes.map((note) => (
-          <article
+          <NoteEditor
             key={note.id}
-            className={cn(
-              'rounded-lg border bg-card p-3 shadow-sm transition-colors',
-              selectedNoteId === note.id && 'border-primary'
-            )}
-          >
-            {note.anchor ? (
-              <div className="mb-2 space-y-1">
-                <button
-                  type="button"
-                  className="line-clamp-2 text-left text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => onJumpToAnchor(note.anchor!)}
-                >
-                  «{note.anchor.exact}»
-                </button>
-                {note.resolved === false ? (
-                  <div className="space-y-1">
-                    <p className="text-xs text-amber-700 dark:text-amber-300">
-                      Привязка устарела
-                    </p>
-                    {onReanchorRequest ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => onReanchorRequest(note.id)}
-                      >
-                        Перепривязать
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            <textarea
-              defaultValue={note.body}
-              onFocus={() => onSelectNote(note.id)}
-              onBlur={(e) => void saveExistingNote(note, e.target.value)}
-              rows={4}
-              className="w-full resize-y rounded-md border bg-background px-2 py-1.5 text-sm"
-            />
-            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>{formatAnnotationDate(note.updated)}</span>
-              <div className="flex items-center gap-2">
-                {savingId === note.id ? <span>Сохранение...</span> : null}
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7"
-                  aria-label="Удалить заметку"
-                  onClick={() => void handleDelete(note)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-          </article>
+            note={note}
+            selected={selectedNoteId === note.id}
+            saving={savingId === note.id}
+            onSelect={() => onSelectNote(note.id)}
+            onSave={(body) => saveExistingNote(note, body)}
+            onDelete={() => void handleDelete(note)}
+            onJumpToAnchor={onJumpToAnchor}
+            onReanchorRequest={
+              onReanchorRequest && note.resolved === false
+                ? () => onReanchorRequest(note.id)
+                : undefined
+            }
+          />
         ))}
       </div>
     </div>

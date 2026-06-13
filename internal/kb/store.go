@@ -706,6 +706,10 @@ func (s *Store) MoveNode(ctx context.Context, basePath, nodePath, targetPath str
 		}
 	}
 
+	if err := s.rewriteAnnotationContentPathsAfterMove(basePath, nodePath, targetPath); err != nil {
+		return nil, errors.Errorf("move node: rewrite annotations: %w", err)
+	}
+
 	meta, annotation, content, err := parseNodeFile(s.fs, dstStem)
 	if err != nil {
 		return nil, errors.Errorf("move node: read moved node: %w", err)
