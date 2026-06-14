@@ -7,7 +7,12 @@ const POLL_INTERVAL = 30_000
 export function GitStatusProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = React.useState<GitStatusResponse | null>(null)
   const [loading, setLoading] = React.useState(false)
+  const [dataRevision, setDataRevision] = React.useState(0)
   const intervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const bumpDataRevision = React.useCallback(() => {
+    setDataRevision((n) => n + 1)
+  }, [])
 
   const refresh = React.useCallback(async () => {
     try {
@@ -29,8 +34,8 @@ export function GitStatusProvider({ children }: { children: React.ReactNode }) {
   }, [refresh])
 
   const value = React.useMemo(
-    () => ({ status, loading, refresh }),
-    [status, loading, refresh],
+    () => ({ status, loading, dataRevision, refresh, bumpDataRevision }),
+    [status, loading, dataRevision, refresh, bumpDataRevision],
   )
 
   return <GitStatusContext.Provider value={value}>{children}</GitStatusContext.Provider>

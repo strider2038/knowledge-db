@@ -30,7 +30,7 @@ function navLinkClass(active: boolean) {
 export function Navbar() {
   const location = useLocation()
   const { authenticated, authEnabled, refresh } = useAuth()
-  const { status: gitStatus, refresh: refreshGit } = useGitStatus()
+  const { status: gitStatus, refresh: refreshGit, bumpDataRevision } = useGitStatus()
   const [committing, setCommitting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [chatAvailable, setChatAvailable] = useState(false)
@@ -95,6 +95,7 @@ export function Navbar() {
         description: result.message,
       })
       await refreshGit()
+      bumpDataRevision()
     } catch (err) {
       toast({
         variant: 'destructive',

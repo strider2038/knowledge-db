@@ -5,6 +5,7 @@ import { describe, expect, it, vi, beforeEach, type MockedFunction } from 'vites
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { GitStatusProvider } from '@/hooks/useGitStatus'
 import { OverviewPage } from './OverviewPage'
 import type { GetNodesParams, NodeListItem } from '../services/api'
 
@@ -34,17 +35,20 @@ vi.mock('../services/api', () => ({
     ],
     total: 1,
   }),
+  getGitStatus: vi.fn().mockResolvedValue({ has_changes: false, changed_files: 0, git_disabled: false }),
 }))
 
 function renderOverview(initialEntry = '/') {
   return render(
-    <TooltipProvider>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <Routes>
-          <Route path="/" element={<OverviewPage />} />
-        </Routes>
-      </MemoryRouter>
-    </TooltipProvider>
+    <GitStatusProvider>
+      <TooltipProvider>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <Routes>
+            <Route path="/" element={<OverviewPage />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>
+    </GitStatusProvider>
   )
 }
 
@@ -80,15 +84,7 @@ describe('OverviewPage', () => {
   })
 
   it('renders node link when at overview with query params', async () => {
-    render(
-      <TooltipProvider>
-        <MemoryRouter initialEntries={['/?path=topic&type=article']}>
-          <Routes>
-            <Route path="/" element={<OverviewPage />} />
-          </Routes>
-        </MemoryRouter>
-      </TooltipProvider>
-    )
+    renderOverview('/?path=topic&type=article')
     const links = await screen.findAllByRole('link', { name: 'Node 1' })
     expect(links[0]).toHaveAttribute('href', '/node/topic/node1')
   })

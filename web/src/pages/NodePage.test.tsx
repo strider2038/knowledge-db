@@ -2,10 +2,11 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { GitStatusProvider } from '@/hooks/useGitStatus'
+import { useGitStatus } from '@/hooks/useGitStatus'
 import { NodePage } from './NodePage'
 
 const { mockNode, mockNavigate, getNode, patchNodeManualProcessed, patchNodeMetadata, getKeywordSuggestions, getLabelSuggestions, startJob, getJobStatus, startNodeNormalization, getNodeNormalizationStatus, getNodeNormalizationLogs, startNodeDumpImages, getNodeDumpImagesStatus, getNodeDumpImagesLogs } = vi.hoisted(() => {
@@ -595,5 +596,47 @@ describe('NodePage', () => {
 
     expect(await screen.findByText('dump failed')).toBeInTheDocument()
     expect(await screen.findByText('Логи выгрузки изображений · error')).toBeInTheDocument()
+  })
+
+  it('reloads node when dataRevision bumps after git sync', async () => {
+    const updatedNode = {
+      ...mockNode,
+      metadata: { ...mockNode.metadata, title: 'Reverted title' },
+    }
+    getNode.mockResolvedValueOnce(mockNode).mockResolvedValue(updatedNode)
+
+    function BumpRevision() {
+      const { bumpDataRevision } = useGitStatus()
+      return (
+        <button type="button" onClick={bumpDataRevision}>
+          sync
+        </button>
+      )
+    }
+
+    render(
+      <GitStatusProvider>
+        <TooltipProvider>
+          <MemoryRouter initialEntries={['/node/programming/scaling/load-balancing']}>
+            <BumpRevision />
+            <Routes>
+              <Route path="/node/*" element={<NodePage />} />
+            </Routes>
+          </MemoryRouter>
+        </TooltipProvider>
+      </GitStatusProvider>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Load Balancing' })).toBeInTheDocument()
+    expect(getNode).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'sync' }))
+    })
+
+    await waitFor(() => {
+      expect(getNode).toHaveBeenCalledTimes(2)
+    })
+    expect(await screen.findByRole('heading', { name: 'Reverted title' })).toBeInTheDocument()
   })
 })
