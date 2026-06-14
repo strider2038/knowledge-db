@@ -14,12 +14,12 @@ func TestIngestTypeAllowsSourceURLDedup(t *testing.T) {
 		nodeType string
 		want     bool
 	}{
-		{name: "article", nodeType: "article", want: true},
 		{name: "link", nodeType: "link", want: true},
+		{name: "article", nodeType: "article", want: false},
 		{name: "note", nodeType: "note", want: false},
 		{name: "empty", nodeType: "", want: false},
 		{name: "whitespace", nodeType: "  ", want: false},
-		{name: "article uppercase", nodeType: "Article", want: true},
+		{name: "link uppercase", nodeType: "Link", want: true},
 	}
 
 	for _, tt := range tests {

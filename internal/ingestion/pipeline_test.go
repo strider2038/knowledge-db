@@ -2,7 +2,6 @@ package ingestion_test
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -431,7 +430,79 @@ func TestPipelineIngester_IngestURL_WhenFetchSuccess_ExpectNodeWithSourceURL(t *
 	assert.Equal(t, "Иван Петров", node.Metadata["source_author"])
 }
 
-func TestPipelineIngester_IngestURL_WhenDuplicateSourceURL_ExpectSameIDAndPath(t *testing.T) {
+func TestPipelineIngester_IngestURL_WhenDuplicateSourceURLLink_ExpectSameIDAndPath(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	linkURL := srv.URL + "/tools/dedup"
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	existing, err := store.CreateNode(ctx, base, kb.CreateNodeParams{
+		ThemePath: "go/tools",
+		Slug:      "runnable",
+		Frontmatter: map[string]any{
+			"keywords":   []string{"go"},
+			"created":    now,
+			"updated":    now,
+			"type":       "link",
+			"title":      "Original Title",
+			"source_url": linkURL,
+		},
+		Content: "# Original\n\nOld bookmark.",
+	})
+	require.NoError(t, err)
+
+	indexStore, err := sqlite.NewStore(context.Background(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = indexStore.Close() })
+	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	normURL := kb.NormalizeSourceURLForDedup(linkURL)
+	require.NoError(t, indexStore.UpsertNode(ctx, existing.ID, existing.Path, "h1", "bh1", embID))
+	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, existing.ID, normURL))
+
+	f := &mockFetcher{
+		result: &fetcher.FetchResult{
+			Title:   "Runnable Updated",
+			Content: "# Runnable\n\nNew bookmark text.",
+		},
+	}
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"go", "tools"},
+			Annotation: "Updated annotation",
+			ThemePath:  "other/theme",
+			Slug:       "other-slug",
+			Type:       "link",
+			Content:    "# Runnable\n\nNew bookmark text.",
+			Title:      "Runnable Updated",
+			SourceURL:  linkURL,
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, f, &mockCommitter{}, base, false, false, nil, nil, nil)
+	pipeline.SetPlacementIndexStore(indexStore)
+
+	result, err := pipeline.IngestURL(ctx, linkURL)
+	require.NoError(t, err)
+	node := result.Node
+	assert.Equal(t, existing.ID, node.ID)
+	assert.Equal(t, existing.Path, node.Path)
+	assert.Equal(t, "Updated annotation", node.Annotation)
+
+	all, err := store.ListAllNodes(ctx, base)
+	require.NoError(t, err)
+	assert.Len(t, all, 1)
+}
+
+func TestPipelineIngester_IngestURL_WhenDuplicateSourceURLArticle_ExpectNewNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	fs := afero.NewMemMapFs()
@@ -466,9 +537,8 @@ func TestPipelineIngester_IngestURL_WhenDuplicateSourceURL_ExpectSameIDAndPath(t
 	t.Cleanup(func() { _ = indexStore.Close() })
 	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")
 	require.NoError(t, err)
-	normURL := kb.NormalizeSourceURLForDedup(articleURL)
 	require.NoError(t, indexStore.UpsertNode(ctx, existing.ID, existing.Path, "h1", "bh1", embID))
-	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, existing.ID, normURL))
+	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, existing.ID, kb.NormalizeSourceURLForDedup(articleURL)))
 
 	f := &mockFetcher{
 		result: &fetcher.FetchResult{
@@ -493,14 +563,15 @@ func TestPipelineIngester_IngestURL_WhenDuplicateSourceURL_ExpectSameIDAndPath(t
 
 	result, err := pipeline.IngestURL(ctx, articleURL)
 	require.NoError(t, err)
-	node := result.Node
-	assert.Equal(t, existing.ID, node.ID)
-	assert.Equal(t, existing.Path, node.Path)
-	assert.Equal(t, "Updated annotation", node.Annotation)
+	assert.NotEqual(t, existing.ID, result.Node.ID)
+
+	unchanged, err := store.GetNodeFile(ctx, base, existing.Path)
+	require.NoError(t, err)
+	assert.Equal(t, "# Original\n\nOld body.", unchanged.Content)
 
 	all, err := store.ListAllNodes(ctx, base)
 	require.NoError(t, err)
-	assert.Len(t, all, 1)
+	assert.Len(t, all, 2)
 }
 
 func TestPipelineIngester_IngestText_WhenNoteWithDuplicateSourceURL_ExpectNewNode(t *testing.T) {
@@ -542,8 +613,8 @@ func TestPipelineIngester_IngestText_WhenNoteWithDuplicateSourceURL_ExpectNewNod
 			Annotation: "Аудит taste-skill и impeccable",
 			ThemePath:  "ai/agentic-coding",
 			Slug:       "audit-taste-skill-impeccable",
-			Type:       "note",
-			Content:    "# Аудит\n\nНовая заметка про оба скилла.",
+			Type:       "article",
+			Content:    "# Аудит\n\nНовая статья про оба скилла.",
 			Title:      "Аудит сторонних agent skills",
 			SourceURL:  repoURL,
 		},
@@ -565,6 +636,67 @@ func TestPipelineIngester_IngestText_WhenNoteWithDuplicateSourceURL_ExpectNewNod
 	all, err := store.ListAllNodes(ctx, base)
 	require.NoError(t, err)
 	assert.Len(t, all, 2)
+}
+
+func TestPipelineIngester_IngestText_WhenLinkWithDuplicateSourceURL_ExpectSameIDAndPath(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	repoURL := "https://github.com/Leonxlnx/taste-skill"
+	now := time.Now().UTC().Format(time.RFC3339)
+	existing, err := store.CreateNode(ctx, base, kb.CreateNodeParams{
+		ThemePath: "ai/agentic-coding",
+		Slug:      "taste-skill",
+		Frontmatter: map[string]any{
+			"keywords":   []string{"skills", "ui"},
+			"created":    now,
+			"updated":    now,
+			"type":       "link",
+			"title":      "taste-skill",
+			"source_url": repoURL,
+		},
+		Content: "# taste-skill\n\nOriginal bookmark body.",
+	})
+	require.NoError(t, err)
+
+	indexStore, err := sqlite.NewStore(context.Background(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = indexStore.Close() })
+	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, indexStore.UpsertNode(ctx, existing.ID, existing.Path, "h1", "bh1", embID))
+	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, existing.ID, kb.NormalizeSourceURLForDedup(repoURL)))
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"skills", "ui"},
+			Annotation: "Updated bookmark",
+			ThemePath:  "other/theme",
+			Slug:       "other-slug",
+			Type:       "link",
+			Content:    "# taste-skill\n\nUpdated bookmark body.",
+			Title:      "taste-skill",
+			SourceURL:  repoURL,
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+	pipeline.SetPlacementIndexStore(indexStore)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text: repoURL,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, existing.ID, result.Node.ID)
+	assert.Equal(t, existing.Path, result.Node.Path)
+	assert.Equal(t, "Updated bookmark", result.Node.Annotation)
+
+	all, err := store.ListAllNodes(ctx, base)
+	require.NoError(t, err)
+	assert.Len(t, all, 1)
 }
 
 func TestPipelineIngester_IngestText_WhenStaleIndexSourceURL_ExpectNewNodeCreated(t *testing.T) {
@@ -611,9 +743,6 @@ func TestPipelineIngester_IngestText_WhenStaleIndexSourceURL_ExpectNewNodeCreate
 	all, err := store.ListAllNodes(ctx, base)
 	require.NoError(t, err)
 	assert.Len(t, all, 1)
-
-	_, err = indexStore.FindBySourceURL(ctx, kb.NormalizeSourceURLForDedup(articleURL))
-	assert.ErrorIs(t, err, sql.ErrNoRows)
 }
 
 func TestPipelineIngester_IngestText_WhenNodeIDSet_ExpectUpdateExisting(t *testing.T) {

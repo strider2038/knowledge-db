@@ -18,12 +18,7 @@ import (
 var errNoExistingNodeForIngest = errors.New("no existing node for ingest dedup")
 
 func ingestTypeAllowsSourceURLDedup(nodeType string) bool {
-	switch strings.ToLower(strings.TrimSpace(nodeType)) {
-	case nodeTypeArticle, nodeTypeLink:
-		return true
-	default:
-		return false
-	}
+	return strings.EqualFold(strings.TrimSpace(nodeType), nodeTypeLink)
 }
 
 func (p *PipelineIngester) resolveExistingNode(ctx context.Context, result *llm.ProcessResult) (*kb.NodeFile, error) {

@@ -28,17 +28,22 @@ TBD - created by archiving change add-node-uuid-v7. Update Purpose after archive
 
 ### Requirement: Дедупликация ingestion по source_url и id
 
-При сохранении результата ingestion система MUST применять порядок: (1) если передан существующий `node_id` — обновить узел с этим id; (2) иначе если нормализованный `source_url` непустой, результат имеет `type` равный `article` или `link`, и в индексе/хранилище есть узел с этим url — обновить найденный узел, сохранив его `id`; (3) иначе — создать новый узел с новым id. Для `type: note` (и при пустом `type`) система MUST NOT выполнять автоматический lookup и update по `source_url`. При update система MUST NOT создавать второй файл для того же `source_url`.
+При сохранении результата ingestion система MUST применять порядок: (1) если передан существующий `node_id` — обновить узел с этим id; (2) иначе если результат имеет `type: link`, нормализованный `source_url` непустой и в индексе/хранилище есть узел с этим url — обновить найденный узел, сохранив его `id`; (3) иначе — создать новый узел с новым id. Для `type: article` и `type: note` (и при пустом `type`) система MUST NOT выполнять автоматический lookup и update по `source_url`. При update система MUST NOT создавать второй файл для того же `source_url`.
 
-#### Scenario: Повторный ingest той же статьи по URL
+#### Scenario: Повторный ingest той же ссылки по URL
 
-- **WHEN** ingestion обрабатывает материал с `type: article` или `type: link`, для которого уже существует узел с тем же нормализованным `source_url`
+- **WHEN** ingestion обрабатывает материал с `type: link`, для которого уже существует узел с тем же нормализованным `source_url`
 - **THEN** обновляется существующий markdown-файл и frontmatter, `id` не меняется, новый файл не создаётся
 
-#### Scenario: Первый ingest URL без существующего узла
+#### Scenario: Первый ingest ссылки без существующего узла
 
-- **WHEN** ingestion обрабатывает материал с `type: article` или `type: link`, для которого нет узла с таким `source_url`
+- **WHEN** ingestion обрабатывает материал с `type: link`, для которого нет узла с таким `source_url`
 - **THEN** создаётся новый узел с новым `id` и записанным `source_url`
+
+#### Scenario: Ingest статьи с source_url, совпадающим с существующим узлом
+
+- **WHEN** ingestion обрабатывает материал с `type: article` и непустым `source_url`, для которого в индексе уже есть узел с тем же нормализованным `source_url`
+- **THEN** создаётся новый узел с новым `id`; существующий узел MUST NOT изменяться
 
 #### Scenario: Ingest заметки без URL
 
