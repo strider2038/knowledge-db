@@ -32,6 +32,7 @@ import {
 } from '@/lib/type-styles'
 import { getLabelChipClass } from '@/lib/label-styles'
 import { OverviewFilters } from '@/components/OverviewFilters'
+import { useGitStatus } from '@/hooks/useGitStatus'
 import {
   Sheet,
   SheetContent,
@@ -71,6 +72,7 @@ function filterTreeByNodePaths(
 
 export function OverviewPage() {
   const location = useLocation()
+  const { dataRevision } = useGitStatus()
   const [searchParams, setSearchParams] = useSearchParams()
   const path = searchParams.get('path') ?? ''
   const typeFilter = searchParams.get('type')?.split(',').filter(Boolean) ?? []
@@ -131,7 +133,7 @@ export function OverviewPage() {
       .then(setTree)
       .catch((err) => setError(err instanceof Error ? err.message : 'Ошибка'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [dataRevision])
 
   useEffect(() => {
     getLabelSuggestions()
@@ -191,6 +193,7 @@ export function OverviewPage() {
     page,
     sort,
     order,
+    dataRevision,
   ])
 
   // При включённом фильтре по типу или ручной проверке — загружаем пути по всей базе (path="") для фильтрации дерева.
@@ -226,7 +229,7 @@ export function OverviewPage() {
     return () => {
       cancelled = true
     }
-  }, [typeFilterStr, typeFilter.length, manualProcessedFilter, labelFilter])
+  }, [typeFilterStr, typeFilter.length, manualProcessedFilter, labelFilter, dataRevision])
 
   const addLabelFilter = useCallback(
     (raw: string) => {

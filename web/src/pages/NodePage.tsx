@@ -52,7 +52,7 @@ const markdownContentClass = cn(
 export function NodePage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { refresh: refreshGitStatus } = useGitStatus()
+  const { refresh: refreshGitStatus, dataRevision } = useGitStatus()
   const path = location.pathname.replace(/^\/node\/?/, '')
   const [node, setNode] = useState<Node | null>(null)
   const [originalNode, setOriginalNode] = useState<Node | null>(null)
@@ -73,7 +73,7 @@ export function NodePage() {
       .then(setNode)
       .catch((err) => setError(err instanceof Error ? err.message : 'Ошибка'))
       .finally(() => setLoading(false))
-  }, [path])
+  }, [path, dataRevision])
 
   useEffect(() => {
     if (!isTranslation || !basePath) {
@@ -83,7 +83,7 @@ export function NodePage() {
     getNode(basePath)
       .then(setOriginalNode)
       .catch(() => setOriginalNode(null))
-  }, [isTranslation, basePath])
+  }, [isTranslation, basePath, dataRevision])
 
   const handleManualProcessedToggle = async (next: boolean) => {
     if (!node) return
