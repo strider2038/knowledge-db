@@ -17,6 +17,15 @@ import (
 
 var errNoExistingNodeForIngest = errors.New("no existing node for ingest dedup")
 
+func ingestTypeAllowsSourceURLDedup(nodeType string) bool {
+	switch strings.ToLower(strings.TrimSpace(nodeType)) {
+	case nodeTypeArticle, nodeTypeLink:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *PipelineIngester) resolveExistingNode(ctx context.Context, result *llm.ProcessResult) (*kb.NodeFile, error) {
 	if nodeID := strings.TrimSpace(result.NodeID); nodeID != "" {
 		node, err := p.store.GetNodeByID(ctx, p.basePath, nodeID)
@@ -35,6 +44,12 @@ func (p *PipelineIngester) resolveExistingNode(ctx context.Context, result *llm.
 	}
 	sourceURL := strings.TrimSpace(result.SourceURL)
 	if sourceURL == "" {
+		return nil, errNoExistingNodeForIngest
+	}
+	if !ingestTypeAllowsSourceURLDedup(result.Type) {
+		clog.Info(ctx, "ingest: skip source_url dedup for content type",
+			"type", result.Type, "source_url", sourceURL)
+
 		return nil, errNoExistingNodeForIngest
 	}
 	norm := kb.NormalizeSourceURLForDedup(sourceURL)
