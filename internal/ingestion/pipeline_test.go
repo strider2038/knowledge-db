@@ -2,7 +2,6 @@ package ingestion_test
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -567,6 +566,69 @@ func TestPipelineIngester_IngestText_WhenNoteWithDuplicateSourceURL_ExpectNewNod
 	assert.Len(t, all, 2)
 }
 
+func TestPipelineIngester_IngestText_WhenLinkWithDuplicateSourceURL_ExpectNewNode(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	repoURL := "https://github.com/Leonxlnx/taste-skill"
+	now := time.Now().UTC().Format(time.RFC3339)
+	existing, err := store.CreateNode(ctx, base, kb.CreateNodeParams{
+		ThemePath: "ai/agentic-coding",
+		Slug:      "taste-skill",
+		Frontmatter: map[string]any{
+			"keywords":   []string{"skills", "ui"},
+			"created":    now,
+			"updated":    now,
+			"type":       "link",
+			"title":      "taste-skill",
+			"source_url": repoURL,
+		},
+		Content: "# taste-skill\n\nOriginal bookmark body.",
+	})
+	require.NoError(t, err)
+
+	indexStore, err := sqlite.NewStore(context.Background(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = indexStore.Close() })
+	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")
+	require.NoError(t, err)
+	require.NoError(t, indexStore.UpsertNode(ctx, existing.ID, existing.Path, "h1", "bh1", embID))
+	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, existing.ID, kb.NormalizeSourceURLForDedup(repoURL)))
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:   []string{"audit", "skills"},
+			Annotation: "Аудит taste-skill и impeccable",
+			ThemePath:  "ai/agentic-coding",
+			Slug:       "audit-taste-skill-impeccable",
+			Type:       "link",
+			Content:    "# Аудит\n\nНовая заметка про оба скилла.",
+			Title:      "Аудит сторонних agent skills",
+			SourceURL:  repoURL,
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+	pipeline.SetPlacementIndexStore(indexStore)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text: "Аудит taste-skill и impeccable " + repoURL,
+	})
+	require.NoError(t, err)
+	assert.NotEqual(t, existing.ID, result.Node.ID)
+
+	unchanged, err := store.GetNodeFile(ctx, base, existing.Path)
+	require.NoError(t, err)
+	assert.Equal(t, "# taste-skill\n\nOriginal bookmark body.", unchanged.Content)
+
+	all, err := store.ListAllNodes(ctx, base)
+	require.NoError(t, err)
+	assert.Len(t, all, 2)
+}
+
 func TestPipelineIngester_IngestText_WhenStaleIndexSourceURL_ExpectNewNodeCreated(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -611,9 +673,6 @@ func TestPipelineIngester_IngestText_WhenStaleIndexSourceURL_ExpectNewNodeCreate
 	all, err := store.ListAllNodes(ctx, base)
 	require.NoError(t, err)
 	assert.Len(t, all, 1)
-
-	_, err = indexStore.FindBySourceURL(ctx, kb.NormalizeSourceURLForDedup(articleURL))
-	assert.ErrorIs(t, err, sql.ErrNoRows)
 }
 
 func TestPipelineIngester_IngestText_WhenNodeIDSet_ExpectUpdateExisting(t *testing.T) {

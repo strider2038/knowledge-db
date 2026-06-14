@@ -120,7 +120,7 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	if id := strings.TrimSpace(req.NodeID); id != "" {
 		result.NodeID = id
 	}
-	node, err := p.saveNode(ctx, result)
+	node, err := p.saveNode(ctx, result, false)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*IngestRe
 	}
 	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds(), "content_mode", resolvedMode)
 
-	node, err := p.saveNode(ctx, result)
+	node, err := p.saveNode(ctx, result, true)
 	if err != nil {
 		return nil, err
 	}
@@ -411,10 +411,10 @@ func (p *PipelineIngester) expandMarkdownURLs(ctx context.Context, s string) str
 	return out
 }
 
-func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResult) (*kb.Node, error) {
+func (p *PipelineIngester) saveNode(ctx context.Context, result *llm.ProcessResult, allowSourceURLDedup bool) (*kb.Node, error) {
 	saveStart := time.Now()
 
-	existing, err := p.resolveExistingNode(ctx, result)
+	existing, err := p.resolveExistingNode(ctx, result, allowSourceURLDedup)
 	if err != nil && !errors.Is(err, errNoExistingNodeForIngest) {
 		return nil, err
 	}

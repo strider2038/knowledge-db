@@ -28,16 +28,16 @@ TBD - created by archiving change add-node-uuid-v7. Update Purpose after archive
 
 ### Requirement: Дедупликация ingestion по source_url и id
 
-При сохранении результата ingestion система MUST применять порядок: (1) если передан существующий `node_id` — обновить узел с этим id; (2) иначе если нормализованный `source_url` непустой, результат имеет `type` равный `article` или `link`, и в индексе/хранилище есть узел с этим url — обновить найденный узел, сохранив его `id`; (3) иначе — создать новый узел с новым id. Для `type: note` (и при пустом `type`) система MUST NOT выполнять автоматический lookup и update по `source_url`. При update система MUST NOT создавать второй файл для того же `source_url`.
+При сохранении результата ingestion система MUST применять порядок: (1) если передан существующий `node_id` — обновить узел с этим id; (2) иначе если вызов выполнен через явный ingest URL (например `IngestURL`), нормализованный `source_url` непустой и в индексе/хранилище есть узел с этим url — обновить найденный узел, сохранив его `id`; (3) иначе — создать новый узел с новым id. Для ingest текста (Telegram, ручное добавление, API `IngestText`) система MUST NOT выполнять автоматический lookup и update по `source_url`, даже если LLM вернул `type: article` или `type: link`. При update система MUST NOT создавать второй файл для того же `source_url`.
 
 #### Scenario: Повторный ingest той же статьи по URL
 
-- **WHEN** ingestion обрабатывает материал с `type: article` или `type: link`, для которого уже существует узел с тем же нормализованным `source_url`
+- **WHEN** ingestion обрабатывает тот же URL через явный ingest URL, для которого уже существует узел с тем же нормализованным `source_url`
 - **THEN** обновляется существующий markdown-файл и frontmatter, `id` не меняется, новый файл не создаётся
 
 #### Scenario: Первый ingest URL без существующего узла
 
-- **WHEN** ingestion обрабатывает материал с `type: article` или `type: link`, для которого нет узла с таким `source_url`
+- **WHEN** ingestion обрабатывает URL через явный ingest URL, для которого нет узла с таким `source_url`
 - **THEN** создаётся новый узел с новым `id` и записанным `source_url`
 
 #### Scenario: Ingest заметки без URL
@@ -45,15 +45,15 @@ TBD - created by archiving change add-node-uuid-v7. Update Purpose after archive
 - **WHEN** ingestion обрабатывает текст без `source_url`
 - **THEN** создаётся новый узел с новым `id` (автодедуп по url не применяется)
 
-#### Scenario: Ingest заметки с source_url, совпадающим с существующим узлом
+#### Scenario: Ingest текста с source_url, совпадающим с существующим узлом
 
-- **WHEN** ingestion обрабатывает материал с `type: note` и непустым `source_url`, для которого в индексе уже есть узел с тем же нормализованным `source_url`
+- **WHEN** ingestion обрабатывает материал через `IngestText` с непустым `source_url` (любой `type`), для которого в индексе уже есть узел с тем же нормализованным `source_url`
 - **THEN** создаётся новый узел с новым `id`; существующий узел MUST NOT изменяться
 
 #### Scenario: Явный update по node_id
 
 - **WHEN** вызывающий код передаёт известный `node_id` существующего узла
-- **THEN** обновляется узел с этим id независимо от `source_url` и `type`
+- **THEN** обновляется узел с этим id независимо от `source_url`, `type` и способа ingest
 
 ### Requirement: Связь перевода через translation_of_id
 
