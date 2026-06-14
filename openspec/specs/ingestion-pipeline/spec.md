@@ -169,7 +169,7 @@ LLM ДОЛЖЕН (SHALL) генерировать метаданные на ру
 
 ### Requirement: Создание узла при ingestion
 
-При успешной обработке система ДОЛЖНА (SHALL) сохранить результат в базе знаний: либо **обновить** существующий узел, либо **создать** новый — по правилам node-identity (lookup по `node_id` если передан, иначе по нормализованному `source_url`, иначе create). При create: директория с файлом `{slug}.md`, frontmatter с метаданными включая новый `id` (UUID v7) и markdown-контент. При update: тот же файл узла (по найденному path), `id` MUST NOT изменяться. После сохранения MUST выполнить git add + commit. Frontmatter MUST содержать поля `title` и `aliases` (если LLM вернул title). Frontmatter MUST содержать `source_author` при наличии в результате create_node.
+При успешной обработке система ДОЛЖНА (SHALL) сохранить результат в базе знаний: либо **обновить** существующий узел, либо **создать** новый — по правилам node-identity (lookup по `node_id` если передан; иначе по нормализованному `source_url` только для `type: article` и `type: link`; иначе create). При create: директория с файлом `{slug}.md`, frontmatter с метаданными включая новый `id` (UUID v7) и markdown-контент. При update: тот же файл узла (по найденному path), `id` MUST NOT изменяться. После сохранения MUST выполнить git add + commit. Frontmatter MUST содержать поля `title` и `aliases` (если LLM вернул title). Frontmatter MUST содержать `source_author` при наличии в результате create_node.
 
 #### Сценарий: Создание узла для статьи
 
@@ -185,6 +185,11 @@ LLM ДОЛЖЕН (SHALL) генерировать метаданные на ру
 
 - **WHEN** pipeline обработал текст без URL
 - **THEN** создаётся узел с type=note, новым id, контентом из текста и git commit
+
+#### Сценарий: Создание заметки при совпадающем source_url
+
+- **WHEN** pipeline обработал материал с type=note и source_url, для которого уже существует другой узел с тем же нормализованным source_url
+- **THEN** создаётся новый узел с новым id; существующий узел MUST NOT перезаписываться
 
 #### Сценарий: Создание узла для ссылки
 
@@ -213,7 +218,7 @@ LLM ДОЛЖЕН (SHALL) генерировать метаданные на ру
 
 #### Сценарий: Update не меняет theme/slug при дедупе по URL
 
-- **WHEN** ingestion выполняет update существующего узла по source_url
+- **WHEN** ingestion выполняет update существующего узла по source_url для type=article или type=link
 - **THEN** path и slug файла MUST оставаться прежними (обновляются только метаданные и body), если явно не запрошено иное
 
 ### Requirement: Постпроцессинг URL в markdown при ingestion
