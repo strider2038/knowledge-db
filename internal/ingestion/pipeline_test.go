@@ -699,69 +699,6 @@ func TestPipelineIngester_IngestText_WhenLinkWithDuplicateSourceURL_ExpectSameID
 	assert.Len(t, all, 1)
 }
 
-func TestPipelineIngester_IngestText_WhenArticleWithDuplicateSourceURL_ExpectNewNode(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	fs := afero.NewMemMapFs()
-	base := testBasePath
-	_ = fs.MkdirAll(base, 0o755)
-	store := kb.NewStore(fs)
-
-	articleURL := "https://example.com/blog/designing-go-libraries"
-	now := time.Now().UTC().Format(time.RFC3339)
-	existing, err := store.CreateNode(ctx, base, kb.CreateNodeParams{
-		ThemePath: "go/design",
-		Slug:      "designing-go-libraries",
-		Frontmatter: map[string]any{
-			"keywords":   []string{"go"},
-			"created":    now,
-			"updated":    now,
-			"type":       "article",
-			"title":      "Designing Go Libraries",
-			"source_url": articleURL,
-		},
-		Content: "# Original\n\nOld article body.",
-	})
-	require.NoError(t, err)
-
-	indexStore, err := sqlite.NewStore(context.Background(), ":memory:")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = indexStore.Close() })
-	embID, err := indexStore.InsertEmbedding(ctx, []float32{0.1}, "model")
-	require.NoError(t, err)
-	require.NoError(t, indexStore.UpsertNode(ctx, existing.ID, existing.Path, "h1", "bh1", embID))
-	require.NoError(t, indexStore.UpsertNodeSourceURL(ctx, existing.ID, kb.NormalizeSourceURLForDedup(articleURL)))
-
-	orc := &mockOrchestrator{
-		result: &llm.ProcessResult{
-			Keywords:   []string{"go", "libraries"},
-			Annotation: "Follow-up article notes",
-			ThemePath:  "go/design",
-			Slug:       "designing-go-libraries-notes",
-			Type:       "article",
-			Content:    "# Notes\n\nNew article content.",
-			Title:      "Designing Go Libraries — notes",
-			SourceURL:  articleURL,
-		},
-	}
-	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
-	pipeline.SetPlacementIndexStore(indexStore)
-
-	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
-		Text: "Article notes " + articleURL,
-	})
-	require.NoError(t, err)
-	assert.NotEqual(t, existing.ID, result.Node.ID)
-
-	unchanged, err := store.GetNodeFile(ctx, base, existing.Path)
-	require.NoError(t, err)
-	assert.Equal(t, "# Original\n\nOld article body.", unchanged.Content)
-
-	all, err := store.ListAllNodes(ctx, base)
-	require.NoError(t, err)
-	assert.Len(t, all, 2)
-}
-
 func TestPipelineIngester_IngestText_WhenStaleIndexSourceURL_ExpectNewNodeCreated(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

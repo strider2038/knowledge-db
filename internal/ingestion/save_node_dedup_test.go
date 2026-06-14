@@ -18,6 +18,7 @@ func TestIngestTypeAllowsSourceURLDedup(t *testing.T) {
 		{name: "article", nodeType: "article", want: false},
 		{name: "note", nodeType: "note", want: false},
 		{name: "empty", nodeType: "", want: false},
+		{name: "whitespace", nodeType: "  ", want: false},
 		{name: "link uppercase", nodeType: "Link", want: true},
 	}
 
