@@ -212,3 +212,9 @@ Before reporting a task as done:
 - Do not archive an OpenSpec change until tasks are complete, validation passes, and the user agrees to archive.
 - When adding/changing environment variables or auth/access parameters, update both `README.md` and `.env.example` in the same change.
 - If the change touches node frontmatter (fields, validation, or persistence): update OpenSpec specs, `.agents/skills/knowledge-db/SKILL.md`, `internal/cliapp/embedskill/SKILL.md`, and related code/tests; note whether users should re-run `kb init` on existing KB repos.
+
+<!-- agentmem:closeout:start -->
+This repository is registered in agentmem as `strider2038/knowledge-db`.
+Run `@closeout for strider2038/knowledge-db` after non-trivial work (skill: `.agents/skills/closeout/SKILL.md`).
+Consult `.agents/skills/agent-memory-usage/SKILL.md` for MCP usage.
+<!-- agentmem:closeout:end -->
