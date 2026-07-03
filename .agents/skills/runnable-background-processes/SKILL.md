@@ -1,11 +1,11 @@
 ---
 name: runnable-background-processes
-description: Background processes in kb-server via pior/runnable. Use when adding the Telegram bot, index sync worker, or other long-running Run(context) loops.
+description: Background processes via pior/runnable — long-running Run(context) loops, registering in main, delays, worker logging.
 ---
 
 # Background processes (runnable)
 
-kb-server uses [pior/runnable](https://github.com/pior/runnable) (`runnable.Manager`) for graceful shutdown.
+Use [pior/runnable](https://github.com/pior/runnable) (`runnable.Manager`) for graceful shutdown of long-running workers alongside the HTTP server.
 
 ## Runnable interface
 
@@ -22,25 +22,25 @@ type Runnable interface {
 ```go
 m.Register(
     runnable.HTTPServer(srv).ShutdownTimeout(30*time.Second),
-    runnable.WithName("telegram-bot", bot),
+    runnable.WithName("sync-worker", worker),
 )
 ```
 
 Pass a logger into context for each worker (e.g. with a `runnable` attribute) so logs are filterable.
 
-## Telegram bot example
+## Worker example
 
 ```go
-func (b *Bot) Run(ctx context.Context) error {
-    clog.Info(ctx, "telegram bot: started")
-    defer clog.Info(ctx, "telegram bot: stopped")
+func (w *SyncWorker) Run(ctx context.Context) error {
+    clog.Info(ctx, "sync worker: started")
+    defer clog.Info(ctx, "sync worker: stopped")
 
     for {
         select {
         case <-ctx.Done():
             return nil
         default:
-            b.poll(ctx)
+            w.tick(ctx)
         }
     }
 }
@@ -72,5 +72,5 @@ Do not call `slog.Info` directly in workers — you lose the shared context attr
 
 ## Related
 
-- Index `SyncWorker` — started from bootstrap; respects context on shutdown
+- Background workers are typically started from bootstrap; they must respect context on shutdown
 - See [golang-logging](../golang-logging/SKILL.md) for error logging in loops

@@ -32,9 +32,9 @@ Paths must be `lineItems[0].quantity` — use `ValidSlice` / `AtIndex`, not `Pro
 ## String enums
 
 ```go
-type NodeType string
+type ResourceType string
 
-func (t NodeType) Validate(ctx context.Context, v *validation.Validator) error {
+func (t ResourceType) Validate(ctx context.Context, v *validation.Validator) error {
     return v.Validate(ctx,
         validation.Comparable(t,
             it.IsOneOf("article", "link", "note").WithoutBlank(),
@@ -65,11 +65,11 @@ validation.StringProperty("kpp", e.KPP,
 ## Custom errors and translations
 
 ```go
-var ErrPathRequired = validation.NewError("path_required", "Path is required.")
+var ErrNameRequired = validation.NewError("name_required", "Name is required.")
 
 var ValidationTranslations = map[language.Tag]map[string]catalog.Message{
     language.Russian: {
-        ErrPathRequired.Message(): catalog.String("Укажите путь."),
+        ErrNameRequired.Message(): catalog.String("Укажите имя."),
     },
 }
 
@@ -89,7 +89,7 @@ validator := validation.NewValidator(
 | `it.HasUniqueValues[T]()` | Unique slice keys |
 | `it.IsURL()` | URL format |
 
-## HTTP mapping in knowledge-db
+## HTTP mapping
 
 When validation is wired to HTTP:
 

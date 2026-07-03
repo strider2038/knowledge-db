@@ -1,73 +1,65 @@
 ---
 name: web-frontend
-description: Frontend for knowledge-db in web/ (React 19, TypeScript, Vite, Tailwind). Use when editing web/src components, pages, hooks, or API client code.
+description: React 19 + Vite + Tailwind frontend conventions — design-system usage, buttons, status chips, layout utilities, page/loading/error states.
 ---
 
-# Frontend — web/
+# Modern React frontend (React 19 + Vite + Tailwind)
 
-Stack:
+## Design system (mandatory)
 
-- React 19, TypeScript, Vite
-- `react-router-dom` — SPA routing
-- Tailwind CSS 4 + Radix UI primitives + shadcn-style components
-- `next-themes` for light/dark
+Before changing UI, read the project's `design-system/MASTER.md` and match `design-system/preview.html`. Do not invent ad-hoc button or panel styles.
 
-Goal: dense, practical UI for managing a personal knowledge base — not a marketing site.
+### Buttons
 
-## Layout
+Shared styles live in the design-system stylesheet (e.g. `design-system/admin.css`). Always include the base class:
 
-```text
-web/src/
-├── main.tsx          # Entry, BrowserRouter
-├── App.tsx           # Routes shell
-├── pages/            # Add, Search, Node, Chat, Login, …
-├── components/       # Shared UI
-├── hooks/            # Data hooks
-├── services/api.ts   # HTTP client
-├── lib/              # Utilities (type-styles, headings, …)
-└── types/            # API types
+| Variant | `className` |
+| ------- | ----------- |
+| Primary | `button` |
+| Secondary | `button secondary` |
+| Danger | `button danger` |
+
+```tsx
+// correct
+<button type="submit" className="button">Save</button>
+<button type="button" className="button secondary">Cancel</button>
+
+// wrong — no .secondary rule exists without .button
+<button type="button" className="secondary">Cancel</button>
 ```
 
-## Principles
+`<Link>` elements styled as buttons use the same classes. Filter pills use `filter-pill`; theme controls use `theme-button`.
 
-- Functional components and hooks
-- Fetch data in hooks/services, not scattered `useEffect` in presentational components
-- Explicit `loading` / `error` / `success` for async UI
-- Centralize API calls in `services/api.ts` (`VITE_API_URL`, default localhost)
+### List queues
 
-## TypeScript
+Use a consistent list pattern: `panel queue-panel` → filter bar → `entry-list` → `entry-card` rows with `chips` for metadata. Avoid bare `panel` + inline padding for list rows.
 
-- Prefer precise interfaces over `any`
-- API types in `types/` — **snake_case** field names matching backend JSON
+### Status chips
 
-## Routing
+Use dedicated status chip components for entity state — not unstyled `chip` text. Each entity type may have its own chip component; keep styling in shared CSS.
 
-- Declarative routes in `App.tsx`
-- Use `MemoryRouter` in tests — see [web-frontend-tests](../web-frontend-tests/SKILL.md)
+### Layout utilities
 
-## Styling
+Use shared utility classes (`section-heading`, `panel-form`, `inline-empty`, `toolbar`, `actions`, …) from the project's utilities stylesheet instead of inline `style={{}}`.
 
-- Use Tailwind utility classes and shared tokens
-- Node type colors: `web/src/lib/type-styles.ts` — do not duplicate badge/button classes (see `.cursor/rules/web-type-colors.mdc`)
-- Keep UI compact: tables, filters, and forms should work on laptop-width viewports; avoid decorative chrome
+### Page states
 
-## Forms
+`LoadingState` / `EmptyState` use `.loading` / `.empty` (large padding). Inside panels use `.inline-loading` / `.inline-empty`.
 
-- Controlled inputs, labels, accessible errors — see [ux-form-practices](../ux-form-practices/SKILL.md)
+Every async view should handle loading, empty, error, and retry states.
 
-## Commands
+### Stylesheets
 
-```bash
-cd web && npm run dev
-cd web && npm run build
-cd web && npm run test
-cd web && npm run lint
-# or from repo root: task web:dev, task web:build, task web:test, task web:lint
-```
+| File | Scope |
+| ---- | ----- |
+| `design-system/admin.css` (or equivalent) | Core shell, buttons, tables |
+| `src/utilities.css` | Shared layout helpers |
+| Feature-specific CSS | Forms, domain-specific chips and panels |
 
-## Checklist
+Run `npm test` in the frontend package after UI changes — design-system tests guard class names where present.
 
-- [ ] API changes reflected in `services/api.ts` and types
-- [ ] Async states visible to the user
-- [ ] Type colors via `type-styles.ts` when showing node types
-- [ ] `npm run build` and `npm run test` when behavior changes
+## Conventions
+
+- Routes defined in the app router (`App.tsx` or route module)
+- API client module mirrors backend snake_case in request/response types
+- Build: follow the project's task/Makefile targets to compile frontend assets before `go build` when UI is embedded

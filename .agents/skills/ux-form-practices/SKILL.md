@@ -1,11 +1,11 @@
 ---
 name: ux-form-practices
-description: Form UX for web/ — labels, validation, errors, accessibility, mobile-friendly inputs. Use when adding or reviewing forms on Add, Login, Search filters, or node edit UI.
+description: Form UX — labels, validation, errors, accessibility, mobile-friendly inputs. Use when adding or reviewing forms.
 ---
 
-# Form UX — web/
+# Form UX
 
-Apply when working on forms in `web/src/pages/` and related components.
+Apply when working on forms in page components and related UI.
 
 ## Workflow
 
@@ -23,9 +23,9 @@ Apply when working on forms in `web/src/pages/` and related components.
 - After failed submit, focus the first invalid field
 - Clear field-level error when the user fixes input
 
-## Text and URL fields (knowledge-db)
+## Text and URL fields
 
-- **Add page**: textarea for capture, type selector (article / link / note / auto)
+- **Long text**: textarea with a clear label; type or category selector when the domain has variants
 - **URLs**: trim whitespace; show readable validation ("Enter a valid URL")
 - Do not expose raw server stack traces in the UI
 
@@ -43,7 +43,7 @@ Map HTTP status to short user-facing messages in the API client or page:
 | 5xx | Server error — try again later |
 | Network | Connection problem |
 
-Backend returns `{"error":"..."}` (snake_case body fields on success payloads). Normalize in `services/api.ts` before showing toasts or inline errors.
+Backend returns `{"error":"..."}` (snake_case body fields on success payloads). Normalize in the API client before showing toasts or inline errors.
 
 ## Accessibility
 
@@ -53,17 +53,9 @@ Backend returns `{"error":"..."}` (snake_case body fields on success payloads). 
 
 ## Numeric fields
 
-If adding numeric inputs later:
-
 - `inputMode="decimal"` is only a hint — validate in code
 - Normalize `,` → `.` for locales
 - Keep editing state as string; send parsed number to API
-
-## knowledge-db specifics
-
-- No raw UUID entry for end users — pick nodes/paths from search or tree
-- Labels/keywords editors: tolerate comma-separated input; debounce search suggestions if calling `/api/label-suggestions`
-- Login form: password field with appropriate `autoComplete`
 
 ## Checklist
 

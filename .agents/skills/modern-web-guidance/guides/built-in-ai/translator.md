@@ -1,4 +1,4 @@
-The **Translator API** allows developers to perform client-side text translation using built-in AI models in Chrome and Edge. This approach eliminates the need for cloud-based translation services for ephemeral content, reducing costs and improving privacy by keeping data on the user's device.
+The **Translator API** allows developers to perform client-side text translation using built-in AI models in Chrome. This approach eliminates the need for cloud-based translation services for ephemeral content, reducing costs and improving privacy by keeping data on the user's device.
 
 
 ## Prerequisites & Requirements
@@ -6,8 +6,7 @@ The **Translator API** allows developers to perform client-side text translation
 ### Browser Support
 
 - **Chrome:** Version 138+ (Desktop only).
-- **Edge:** Version 148+ (Desktop only).
-- **Not Supported:** Mobile (Android/iOS), Firefox, Safari.
+- **Not Supported:** Mobile (Android/iOS), Edge, Firefox, Safari.
 
 ### Hardware Requirements
 
@@ -15,7 +14,7 @@ To run Gemini Nano and associated models, the system needs:
 
 - **Operating System:** Windows 10/11, macOS 13+, Linux, or ChromeOS (Chromebook
   Plus).
-- **Storage:** At least **22 GB** free on the profile volume.
+- **Storage:** At least **22 GB** free on the Chrome profile volume.
 - **Memory/CPU:** 16 GB+ RAM and 4+ CPU cores.
 - **GPU:** 4 GB+ VRAM (Mandatory for Prompt API with audio).
 - **Network:** Required only for the initial download of language packs/models.
