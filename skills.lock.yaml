@@ -1,0 +1,25 @@
+version: 2
+hub:
+    repo: https://github.com/muonsoft/skills.git
+    ref: main
+    commit: 988a9ae72725c17d761715717ab36fb01fd0ec83
+preset: web-app
+target_path: .agents/skills/shared
+selected_paths:
+    - backend/go/golang-errors
+    - backend/go/golang-logging
+    - databases/database-migrations
+    - devtools/agent-memory-usage
+    - devtools/closeout
+    - frontend/ux/form-field-help
+    - frontend/web/modern-web-guidance
+    - integration/mcp-tool-input-schema
+hashes:
+    backend/go/golang-errors: sha256:edfadb39be2294f33b43200e73498828a8ca763f89370edb0e223e2fea60bb96
+    backend/go/golang-logging: sha256:783a784cbb4b0e3463466a21f811f677e5e7bd9df6a022656f25fdc13e243605
+    databases/database-migrations: sha256:118ce23f4e0e7ccea54c898798d1678dc05e2b9127ad3b44a863be9a59f8bd57
+    devtools/agent-memory-usage: sha256:ac3730a8242f0a083e2ff35a9c6f8e3516df4719475b9ef778260cd05ffbf9d9
+    devtools/closeout: sha256:36a90a418fa59affcdf43e92a8792b488ea147d1cb0041dd92c7ade61d709926
+    frontend/ux/form-field-help: sha256:d81e89fbdbf4c75b07cc55852eeababd45b977cc86ca6c64819ab6c085c15a91
+    frontend/web/modern-web-guidance: sha256:6919dab483514c10226ebad4b446b3ce1cc38f6a9339b5fd35552a9b06b05553
+    integration/mcp-tool-input-schema: sha256:313b1ce465ff6894ac82292d194155846c27b4fadab89e1b71899acdb65ad452
