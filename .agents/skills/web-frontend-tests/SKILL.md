@@ -1,9 +1,9 @@
 ---
 name: web-frontend-tests
-description: Testing React code in web/ with Vitest and React Testing Library. Use when writing or updating component, page, hook, or service tests.
+description: Testing React with Vitest and React Testing Library — component, page, hook, and service tests.
 ---
 
-# Frontend tests — web/
+# Frontend tests (Vitest + React Testing Library)
 
 Framework: **Vitest** + **@testing-library/react** + **@testing-library/jest-dom**.
 
@@ -12,21 +12,19 @@ Framework: **Vitest** + **@testing-library/react** + **@testing-library/jest-dom
 ```bash
 cd web && npm test              # single run
 cd web && npm run test -- --watch   # watch (if script added)
-# repo root:
-task web:test
 ```
 
-Vitest config is in `web/vite.config.ts` (or vitest section).
+Vitest config is in `vite.config.ts` (or a dedicated vitest section).
 
 ## File layout
 
 Tests live **next to** the module under test:
 
 ```text
-web/src/pages/AddPage.tsx
-web/src/pages/AddPage.test.tsx
-web/src/services/api.ts
-web/src/services/api.test.ts
+src/pages/EditPage.tsx
+src/pages/EditPage.test.tsx
+src/services/api.ts
+src/services/api.test.ts
 ```
 
 ## Environment
@@ -41,18 +39,18 @@ Page tests that need DOM:
 
 ## Router wrapper
 
-Pages need `MemoryRouter` (and routes) in tests:
+Routed pages need `MemoryRouter` (and routes) in tests:
 
 ```tsx
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { AddPage } from './AddPage'
+import { EditPage } from './EditPage'
 
-function renderAddPage() {
+function renderEditPage() {
   return render(
-    <MemoryRouter initialEntries={['/add']}>
+    <MemoryRouter initialEntries={['/edit']}>
       <Routes>
-        <Route path="/add" element={<AddPage />} />
+        <Route path="/edit" element={<EditPage />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -61,15 +59,15 @@ function renderAddPage() {
 
 ## Mocking API
 
-Mock `../services/api` (or the module your page imports):
+Mock the API module your page imports:
 
 ```tsx
-const { ingestText } = vi.hoisted(() => ({
-  ingestText: vi.fn(),
+const { updateResource } = vi.hoisted(() => ({
+  updateResource: vi.fn(),
 }))
 
 vi.mock('../services/api', () => ({
-  ingestText,
+  updateResource,
 }))
 
 beforeEach(() => {
@@ -83,16 +81,14 @@ beforeEach(() => {
 - `userEvent` for interactions when needed (`@testing-library/user-event`)
 - `expect(...).toBeInTheDocument()` from jest-dom
 
-Example from `AddPage.test.tsx`:
-
 ```tsx
-renderAddPage()
-expect(screen.getByRole('button', { name: 'Добавить' })).toBeInTheDocument()
-fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
-expect(ingestText).toHaveBeenCalled()
+renderEditPage()
+expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+expect(updateResource).toHaveBeenCalled()
 ```
 
-(UI copy may be Russian — match actual button labels.)
+Match actual button labels and copy from the component under test.
 
 ## Hook / pure function tests
 
@@ -105,11 +101,11 @@ import { parseHeadings } from './headings'
 
 ## What we do not use
 
-- Miniapp `renderWithTheme` / styled-components theme wrapper — use plain `render` or wrap only what the component needs (e.g. `ThemeProvider` from `next-themes` if required)
+- Framework-specific theme wrappers that the app does not use — wrap only what the component needs (e.g. a `ThemeProvider` when the component depends on it)
 
 ## Checklist
 
 - [ ] `@vitest-environment jsdom` for components using DOM APIs
 - [ ] API modules mocked at import path used by the component
 - [ ] Router provided for routed pages
-- [ ] Tests run via `npm test` in `web/`
+- [ ] Tests run via `npm test` in the frontend package

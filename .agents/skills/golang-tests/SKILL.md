@@ -1,13 +1,11 @@
 ---
 name: golang-tests
-description: Go testing for knowledge-db — API tests (muonsoft/api-testing), unit tests with testify and afero. Use when writing tests for internal/ and cmd/.
+description: Go testing with muonsoft/api-testing, testify, and afero — AAA scenarios, HTTP handler tests, JSON assertions, filesystem tests. Use when writing tests under internal/ and cmd/.
 ---
 
-# Go testing (knowledge-db)
+# Go testing
 
-Cover API handlers, `internal/kb`, `internal/ingestion`, and related packages.
-
-Detailed API examples: [references/api-tests.md](references/api-tests.md).
+Cover HTTP handlers, domain packages, and the code paths they exercise.
 
 ## One scenario per test (AAA)
 
@@ -17,7 +15,7 @@ Use explicit sections:
 func TestDeleteNode_WhenExists_ExpectOK(t *testing.T) {
     t.Parallel()
     // Arrange
-    handler := setupTestHandlerWithNode(t)
+    handler := setupTestHandler(t)
 
     // Act
     resp := apitest.HandleDELETE(t, handler, "/api/nodes/topic/my-node")
@@ -36,10 +34,10 @@ func TestDeleteNode_WhenExists_ExpectOK(t *testing.T) {
 Packages: `github.com/muonsoft/api-testing/apitest`, `assertjson`.
 
 ```go
-resp := apitest.HandleGET(t, mux, "/api/git/status")
+resp := apitest.HandleGET(t, mux, "/api/status")
 resp.IsOK()
 
-resp := apitest.HandlePOST(t, mux, "/api/git/commit",
+resp := apitest.HandlePOST(t, mux, "/api/commit",
     strings.NewReader(`{"message":"sync"}`),
     apitest.WithJSONContentType(),
 )
@@ -50,16 +48,7 @@ resp.HasCode(503)
 
 Custom requests: `httptest.NewRequest` + `apitest.HandleRequest(t, handler, req)`.
 
-Setup pattern:
-
-```go
-h := api.NewHandler(dataPath, &ingestion.StubIngester{})
-h.SetGitCommitter(mock, nil, gitDisabled)
-mux, err := api.NewMux(h, nil)
-require.NoError(t, err)
-```
-
-Use `package api_test` (black-box) for handler tests.
+Use `package <pkg>_test` (black-box) for handler tests.
 
 ## Naming
 
@@ -67,7 +56,7 @@ Use `package api_test` (black-box) for handler tests.
 Test<Entity>_<Action>_When<Condition>_Expect<Result>
 ```
 
-Examples: `TestGetGitStatus_WhenGitDisabled_Expect503`, `TestMoveNode_WhenConflict_Expect409`.
+Examples: `TestGetStatus_WhenDisabled_Expect503`, `TestMoveNode_WhenConflict_Expect409`.
 
 ## testify
 
@@ -85,35 +74,29 @@ Prefer `assert.ErrorIs(t, err, target)` over `assert.True(t, errors.Is(...))`.
 
 ## Filesystem tests
 
-### API / integration-style: `t.TempDir`
+### Integration-style: `t.TempDir`
 
-Many `internal/api` tests seed markdown under `t.TempDir()` and pass the path to `api.NewHandler`. This matches real on-disk layout.
+Seed fixtures under `t.TempDir()` and pass the path to the code under test. This matches real on-disk layout.
 
-### Unit tests for `kb.Store`: afero
+### Unit tests with afero
 
 ```go
 fs := afero.NewMemMapFs()
-store := kb.NewStore(fs)
+store := store.New(fs)
 ```
 
-Use absolute paths with MemMapFs (`/` as base). See `internal/kb` tests for `seedMemFS` patterns.
+Use absolute paths with MemMapFs (`/` as base). Follow existing `seedMemFS`-style helpers for fixtures.
 
 ## Mocks
 
-- Small interfaces (`igit.GitCommitter`, `ingestion.Ingester`) — manual mocks in `*_test.go`.
+- Small interfaces — manual mocks in `*_test.go`.
 - Return errors with `errors.Errorf` from muonsoft/errors for anonymous failures.
-
-## What we do not use here
-
-- Postgres / `//go:build integration` repository suites
-- testify/suite + DI test containers
-- OAuth cookie / company-scoped access tests
 
 ## Checklist
 
-- [ ] API endpoints touched have tests
+- [ ] Endpoints/behaviours touched have tests
 - [ ] AAA structure with `t.Parallel()` where safe
 - [ ] `TestX_WhenY_ExpectZ` naming
 - [ ] testify `require` / `assert`, not bare `t.Fatal` except in helpers
 - [ ] JSON assertions via `assertjson` + `HasJSON`
-- [ ] kb store unit tests use afero when testing `Store` directly
+- [ ] Store/filesystem unit tests use afero when testing storage directly

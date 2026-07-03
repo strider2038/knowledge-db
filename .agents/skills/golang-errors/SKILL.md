@@ -1,6 +1,6 @@
 ---
 name: golang-errors
-description: Working with errors in Go using github.com/muonsoft/errors. Use when creating sentinels, typed errors, wrapping with context, structured attributes, errors.Is/As, or mapping kb errors to HTTP.
+description: Working with errors in Go using github.com/muonsoft/errors. Use when creating sentinels, typed errors, wrapping with context, structured attributes, errors.Is/As, or mapping domain errors to HTTP.
 ---
 
 # Errors in Go (muonsoft/errors)
@@ -86,21 +86,21 @@ return errors.Errorf("save node: %w", err,
 | `errors.Stringer(key, value)` | `fmt.Stringer` |
 | `errors.Value(key, value)` | `any` |
 
-## Domain errors and HTTP (knowledge-db)
+## Domain errors and HTTP
 
-Domain/storage errors live in **`internal/kb`** (and related packages), not in HTTP handlers as raw strings.
+Domain/storage errors live in the domain packages under **`internal/`**, not in HTTP handlers as raw strings.
 
-- Missing node: `kb.ErrNodeNotFound` → handler checks `errors.Is(err, kb.ErrNodeNotFound)` → **404**
-- Path conflict: `kb.ErrConflict` → **409**
-- Invalid path: `kb.ErrInvalidPath` → **400**
+- Missing record: `domain.ErrNotFound` → handler checks `errors.Is(err, domain.ErrNotFound)` → **404**
+- Path conflict: `domain.ErrConflict` → **409**
+- Invalid path: `domain.ErrInvalidValue` → **400**
 - Other wrapped errors → **500** (log with `clog.Errorf`)
 
 Handlers use `writeError` / early returns; do not mix domain sentinels with HTTP-specific error constructors.
 
 ```go
-node, err := kb.GetNode(r.Context(), h.dataPath, path)
+node, err := domain.GetRecord(r.Context(), id)
 if err != nil {
-    if errors.Is(err, kb.ErrNodeNotFound) {
+    if errors.Is(err, domain.ErrNotFound) {
         writeError(w, http.StatusNotFound, "node not found")
         return
     }
@@ -119,7 +119,7 @@ return nil, errors.Errorf("validate base: %w", ErrInvalidPath)
 ## Checking errors
 
 ```go
-if errors.Is(err, kb.ErrNodeNotFound) {
+if errors.Is(err, domain.ErrNotFound) {
     // ...
 }
 
@@ -164,5 +164,5 @@ See [golang-logging](../golang-logging/SKILL.md) for Error vs Warn levels.
 - [ ] Sentinels declared at package level
 - [ ] Typed errors use pointer receivers; constructors use `errors.SkipCaller()` when wrapping custom types
 - [ ] Infrastructure errors wrapped with `errors.Errorf("action: %w", err)`
-- [ ] Handlers map `kb.Err*` via `errors.Is` to HTTP status
+- [ ] Handlers map `domain.Err*` via `errors.Is` to HTTP status
 - [ ] Errors logged with `clog.Errorf` and `%w` where logged

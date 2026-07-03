@@ -7,7 +7,9 @@ description: Contextual logging in Go with github.com/muonsoft/clog. Use when ad
 
 Package: `github.com/muonsoft/clog` (built on `log/slog`).
 
-## Context API (knowledge-db)
+Levels: Debug, Info, Warn, Error — same as product spec in `docs/concept.md`.
+
+## Context API
 
 | Function | Purpose |
 |----------|---------|
@@ -21,7 +23,21 @@ Package: `github.com/muonsoft/clog` (built on `log/slog`).
 
 Prefer `clog.Info(ctx, ...)` / `clog.Errorf(ctx, ...)` over calling `FromContext` repeatedly unless you need the logger for many calls in one function.
 
-### Binding in middleware
+### Bootstrap (main)
+
+```go
+level := slog.LevelInfo
+if cfg.Debug {
+    level = slog.LevelDebug
+}
+handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+logger := slog.New(handler)
+slog.SetDefault(logger)
+```
+
+JSON handler only when users need log aggregation; default to text for local streaming.
+
+### HTTP middleware
 
 ```go
 logger := slog.Default().With(
@@ -29,19 +45,29 @@ logger := slog.Default().With(
     slog.String("request_url", r.URL.Path),
 )
 ctx := clog.NewContext(r.Context(), logger)
-// pass ctx to handlers
+next.ServeHTTP(w, r.WithContext(ctx))
+```
+
+### Connector / worker context
+
+```go
+logger := slog.Default().With(
+    slog.String("platform", "twitch"),
+    slog.String("channel", channel),
+)
+ctx := clog.NewContext(ctx, logger)
 ```
 
 ## slog attributes
 
 ```go
-slog.String("path", path)
-slog.Int("count", n)
-slog.Bool("ok", true)
-slog.Any("detail", value)
+slog.String("platform", "youtube")
+slog.String("channel", channel)
+slog.Int("message_count", n)
+slog.Bool("connected", true)
 ```
 
-Pass path, node id, job id, etc. as structured fields — not only inside the message string.
+Pass `platform`, `channel`, `client_id` (non-secret), etc. as structured fields — not only inside the message string.
 
 ## Logging errors
 
@@ -49,51 +75,73 @@ Pass path, node id, job id, etc. as structured fields — not only inside the me
 
 ```go
 // Wrong — loses stack
-clog.Error(ctx, "get node failed", slog.String("error", err.Error()))
+clog.Error(ctx, "youtube poll failed", slog.String("error", err.Error()))
 
 // Correct
-clog.Errorf(ctx, "get node failed: %w", err)
+clog.Errorf(ctx, "youtube poll failed: %w", err)
 ```
 
 ### Error vs Warn
 
 | Level | When |
 |-------|------|
-| **Error** (`clog.Errorf`) | Failed ingestion step, git commit/push failure, DB/index errors, OAuth/session failures that matter for the operation |
-| **Warn** | Optional degradation, retryable git push noted in background, non-fatal queue item |
-| **Debug** | Expected client errors (404 on move/delete) when useful for support — see handlers using `clog.Debug` before 404 |
+| **Error** (`clog.Errorf`) | Connector auth failure, IRC/API disconnect after retries, config corrupt, WebSocket write failure |
+| **Warn** | Reconnect attempt, YouTube quota soft limit, slow overlay consumer |
+| **Debug** | Expected 400 on bad config, ping/pong, per-tick poll (when noisy) |
 
 When unsure, prefer **Error** so real bugs are not hidden.
 
-### Handler pattern (from `internal/api`)
+### Handler pattern
 
 ```go
-if errors.Is(err, kb.ErrNodeNotFound) {
-    clog.Debug(r.Context(), "delete node: not found", "path", nodePath)
-    writeError(w, http.StatusNotFound, "node not found")
+if errors.Is(err, config.ErrInvalidConfig) {
+    clog.Debug(r.Context(), "bad config", "platform", platform)
+    writeError(w, http.StatusBadRequest, "invalid configuration")
     return
 }
-clog.Errorf(r.Context(), "delete node: %w", err)
-writeError(w, http.StatusInternalServerError, err.Error())
+clog.Errorf(r.Context(), "get status: %w", err)
+writeError(w, http.StatusInternalServerError, "internal error")
 ```
 
-## Workers and loops
+## Connectors and loops
 
 ```go
-for task := range q.Tasks() {
-    if err := worker.handle(ctx, task); err != nil {
-        clog.Errorf(ctx, "handle task: %w", err)
+func (c *Twitch) Run(ctx context.Context) error {
+    clog.Info(ctx, "worker started")
+    defer clog.Info(ctx, "worker stopped")
+
+    for {
+        select {
+        case <-ctx.Done():
+            return nil
+        default:
+            if err := c.read(ctx); err != nil {
+                if ctx.Err() != nil {
+                    return nil
+                }
+                clog.Errorf(ctx, "worker read: %w", err)
+                // backoff …
+            }
+        }
     }
 }
 ```
 
+## What to log (product)
+
+- Platform connect / disconnect
+- Auth and network errors
+- Message receive statistics (counts, not full message bodies at Info)
+- Never: OAuth tokens, refresh tokens, client secrets, `code=` in URLs
+
 ## Rules
 
 1. Do not log passwords, tokens, or session secrets.
-2. Always pass `context.Context` as the first argument.
-3. Business logic in `internal/` uses **`clog` only** — do not add `*slog.Logger` fields to domain types; inject logger into context at the edge (HTTP middleware, `main`).
-4. Errors: `clog.Errorf` with `%w`, or attributes via `slog.*` for non-error fields.
+2. Always pass `context.Context` as the first argument to `clog.*`.
+3. Business logic in `internal/` uses **`clog` only** — do not add `*slog.Logger` fields to domain types; bind logger into context at the edge (`main`, HTTP middleware, worker `Run`).
+4. Errors: `clog.Errorf` with `%w`, or `slog.*` attributes for non-error fields.
 5. Do not duplicate attributes already on the request context logger.
+6. Do not call `slog.Info` / `slog.Default()` directly in `internal/` packages.
 
 ## Checklist
 

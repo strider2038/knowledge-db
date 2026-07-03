@@ -1,6 +1,6 @@
 ---
 name: golang-validation
-description: Data validation in Go with github.com/muonsoft/validation. Use for Validatable models, commands, validationtest, and mapping violations to HTTP 422 when validation is adopted.
+description: Data validation in Go with github.com/muonsoft/validation — Validatable models, commands, validationtest, and mapping violations to HTTP 422.
 ---
 
 # Data validation (muonsoft/validation)
@@ -10,7 +10,7 @@ Constraints: `github.com/muonsoft/validation/it`
 Tests: `github.com/muonsoft/validation/validationtest`  
 Runner: `github.com/muonsoft/validation/validator`
 
-> knowledge-db does not use validation everywhere yet; prefer this skill when adding **command/query validation** or rich 422 responses. For simple handler checks, explicit `writeError(400, ...)` is still fine.
+> Not every handler needs the full validator stack; prefer this skill when adding **command/query validation** or rich 422 responses. For simple handler checks, explicit `writeError(400, ...)` is still fine.
 
 For advanced patterns (collections, enums, translations), see [references/validation-details.md](references/validation-details.md).
 
@@ -25,13 +25,13 @@ type Validatable interface {
 ## Basic Validate
 
 ```go
-func (n NodeDraft) Validate(ctx context.Context, v *validation.Validator) error {
+func (r ResourceDraft) Validate(ctx context.Context, v *validation.Validator) error {
     return v.Validate(ctx,
-        validation.StringProperty("path", n.Path,
+        validation.StringProperty("name", r.Name,
             it.IsNotBlank(),
             it.HasMaxLength(500),
         ),
-        validation.StringProperty("annotation", n.Annotation,
+        validation.StringProperty("description", r.Description,
             it.HasMaxLength(2000),
         ),
     )
@@ -65,7 +65,7 @@ Do not split `Validate` with `if ptr != nil { StringProperty(...) }` — use `Ni
 Include nested validation in the **same** parent `Validate`:
 
 ```go
-validation.ValidProperty("metadata", n.Metadata),
+validation.ValidProperty("metadata", r.Metadata),
 ```
 
 Nested types name **relative** fields only (`title`, not `metadata.title` inside the child).
@@ -104,26 +104,26 @@ if len(test.wantViolations) == 0 {
 
 ```go
 validationtest.ViolationAttributes{
-    PropertyPath: "path",
+    PropertyPath: "name",
     Error:        validation.ErrIsBlank,
 }
 ```
 
-## Where validation belongs (knowledge-db)
+## Where validation belongs
 
 | Layer | Responsibility |
 |-------|----------------|
 | `internal/api` | JSON decode, auth, transport limits → 400 |
 | Command/query types | `Validate` on input DTOs when using validator |
-| `internal/kb` | File structure rules, path semantics — today mostly custom errors + validator CLI |
+| `internal/<domain>` | Domain invariants, business rules — on commands or domain types |
 
 Do not put domain invariant checks only in handlers if you adopt `validation` — keep them on the command or domain type.
 
 ## Anti-patterns
 
 - `validation_helpers.go` with imperative `CreateViolation` per field — use `StringProperty` + `it.*` on a `Validatable` command.
-- Russian (or any locale) hard-coded in `CreateViolation` — use `validation.NewError` with English default + translation map.
-- Returning raw `kb.Err*` for form-fixable issues when clients expect `propertyPath` — map to violations in the layer that owns the API contract.
+- Locale hard-coded in `CreateViolation` — use `validation.NewError` with English default + translation map.
+- Returning raw domain errors for form-fixable issues when clients expect `propertyPath` — map to violations in the layer that owns the API contract.
 
 ## Checklist
 

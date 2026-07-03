@@ -6,7 +6,7 @@ compatibility: Requires openspec CLI.
 metadata:
   author: openspec
   version: "1.0"
-  generatedBy: "1.2.0"
+  generatedBy: "1.4.1"
 ---
 
 Fast-forward through artifact creation - generate everything needed to start implementation in one go.
@@ -17,7 +17,7 @@ Fast-forward through artifact creation - generate everything needed to start imp
 
 1. **If no clear input provided, ask what they want to build**
 
-   Use the **AskUserQuestion tool** (open-ended, no preset options) to ask:
+   **Ask the user** (open-ended, no preset options):
    > "What change do you want to work on? Describe what you want to build or fix."
 
    From their description, derive a kebab-case name (e.g., "add user authentication" → `add-user-auth`).
@@ -28,7 +28,7 @@ Fast-forward through artifact creation - generate everything needed to start imp
    ```bash
    openspec new change "<name>"
    ```
-   This creates a scaffolded change at `openspec/changes/<name>/`.
+   This creates a scaffolded change in the planning home resolved by the CLI.
 
 3. **Get the artifact build order**
    ```bash
@@ -37,10 +37,11 @@ Fast-forward through artifact creation - generate everything needed to start imp
    Parse the JSON to get:
    - `applyRequires`: array of artifact IDs needed before implementation (e.g., `["tasks"]`)
    - `artifacts`: list of all artifacts with their status and dependencies
+   - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path and scope context. Use these instead of assuming repo-local paths.
 
 4. **Create artifacts in sequence until apply-ready**
 
-   Use the **TodoWrite tool** to track progress through the artifacts.
+   **Track progress** through the artifacts (use a todo list if your tool supports one).
 
    Loop through artifacts in dependency order (artifacts with no pending dependencies first):
 
@@ -54,10 +55,10 @@ Fast-forward through artifact creation - generate everything needed to start imp
         - `rules`: Artifact-specific rules (constraints for you - do NOT include in output)
         - `template`: The structure to use for your output file
         - `instruction`: Schema-specific guidance for this artifact type
-        - `outputPath`: Where to write the artifact
+        - `resolvedOutputPath`: Resolved path or pattern to write the artifact
         - `dependencies`: Completed artifacts to read for context
       - Read any completed dependency files for context
-      - Create the artifact file using `template` as the structure
+      - Create the artifact file using `template` as the structure and write it to `resolvedOutputPath`
       - Apply `context` and `rules` as constraints - but do NOT copy them into the file
       - Show brief progress: "✓ Created <artifact-id>"
 
@@ -67,7 +68,7 @@ Fast-forward through artifact creation - generate everything needed to start imp
       - Stop when all `applyRequires` artifacts are done
 
    c. **If an artifact requires user input** (unclear context):
-      - Use **AskUserQuestion tool** to clarify
+      - **Ask the user** to clarify
       - Then continue with creation
 
 5. **Show final status**
