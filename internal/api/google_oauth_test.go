@@ -14,9 +14,9 @@ import (
 	"github.com/strider2038/knowledge-db/internal/auth"
 	"github.com/strider2038/knowledge-db/internal/auth/session"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
-	"github.com/strider2038/knowledge-db/internal/oauthcommon"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/mcp"
+	"github.com/strider2038/knowledge-db/internal/oauthcommon"
 )
 
 const testOAuthStateSecret = "0123456789abcdef0123456789abcdef" //nolint:gosec // test

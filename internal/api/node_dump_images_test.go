@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -49,9 +50,25 @@ func setupDumpImagesHandler(t *testing.T, nodeType string, committer *mockGitCom
 	return mux
 }
 
-func doDumpJSON(t *testing.T, mux http.Handler, method, path string) (int, dumpImagesResponse) {
+func getDumpImagesStatus(t *testing.T, mux http.Handler, id string) (int, dumpImagesResponse) {
 	t.Helper()
-	req := httptest.NewRequestWithContext(context.Background(), method, path, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/node-dump-images/"+id, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	var out dumpImagesResponse
+	if rec.Body.Len() > 0 {
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	}
+
+	return rec.Code, out
+}
+
+func doDumpJSON(t *testing.T, mux http.Handler, nodePath string) (int, dumpImagesResponse) {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"path": nodePath})
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/dump-images", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	var out dumpImagesResponse
@@ -66,13 +83,13 @@ func TestPostNodeDumpImages_WhenSuccess_ExpectOperationSuccess(t *testing.T) {
 	t.Parallel()
 	mux := setupDumpImagesHandler(t, "article", &mockGitCommitter{})
 
-	code, start := doDumpJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/dump-images")
+	code, start := doDumpJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 	require.Equal(t, "running", start.Status)
 
 	require.Eventually(t, func() bool {
-		stCode, st := doDumpJSON(t, mux, http.MethodGet, "/api/node-dump-images/"+start.ID)
+		stCode, st := getDumpImagesStatus(t, mux, start.ID)
 
 		return stCode == http.StatusOK && st.Status == "success" && st.SyncDone
 	}, time.Second, 20*time.Millisecond)
@@ -88,7 +105,7 @@ func TestPostNodeDumpImages_WhenNodeMissing_Expect404(t *testing.T) {
 	t.Parallel()
 	mux := setupDumpImagesHandler(t, "article", &mockGitCommitter{})
 
-	code, _ := doDumpJSON(t, mux, http.MethodPost, "/api/nodes/topic/missing/dump-images")
+	code, _ := doDumpJSON(t, mux, "topic/missing")
 	require.Equal(t, http.StatusNotFound, code)
 }
 
@@ -96,7 +113,7 @@ func TestPostNodeDumpImages_WhenNodeNotArticle_Expect400(t *testing.T) {
 	t.Parallel()
 	mux := setupDumpImagesHandler(t, "note", &mockGitCommitter{})
 
-	code, _ := doDumpJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/dump-images")
+	code, _ := doDumpJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusBadRequest, code)
 }
 
@@ -104,12 +121,12 @@ func TestGetNodeDumpImagesLogs_WhenAfterProvided_ExpectOnlyNewEntries(t *testing
 	t.Parallel()
 	mux := setupDumpImagesHandler(t, "article", &mockGitCommitter{})
 
-	code, start := doDumpJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/dump-images")
+	code, start := doDumpJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
 	require.Eventually(t, func() bool {
-		stCode, st := doDumpJSON(t, mux, http.MethodGet, "/api/node-dump-images/"+start.ID)
+		stCode, st := getDumpImagesStatus(t, mux, start.ID)
 
 		return stCode == http.StatusOK && st.Status == "success"
 	}, time.Second, 20*time.Millisecond)
@@ -130,12 +147,12 @@ func TestPostNodeDumpImages_WhenSyncFails_ExpectOperationErrorOnSyncStage(t *tes
 	t.Parallel()
 	mux := setupDumpImagesHandler(t, "article", &mockGitCommitter{syncErr: errors.New("sync failed")})
 
-	code, start := doDumpJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/dump-images")
+	code, start := doDumpJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
 	require.Eventually(t, func() bool {
-		stCode, st := doDumpJSON(t, mux, http.MethodGet, "/api/node-dump-images/"+start.ID)
+		stCode, st := getDumpImagesStatus(t, mux, start.ID)
 
 		return stCode == http.StatusOK && st.Status == "error" && st.Stage == "sync"
 	}, time.Second, 20*time.Millisecond)

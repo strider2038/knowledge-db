@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -62,9 +63,25 @@ func setupNormalizeHandler(t *testing.T, normalizer *mockNodeNormalizer, committ
 	return mux
 }
 
-func doJSON(t *testing.T, mux http.Handler, method, path string) (int, normalizeResponse) {
+func getNormalizeStatus(t *testing.T, mux http.Handler, id string) (int, normalizeResponse) {
 	t.Helper()
-	req := httptest.NewRequestWithContext(context.Background(), method, path, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/node-normalization/"+id, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	var out normalizeResponse
+	if rec.Body.Len() > 0 {
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	}
+
+	return rec.Code, out
+}
+
+func doJSON(t *testing.T, mux http.Handler, nodePath string) (int, normalizeResponse) {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"path": nodePath})
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/normalize", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	var out normalizeResponse
@@ -79,13 +96,13 @@ func TestPostNodeNormalize_WhenSuccess_ExpectOperationSuccess(t *testing.T) {
 	t.Parallel()
 	mux := setupNormalizeHandler(t, &mockNodeNormalizer{}, &mockGitCommitter{})
 
-	code, start := doJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/normalize")
+	code, start := doJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 	require.Equal(t, "running", start.Status)
 
 	require.Eventually(t, func() bool {
-		stCode, st := doJSON(t, mux, http.MethodGet, "/api/node-normalization/"+start.ID)
+		stCode, st := getNormalizeStatus(t, mux, start.ID)
 
 		return stCode == http.StatusOK && st.Status == "success" && st.SyncDone
 	}, time.Second, 20*time.Millisecond)
@@ -101,7 +118,7 @@ func TestPostNodeNormalize_WhenNodeMissing_Expect404(t *testing.T) {
 	t.Parallel()
 	mux := setupNormalizeHandler(t, &mockNodeNormalizer{}, &mockGitCommitter{})
 
-	code, _ := doJSON(t, mux, http.MethodPost, "/api/nodes/topic/missing/normalize")
+	code, _ := doJSON(t, mux, "topic/missing")
 	require.Equal(t, http.StatusNotFound, code)
 }
 
@@ -109,12 +126,12 @@ func TestGetNodeNormalizeLogs_WhenAfterProvided_ExpectOnlyNewEntries(t *testing.
 	t.Parallel()
 	mux := setupNormalizeHandler(t, &mockNodeNormalizer{}, &mockGitCommitter{})
 
-	code, start := doJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/normalize")
+	code, start := doJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
 	require.Eventually(t, func() bool {
-		stCode, st := doJSON(t, mux, http.MethodGet, "/api/node-normalization/"+start.ID)
+		stCode, st := getNormalizeStatus(t, mux, start.ID)
 
 		return stCode == http.StatusOK && st.Status == "success"
 	}, time.Second, 20*time.Millisecond)
@@ -156,12 +173,12 @@ func TestPostNodeNormalize_WhenNormalizerFails_ExpectOperationError(t *testing.T
 	t.Parallel()
 	mux := setupNormalizeHandler(t, &mockNodeNormalizer{err: errors.New("normalize failed")}, &mockGitCommitter{})
 
-	code, start := doJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/normalize")
+	code, start := doJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
 	require.Eventually(t, func() bool {
-		stCode, st := doJSON(t, mux, http.MethodGet, "/api/node-normalization/"+start.ID)
+		stCode, st := getNormalizeStatus(t, mux, start.ID)
 
 		return stCode == http.StatusOK && st.Status == "error" && st.Stage == "normalize"
 	}, time.Second, 20*time.Millisecond)
@@ -171,12 +188,12 @@ func TestPostNodeNormalize_WhenSyncFails_ExpectOperationErrorOnSyncStage(t *test
 	t.Parallel()
 	mux := setupNormalizeHandler(t, &mockNodeNormalizer{}, &mockGitCommitter{syncErr: errors.New("sync failed")})
 
-	code, start := doJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/normalize")
+	code, start := doJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
 	require.Eventually(t, func() bool {
-		stCode, st := doJSON(t, mux, http.MethodGet, "/api/node-normalization/"+start.ID)
+		stCode, st := getNormalizeStatus(t, mux, start.ID)
 
 		return stCode == http.StatusOK && st.Status == "error" && st.Stage == "sync"
 	}, time.Second, 20*time.Millisecond)
@@ -189,7 +206,7 @@ func TestPostNodeNormalize_WhenNoRunner_Expect503(t *testing.T) {
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	code, _ := doJSON(t, mux, http.MethodPost, "/api/nodes/topic/my-node/normalize")
+	code, _ := doJSON(t, mux, "topic/my-node")
 	require.Equal(t, http.StatusServiceUnavailable, code)
 }
 
@@ -208,7 +225,10 @@ func TestPostNodeNormalize_WhenCursorAgentMissing_Expect503(t *testing.T) {
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/topic/my-node/normalize", nil)
+	body, err := json.Marshal(map[string]string{"path": "topic/my-node"})
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/normalize", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Contains(t, rec.Body.String(), "cursor-agent not found in PATH")

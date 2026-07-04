@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +18,25 @@ import (
 	"github.com/strider2038/knowledge-db/internal/ingestion"
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
+
+func postNodeUpdate(t *testing.T, handler http.Handler, nodePath string, body string) *apitest.ResponseAssertion {
+	t.Helper()
+	var fields map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &fields))
+	fields["path"] = nodePath
+	encoded, err := json.Marshal(fields)
+	require.NoError(t, err)
+
+	return apitest.HandlePOST(t, handler, "/api/nodes/update", bytes.NewReader(encoded), apitest.WithJSONContentType())
+}
+
+func postRefreshDescription(t *testing.T, handler http.Handler, nodePath string) *apitest.ResponseAssertion {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"path": nodePath})
+	require.NoError(t, err)
+
+	return apitest.HandlePOST(t, handler, "/api/nodes/refresh-description", bytes.NewReader(body), apitest.WithJSONContentType())
+}
 
 var errLLMUnavailable = errors.New("LLM unavailable")
 
@@ -362,14 +382,10 @@ func TestListNodes_WhenLabelsFilterAND_ExpectFiltered(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	patch := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"labels":["favorite","review"]}`),
-		apitest.WithJSONContentType())
+	patch := postNodeUpdate(t, handler, "programming/node1", `{"labels":["favorite","review"]}`)
 	patch.IsOK()
 
-	patch2 := apitest.HandlePATCH(t, handler, "/api/nodes/programming/scaling/node2",
-		strings.NewReader(`{"labels":["favorite"]}`),
-		apitest.WithJSONContentType())
+	patch2 := postNodeUpdate(t, handler, "programming/scaling/node2", `{"labels":["favorite"]}`)
 	patch2.IsOK()
 
 	resp := apitest.HandleGET(t, handler, "/api/nodes?path=&recursive=true&labels=favorite,review")
@@ -384,9 +400,7 @@ func TestGetLabelSuggestions_WhenLabelsExist_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	apitest.HandlePATCH(t, handler, "/api/nodes/ai/node4",
-		strings.NewReader(`{"labels":["zebra","Alpha"]}`),
-		apitest.WithJSONContentType()).IsOK()
+	postNodeUpdate(t, handler, "ai/node4", `{"labels":["zebra","Alpha"]}`).IsOK()
 
 	resp := apitest.HandleGET(t, handler, "/api/label-suggestions")
 	resp.IsOK()
@@ -399,9 +413,7 @@ func TestPatchNode_WhenInvalidLabels_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"labels":["bad,comma"]}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"labels":["bad,comma"]}`)
 
 	resp.IsBadRequest()
 }
@@ -433,9 +445,7 @@ func TestPatchNode_WhenSetsManualProcessed_ExpectOKAndPersisted(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	patch := apitest.HandlePATCH(t, handler, "/api/nodes/programming/scaling/node2",
-		strings.NewReader(`{"manual_processed":true}`),
-		apitest.WithJSONContentType())
+	patch := postNodeUpdate(t, handler, "programming/scaling/node2", `{"manual_processed":true}`)
 
 	patch.IsOK()
 	patch.HasJSON(func(json *assertjson.AssertJSON) {
@@ -454,9 +464,7 @@ func TestPatchNode_WhenClearsManualProcessed_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"manual_processed":false}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"manual_processed":false}`)
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -468,9 +476,7 @@ func TestPatchNode_WhenUpdatesTitle_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"title":"Go from zero to hero"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"title":"Go from zero to hero"}`)
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -482,9 +488,7 @@ func TestPatchNode_WhenClearsTitle_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"title":"   "}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"title":"   "}`)
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -496,9 +500,7 @@ func TestPatchNode_WhenUpdatesKeywords_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/scaling/node2",
-		strings.NewReader(`{"keywords":["load","ingress","ingress"," "]}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/scaling/node2", `{"keywords":["load","ingress","ingress"," "]}`)
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -512,9 +514,7 @@ func TestPatchNode_WhenExtraField_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"manual_processed":true,"unexpected":"x"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"manual_processed":true,"unexpected":"x"}`)
 
 	resp.IsBadRequest()
 }
@@ -523,9 +523,7 @@ func TestPatchNode_WhenManualProcessedNotBool_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"manual_processed":"yes"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"manual_processed":"yes"}`)
 
 	resp.IsBadRequest()
 }
@@ -534,9 +532,7 @@ func TestPatchNode_WhenKeywordsContainNonString_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"keywords":["ok",1]}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"keywords":["ok",1]}`)
 
 	resp.IsBadRequest()
 }
@@ -545,9 +541,7 @@ func TestPatchNode_WhenUpdatesLabels_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"labels":["Favorite","favorite","review"]}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"labels":["Favorite","favorite","review"]}`)
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -561,9 +555,7 @@ func TestPatchNode_WhenLabelsNotArray_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/programming/node1",
-		strings.NewReader(`{"labels":"favorite"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "programming/node1", `{"labels":"favorite"}`)
 
 	resp.IsBadRequest()
 }
@@ -572,9 +564,7 @@ func TestPatchNode_WhenMissing_Expect404(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerForRecursive(t)
 
-	resp := apitest.HandlePATCH(t, handler, "/api/nodes/missing/node",
-		bytes.NewReader([]byte(`{"manual_processed":true}`)),
-		apitest.WithJSONContentType())
+	resp := postNodeUpdate(t, handler, "missing/node", `{"manual_processed":true}`)
 
 	resp.IsNotFound()
 }
@@ -739,7 +729,7 @@ func TestRefreshDescription_WhenSuccess_ExpectUpdatedNodeAndPathPassed(t *testin
 	}
 	handler := setupTestHandlerWithIngester(t, ingester)
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/go/pkg/runnable/refresh-description", nil)
+	resp := postRefreshDescription(t, handler, "go/pkg/runnable")
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -757,7 +747,7 @@ func TestRefreshDescription_WhenMissingSourceURL_Expect400(t *testing.T) {
 		err: ingestion.ErrSourceURLRequired,
 	})
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/go/pkg/runnable/refresh-description", nil)
+	resp := postRefreshDescription(t, handler, "go/pkg/runnable")
 
 	resp.HasCode(http.StatusBadRequest)
 }
@@ -768,7 +758,7 @@ func TestRefreshDescription_WhenUnknownPath_Expect404(t *testing.T) {
 		err: kb.ErrNodeNotFound,
 	})
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/missing/refresh-description", nil)
+	resp := postRefreshDescription(t, handler, "missing")
 
 	resp.IsNotFound()
 }
@@ -779,7 +769,7 @@ func TestRefreshDescription_WhenFetchOrLLMFailure_Expect502(t *testing.T) {
 		err: errors.New("fetch failed"),
 	})
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/go/pkg/runnable/refresh-description", nil)
+	resp := postRefreshDescription(t, handler, "go/pkg/runnable")
 
 	resp.HasCode(http.StatusBadGateway)
 }

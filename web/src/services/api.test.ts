@@ -183,7 +183,7 @@ describe('patchNodeMetadata', () => {
     vi.unstubAllGlobals()
   })
 
-  it('sends PATCH payload with title and keywords', async () => {
+  it('sends POST payload with path, title and keywords', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ node: { path: 'topic/node', annotation: '', content: '', metadata: {} }, content_mode: 'auto' }),
@@ -195,10 +195,14 @@ describe('patchNodeMetadata', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/nodes/topic/node'),
+      expect.stringContaining('/api/nodes/update'),
       expect.objectContaining({
-        method: 'PATCH',
-        body: JSON.stringify({ title: 'New title', keywords: ['go', 'kubernetes'] }),
+        method: 'POST',
+        body: JSON.stringify({
+          path: 'topic/node',
+          title: 'New title',
+          keywords: ['go', 'kubernetes'],
+        }),
       })
     )
   })
@@ -417,10 +421,10 @@ describe('startNodeAgentEdit', () => {
 
     await startNodeAgentEdit('topic/node', 'improve intro')
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/nodes/topic/node/agent-edit'),
+      expect.stringContaining('/api/nodes/agent-edit'),
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ instruction: 'improve intro' }),
+        body: JSON.stringify({ path: 'topic/node', instruction: 'improve intro' }),
       }),
     )
   })

@@ -1,11 +1,12 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,10 +19,26 @@ import (
 	"github.com/strider2038/knowledge-db/internal/api"
 	"github.com/strider2038/knowledge-db/internal/bootstrap/config"
 	"github.com/strider2038/knowledge-db/internal/index"
-	"github.com/strider2038/knowledge-db/internal/kb"
 	indexSqlite "github.com/strider2038/knowledge-db/internal/index/sqlite"
 	"github.com/strider2038/knowledge-db/internal/ingestion"
+	"github.com/strider2038/knowledge-db/internal/kb"
 )
+
+func postNodeDelete(t *testing.T, handler http.Handler, nodePath string) *apitest.ResponseAssertion {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"path": nodePath})
+	require.NoError(t, err)
+
+	return apitest.HandlePOST(t, handler, "/api/nodes/delete", bytes.NewReader(body), apitest.WithJSONContentType())
+}
+
+func postNodeMove(t *testing.T, handler http.Handler, nodePath, targetPath string) *apitest.ResponseAssertion {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"path": nodePath, "target_path": targetPath})
+	require.NoError(t, err)
+
+	return apitest.HandlePOST(t, handler, "/api/nodes/move", bytes.NewReader(body), apitest.WithJSONContentType())
+}
 
 func setupTestHandlerWithNode(t *testing.T) http.Handler {
 	t.Helper()
@@ -50,7 +67,7 @@ func TestDeleteNode_WhenExists_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerWithNode(t)
 
-	resp := apitest.HandleDELETE(t, handler, "/api/nodes/topic/my-node")
+	resp := postNodeDelete(t, handler, "topic/my-node")
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -63,7 +80,7 @@ func TestDeleteNode_WhenNotFound_Expect404(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerWithNode(t)
 
-	resp := apitest.HandleDELETE(t, handler, "/api/nodes/nonexistent/path")
+	resp := postNodeDelete(t, handler, "nonexistent/path")
 
 	resp.IsNotFound()
 }
@@ -72,8 +89,9 @@ func TestDeleteNode_WhenEmptyPath_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerWithNode(t)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/nodes/", nil)
-	resp := apitest.HandleRequest(t, handler, req)
+	resp := apitest.HandlePOST(t, handler, "/api/nodes/delete",
+		strings.NewReader(`{"path":""}`),
+		apitest.WithJSONContentType())
 
 	resp.IsBadRequest()
 }
@@ -82,9 +100,7 @@ func TestMoveNode_WhenValidTarget_ExpectOK(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerWithNode(t)
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/topic/my-node/move",
-		strings.NewReader(`{"target_path":"new-topic/my-node"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeMove(t, handler, "topic/my-node", "new-topic/my-node")
 
 	resp.IsOK()
 	resp.HasJSON(func(json *assertjson.AssertJSON) {
@@ -140,7 +156,7 @@ Content here`, "topic/my-node.md")
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	resp := apitest.HandleDELETE(t, mux, "/api/nodes/topic/my-node")
+	resp := postNodeDelete(t, mux, "topic/my-node")
 	resp.IsOK()
 
 	require.Eventually(t, func() bool {
@@ -202,9 +218,7 @@ Content here`, "topic/my-node.md")
 	require.NoError(t, err)
 	nodeID := nodeBefore.ID
 
-	resp := apitest.HandlePOST(t, mux, "/api/nodes/topic/my-node/move",
-		strings.NewReader(`{"target_path":"new-topic/my-node"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeMove(t, mux, "topic/my-node", "new-topic/my-node")
 
 	resp.IsOK()
 
@@ -228,9 +242,7 @@ func TestMoveNode_WhenConflict_Expect409(t *testing.T) {
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	resp := apitest.HandlePOST(t, mux, "/api/nodes/source/node/move",
-		strings.NewReader(`{"target_path":"target/node"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeMove(t, mux, "source/node", "target/node")
 
 	resp.HasCode(http.StatusConflict)
 }
@@ -239,9 +251,7 @@ func TestMoveNode_WhenNotFound_Expect404(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerWithNode(t)
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/nonexistent/path/move",
-		strings.NewReader(`{"target_path":"target/node"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeMove(t, handler, "nonexistent/path", "target/node")
 
 	resp.IsNotFound()
 }
@@ -250,9 +260,7 @@ func TestMoveNode_WhenEmptyTargetPath_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerWithNode(t)
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/topic/my-node/move",
-		strings.NewReader(`{"target_path":""}`),
-		apitest.WithJSONContentType())
+	resp := postNodeMove(t, handler, "topic/my-node", "")
 
 	resp.IsBadRequest()
 }
@@ -261,9 +269,7 @@ func TestMoveNode_WhenPathTraversal_Expect400(t *testing.T) {
 	t.Parallel()
 	handler := setupTestHandlerWithNode(t)
 
-	resp := apitest.HandlePOST(t, handler, "/api/nodes/topic/my-node/move",
-		strings.NewReader(`{"target_path":"../etc/passwd"}`),
-		apitest.WithJSONContentType())
+	resp := postNodeMove(t, handler, "topic/my-node", "../etc/passwd")
 
 	resp.IsBadRequest()
 }

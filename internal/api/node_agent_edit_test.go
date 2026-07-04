@@ -79,11 +79,11 @@ func setupAgentEditHandler(t *testing.T, editor api.NodeAgentEditor, committer *
 	return mux
 }
 
-func doAgentEditJSON(t *testing.T, mux http.Handler, path string, instruction string) (int, agentEditResponse) {
+func doAgentEditJSON(t *testing.T, mux http.Handler, nodePath string, instruction string) (int, agentEditResponse) {
 	t.Helper()
-	body, err := json.Marshal(map[string]string{"instruction": instruction})
+	body, err := json.Marshal(map[string]string{"path": nodePath, "instruction": instruction})
 	require.NoError(t, err)
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/agent-edit", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -99,7 +99,7 @@ func TestPostNodeAgentEdit_WhenSuccess_ExpectOperationSuccess(t *testing.T) {
 	t.Parallel()
 	mux := setupAgentEditHandler(t, &mockNodeAgentEditor{}, &mockGitCommitter{})
 
-	code, start := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "add keywords")
+	code, start := doAgentEditJSON(t, mux, "topic/my-node", "add keywords")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 	require.Equal(t, "running", start.Status)
@@ -125,7 +125,7 @@ func TestPostNodeAgentEdit_WhenNodeMissing_Expect404(t *testing.T) {
 	t.Parallel()
 	mux := setupAgentEditHandler(t, &mockNodeAgentEditor{}, &mockGitCommitter{})
 
-	code, _ := doAgentEditJSON(t, mux, "/api/nodes/topic/missing/agent-edit", "fix title")
+	code, _ := doAgentEditJSON(t, mux, "topic/missing", "fix title")
 	require.Equal(t, http.StatusNotFound, code)
 }
 
@@ -133,7 +133,7 @@ func TestPostNodeAgentEdit_WhenEmptyInstruction_Expect400(t *testing.T) {
 	t.Parallel()
 	mux := setupAgentEditHandler(t, &mockNodeAgentEditor{}, &mockGitCommitter{})
 
-	code, _ := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "   ")
+	code, _ := doAgentEditJSON(t, mux, "topic/my-node", "   ")
 	require.Equal(t, http.StatusBadRequest, code)
 }
 
@@ -141,7 +141,7 @@ func TestGetNodeAgentEditLogs_WhenAfterProvided_ExpectOnlyNewEntries(t *testing.
 	t.Parallel()
 	mux := setupAgentEditHandler(t, &mockNodeAgentEditor{}, &mockGitCommitter{})
 
-	code, start := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "improve intro")
+	code, start := doAgentEditJSON(t, mux, "topic/my-node", "improve intro")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
@@ -182,7 +182,7 @@ func TestPostNodeAgentEdit_WhenEditorFails_ExpectOperationError(t *testing.T) {
 	t.Parallel()
 	mux := setupAgentEditHandler(t, &mockNodeAgentEditor{err: errors.New("edit failed")}, &mockGitCommitter{})
 
-	code, start := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "break things")
+	code, start := doAgentEditJSON(t, mux, "topic/my-node", "break things")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
@@ -202,11 +202,11 @@ func TestPostNodeAgentEdit_WhenAlreadyRunning_Expect409(t *testing.T) {
 	editor := &blockingAgentEditor{release: make(chan struct{})}
 	mux := setupAgentEditHandler(t, editor, &mockGitCommitter{})
 
-	code1, start1 := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "first run")
+	code1, start1 := doAgentEditJSON(t, mux, "topic/my-node", "first run")
 	require.Equal(t, http.StatusOK, code1)
 	require.NotEmpty(t, start1.ID)
 
-	code2, _ := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "second run")
+	code2, _ := doAgentEditJSON(t, mux, "topic/my-node", "second run")
 	require.Equal(t, http.StatusConflict, code2)
 
 	close(editor.release)
@@ -219,7 +219,7 @@ func TestPostNodeAgentEdit_WhenNoRunner_Expect503(t *testing.T) {
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	code, _ := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "test")
+	code, _ := doAgentEditJSON(t, mux, "topic/my-node", "test")
 	require.Equal(t, http.StatusServiceUnavailable, code)
 }
 
@@ -239,7 +239,7 @@ func TestPostNodeAgentEdit_WhenInstructionTooLong_Expect400(t *testing.T) {
 	mux := setupAgentEditHandler(t, &mockNodeAgentEditor{}, &mockGitCommitter{})
 
 	longInstruction := strings.Repeat("a", 16*1024+1)
-	code, _ := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", longInstruction)
+	code, _ := doAgentEditJSON(t, mux, "topic/my-node", longInstruction)
 	require.Equal(t, http.StatusBadRequest, code)
 }
 
@@ -247,7 +247,7 @@ func TestPostNodeAgentEdit_WhenSyncFails_ExpectEditOKWithoutSync(t *testing.T) {
 	t.Parallel()
 	mux := setupAgentEditHandler(t, &mockNodeAgentEditor{}, &mockGitCommitter{syncErr: errors.New("sync failed")})
 
-	code, start := doAgentEditJSON(t, mux, "/api/nodes/topic/my-node/agent-edit", "add keywords")
+	code, start := doAgentEditJSON(t, mux, "topic/my-node", "add keywords")
 	require.Equal(t, http.StatusOK, code)
 	require.NotEmpty(t, start.ID)
 
@@ -277,9 +277,9 @@ func TestPostNodeAgentEdit_WhenCursorAgentMissing_Expect503(t *testing.T) {
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
-	body, err := json.Marshal(map[string]string{"instruction": "test"})
+	body, err := json.Marshal(map[string]string{"path": "topic/my-node", "instruction": "test"})
 	require.NoError(t, err)
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/topic/my-node/agent-edit", bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/agent-edit", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
