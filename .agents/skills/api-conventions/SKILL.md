@@ -1,19 +1,32 @@
 ---
 name: api-conventions
-description: HTTP API conventions for knowledge-db — REST routes, snake_case JSON, error responses, status mapping. Use when designing or implementing api handlers or web API client types.
+description: HTTP API conventions for knowledge-db — hybrid POST-action mutations + REST GET reads, snake_case JSON, error responses, status mapping. Use when designing or implementing api handlers or web API client types.
 ---
 
 # HTTP API conventions (knowledge-db)
 
 Source of truth for routes: `internal/api/router.go`.
 
-This is **not** a miniapp Rich API (`POST /api/entities/find`). knowledge-db uses REST-style methods and path parameters.
+knowledge-db uses a **hybrid** style — a sanctioned carve-out from the house POST-action
+convention (`api-conventions` in the hub), chosen deliberately for a knowledge base:
+
+- **Mutations** follow the house **POST-action / RPC** style:
+  `POST /api/<resource>/<action>` with the identifier/path in the **JSON body**
+  (`path`, `id`, `target_path`). **No** `PUT`/`DELETE`/`PATCH` under `/api/`.
+- **Reads** stay **REST, addressed by path** (`GET /api/nodes/{path...}`,
+  `GET /api/nodes/by-id/{id}`, `GET /api/assets/{path...}`, status/log pollers): KB nodes have
+  human-meaningful, shareable/bookmarkable URLs, and asset downloads need a plain `<img src>`
+  URL — the one place path-addressing genuinely earns its keep.
+
+This split is enforced by `internal/api/router_guard_test.go` (verbs-only: fails on
+`PUT`/`DELETE`/`PATCH`; path params in `GET` are allowed).
 
 ## Methods and routing
 
-- **Go 1.22+** patterns on `http.ServeMux`: `"GET /api/nodes/{path...}"`
-- **Path params** for node paths and resource ids (`{path...}`, `{id}`)
-- **Sub-actions** as path suffixes where needed, e.g. `POST /api/nodes/{path...}/move` is registered via `MoveNode` (path value strips `/move`)
+- **Go 1.22+** patterns on `http.ServeMux`: `"GET /api/nodes/{path...}"`, `"POST /api/nodes/update"`
+- **Path params** ONLY for `GET` reads (`{path...}`, `{id}`)
+- **Mutations**: one route + one handler per action — no suffix-dispatch multiplexers.
+  Extract `path`/`id` from the decoded JSON body; empty → 400.
 
 Common groups:
 
@@ -21,11 +34,15 @@ Common groups:
 |------|----------|
 | Health | `GET /healthz`, `GET /readyz` |
 | Auth | `POST /api/auth/login`, `GET /api/auth/session`, OAuth start/callback |
-| Nodes | `GET/PATCH/DELETE /api/nodes/{path...}`, `POST` for move |
-| Discovery | `GET /api/tree`, `GET/POST /api/search`, `GET /api/nodes` |
+| Nodes (read) | `GET /api/nodes/{path...}`, `GET /api/nodes/by-id/{id}`, `GET /api/nodes` |
+| Nodes (mutate) | `POST /api/nodes/update\|delete\|move\|refresh-description\|normalize\|agent-edit\|dump-images` (`path` in body) |
+| Discovery | `GET /api/tree`, `GET/POST /api/search` |
 | Ingest | `POST /api/ingest` |
 | Git | `GET /api/git/status`, `POST /api/git/commit`, `POST /api/git/sync` |
-| Chat | `GET/POST /api/chats`, `POST /api/chat` |
+| Chat | `GET/POST /api/chats`, `GET /api/chats/{id}`, `POST /api/chats/update\|delete`, `POST /api/chat` |
+| Debug issues | `POST /api/debug/issues`, `POST /api/debug/issues/update` |
+| Telegram import | `POST /api/import/telegram`, `GET /api/import/telegram/session/{id}`, `POST /api/import/telegram/session/accept\|reject` |
+| Translate | `GET /api/articles/translate/{path...}`, `POST /api/articles/translate` (`path` in body) |
 | Jobs | `POST /api/jobs`, `GET /api/jobs/{id}`, logs subpaths |
 | Index | `POST /api/index/rebuild`, `GET /api/index/status` |
 
@@ -58,9 +75,12 @@ Auth failures use auth middleware / handler logic (401) when auth is enabled.
 
 ## Request bodies
 
-- `Content-Type: application/json` for POST/PATCH with body
+- `Content-Type: application/json` for POST with body
+- Every mutation body carries its own `path`/`id` (snake_case); handler extracts it, `TrimSpace`, 400 if empty
 - Empty body allowed only where handler explicitly accepts it (e.g. git commit with optional message)
-- Partial updates: `PATCH /api/nodes/{path...}` — only supported frontmatter fields (`manual_processed`, `title`, `keywords`, `labels`)
+- Partial updates: `POST /api/nodes/update` — body `{ path, ...поля }`, only supported frontmatter
+  fields (`manual_processed`, `title`, `keywords`, `labels`); decoded as `map[string]json.RawMessage`
+  to distinguish absent from zero (extract & delete `path` first, then require ≥1 remaining field)
 
 ## Path parameters
 
@@ -84,8 +104,10 @@ Auth failures use auth middleware / handler logic (401) when auth is enabled.
 
 ## Checklist
 
-- [ ] Route uses appropriate HTTP method (GET for reads, POST for actions, PATCH for partial update)
+- [ ] Mutation is `POST /api/<resource>/<action>` with `path`/`id` in the JSON body (never PUT/DELETE/PATCH)
+- [ ] Read is `GET` (path params OK) — mutation is never a GET
 - [ ] JSON fields snake_case
+- [ ] `router_guard_test.go` still passes (no REST verb crept in)
 - [ ] Domain errors mapped via `errors.Is` to correct status
 - [ ] Errors logged with `clog.Errorf` before 5xx
 - [ ] Test in `internal/api/*_test.go`

@@ -77,6 +77,10 @@ Skills live in **`.agents/skills/<name>/SKILL.md`** (project-local; no git subtr
 | `backend-structure` | Navigating or adding packages under `internal/`, `cmd/` |
 | `api-conventions` | HTTP routes, JSON shape, status codes for `internal/api` |
 
+> **API — гибрид (POST-action мутации + REST-чтения):** мутации — `POST /api/<resource>/<action>`
+> с `path`/`id` в JSON-теле, **без** `PUT`/`DELETE`/`PATCH`; `GET`-чтения остаются REST по пути
+> (shareable deep-links). Enforced by `internal/api/router_guard_test.go`. См. `api-conventions`.
+
 ### Go backend
 
 | Skill | Use when |

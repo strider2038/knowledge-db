@@ -13,79 +13,73 @@ API ДОЛЖЕН (SHALL) использовать путь к базе из пе
 
 ### Requirement: CRUD узлов
 
-API MUST предоставлять эндпоинты для создания, чтения, обновления и удаления узлов (в scaffold — каркас/заглушки). Добавляется поддержка DELETE для удаления узла и POST /move для перемещения. Каждый ответ с объектом узла MUST включать поле `id` (string, UUID). Эндпоинт `GET /api/nodes/by-id/{id}` MUST быть доступен для чтения по стабильному идентификатору.
+API MUST предоставлять эндпоинты для создания, чтения, обновления и удаления узлов. **Чтения**
+адресуются по пути: `GET /api/nodes/{path...}` и `GET /api/nodes/by-id/{id}` (санкционированное
+REST-исключение для shareable deep-links). **Мутации** используют POST-action контракт с
+идентификатором в теле: обновление — `POST /api/nodes/update`, удаление — `POST /api/nodes/delete`,
+перемещение — `POST /api/nodes/move`. REST-глаголы `PATCH`/`DELETE` под `/api/` не используются.
+Каждый ответ с объектом узла MUST включать поле `id` (string, UUID).
 
 #### Сценарий: Получение узла по пути
 
-- **WHEN** GET /api/nodes/{path}
+- **WHEN** `GET /api/nodes/{path}`
 - **THEN** возвращается узел с полями `id` и `path` или 404
 
-#### Сценарий: Получение дерева тем
+#### Сценарий: Обновление frontmatter узла
 
-- **WHEN** GET /api/tree
-- **THEN** возвращается иерархическое дерево тем и подтем
+- **WHEN** `POST /api/nodes/update` с телом `{ path, ...поддерживаемые поля }`
+  (`manual_processed`, `title`, `keywords`, `labels`)
+- **THEN** обновляются только переданные поля; при отсутствии `path` — 400,
+  при неподдерживаемом поле — 400, при отсутствии узла — 404
 
 #### Сценарий: Удаление узла
 
-- **WHEN** DELETE /api/nodes/{path}
-- **THEN** узел (файл .md и директория вложений) удаляется, возвращается `{ path, id, deleted: true }` или 404
+- **WHEN** `POST /api/nodes/delete` с телом `{ path }`
+- **THEN** узел (файл .md и директория вложений) удаляется, возвращается `{ path, id, deleted: true }`
+  или 404; при отсутствии `path` — 400
 
 #### Сценарий: Перемещение узла
 
-- **WHEN** POST /api/nodes/{path}/move с `{ target_path: "new/topic/slug" }`
-- **THEN** узел перемещается по указанному пути, `id` в ответе совпадает с id до move, `path` обновлён, 409 при конфликте
+- **WHEN** `POST /api/nodes/move` с телом `{ path, target_path }`
+- **THEN** узел перемещается по указанному пути, `id` в ответе совпадает с id до move,
+  `path` обновлён, 409 при конфликте, 400 при отсутствии `path`/`target_path`
 
 #### Сценарий: Список узлов содержит id
 
-- **WHEN** GET /api/nodes с фильтрами
+- **WHEN** `GET /api/nodes` с фильтрами
 - **THEN** каждый элемент списка содержит поле `id`
 
 ### Requirement: Обновление описания узла из источника
 
-REST API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/nodes/{path}/refresh-description` для обновления описания существующего узла на основе его `source_url`. Endpoint MUST загружать текущий узел, требовать наличие `source_url`, запускать refresh mode inference из ingestion-pipeline spec (вместо безусловной digest-генерации для всех внешних узлов), и сохранять обновлённый markdown-файл узла. Ответ MUST содержать обновлённый объект узла. Если `source_url` отсутствует, endpoint MUST возвращать 400. Если узел не найден, endpoint MUST возвращать 404. Для обычных note без digest profile refresh MUST NOT переписывать markdown-тело в digest.
+REST API ДОЛЖЕН (SHALL) предоставлять endpoint `POST /api/nodes/refresh-description` для
+обновления описания существующего узла на основе его `source_url`. Путь узла передаётся в теле
+запроса (`{ path }`). Endpoint MUST загружать текущий узел, требовать наличие `source_url`,
+запускать refresh mode inference из ingestion-pipeline spec, и сохранять обновлённый markdown-файл
+узла. Ответ MUST содержать обновлённый объект узла. Если `source_url` отсутствует — 400, если узел
+не найден — 404, при отсутствии `path` — 400. Для обычных note без digest profile refresh MUST NOT
+переписывать markdown-тело в digest.
 
-Endpoint MUST обновлять описательные поля: `annotation`, `keywords`, `source_kind`, `content_profile` и markdown-тело digest. Endpoint MAY обновить `type`, если классификация показывает, что текущий тип был ошибочным, например новость `type=link` должна стать `type=note` с `content_profile=brief_digest`. Endpoint MUST сохранять `created`, `source_url`, `manual_processed` и пользовательские поля, не относящиеся к описанию источника. Endpoint SHOULD сохранять существующие `source_author` и `source_date`, если новый источник не даёт более точных значений.
+Endpoint MUST обновлять описательные поля: `annotation`, `keywords`, `source_kind`,
+`content_profile` и markdown-тело digest. Endpoint MAY обновить `type`. Endpoint MUST сохранять
+`created`, `source_url`, `manual_processed` и пользовательские поля. Endpoint SHOULD сохранять
+существующие `source_author` и `source_date`, если новый источник не даёт более точных значений.
 
 #### Scenario: Обновление repository link
 
-- **WHEN** клиент вызывает `POST /api/nodes/programming/golang/packages/go-libraries-runnable-manager/refresh-description` для узла с `source_url` на GitHub-репозиторий
-- **THEN** API обновляет узел как `type=link`, `source_kind=repository`, `content_profile=repository_profile` и возвращает обновлённый объект узла
-
-#### Scenario: Обновление длинной статьи как conceptual digest
-
-- **WHEN** клиент вызывает refresh-description для узла с `source_url` на длинную статью, которая не хранится полной копией
-- **THEN** API обновляет узел как `type=note`, `source_kind=article`, `content_profile=conceptual_digest` и сохраняет markdown-тело digest
-
-#### Scenario: Исправление новости, ошибочно сохранённой как link
-
-- **WHEN** клиент вызывает refresh-description для узла `type=link` с `source_url` на новостную публикацию
-- **THEN** API MAY изменить тип на `note`, установить `source_kind=news`, `content_profile=brief_digest` и сохранить краткое markdown-тело digest
+- **WHEN** клиент вызывает `POST /api/nodes/refresh-description` с телом `{ path }` для узла с
+  `source_url` на GitHub-репозиторий
+- **THEN** API обновляет узел как `type=link`, `source_kind=repository`,
+  `content_profile=repository_profile` и возвращает обновлённый объект узла
 
 #### Scenario: Узел без source_url
 
-- **WHEN** клиент вызывает refresh-description для узла без `source_url`
-- **THEN** API возвращает 400 с сообщением, что обновление из источника невозможно
+- **WHEN** клиент вызывает `POST /api/nodes/refresh-description` для узла без `source_url`
+- **THEN** API возвращает 400
 
 #### Scenario: Узел не найден
 
-- **WHEN** клиент вызывает refresh-description для неизвестного пути
+- **WHEN** клиент вызывает `POST /api/nodes/refresh-description` для неизвестного пути
 - **THEN** API возвращает 404
-
-#### Scenario: Ошибка LLM или fetch источника
-
-- **WHEN** источник недоступен или LLM-конфигурация отсутствует
-- **THEN** API возвращает ошибку 503 или 502 с диагностируемым сообщением и не изменяет markdown-файл узла
-
-#### Scenario: Refresh ordinary note preserves body
-
-- **WHEN** client POSTs refresh for a stored `type=note` without digest profile and with non-empty body
-- **THEN** API returns the updated node
-- **AND** refresh does not rewrite the note body into a digest
-
-#### Scenario: Переиндексация обновлённого узла
-
-- **WHEN** refresh-description успешно сохраняет узел
-- **THEN** API инициирует переиндексацию этого узла тем же механизмом, который используется после изменения узлов
 
 ### Requirement: Единый API фоновых jobs
 
@@ -835,4 +829,52 @@ REST API MUST предоставлять эндпоинт `GET /api/nodes/by-id/
 
 - **WHEN** клиент вызывает `GET /api/nodes?id={uuid}`
 - **THEN** возвращается 400 с указанием использовать `GET /api/nodes/by-id/{id}`
+
+### Requirement: POST-action контракт мутаций
+
+Все мутации HTTP API MUST использовать форму `POST /api/<resource>/<action>` с идентификатором
+или путём в JSON-теле (snake_case: `path`, `id`, `target_path`). REST-глаголы `PUT`/`DELETE`/`PATCH`
+под `/api/` MUST NOT использоваться. Адресация по пути (`{path...}`, `{id}`) допускается ТОЛЬКО для
+`GET`-чтений (deep-links, скачивание ассетов, поллинг статуса/логов). Диспетчеризация по суффиксу
+пути (единый wildcard-обработчик, разбирающий действие из `path`) MUST NOT применяться — каждое
+действие регистрируется отдельным маршрутом и обработчиком.
+
+Соответствие MUST быть закреплено source-scanning тестом (`internal/api/router_guard_test.go`),
+который сканирует `router.go` и падает, если любой маршрут использует `PUT`/`DELETE`/`PATCH`.
+
+#### Сценарий: Guard отклоняет REST-глагол
+
+- **WHEN** в `router.go` регистрируется маршрут с методом `PUT`, `DELETE` или `PATCH`
+- **THEN** `router_guard_test.go` падает с указанием нарушающего маршрута
+
+#### Сценарий: Guard допускает GET deep-link
+
+- **WHEN** в `router.go` регистрируется `GET /api/nodes/{path...}` или `GET /api/jobs/{id}/logs`
+- **THEN** `router_guard_test.go` проходит (адресация по пути разрешена для чтений)
+
+### Requirement: POST-action мутации чатов, issues, telegram-импорта и перевода
+
+API MUST предоставлять мутации для чат-сессий, debug-issues, telegram-импорта и перевода статей в
+POST-action форме с идентификатором в теле:
+
+- `POST /api/chats/update` — `{ id, title }` (переименование), 404 при отсутствии
+- `POST /api/chats/delete` — `{ id }`, 404 при отсутствии
+- `POST /api/debug/issues/update` — `{ id, ...обновляемые поля статуса }`
+- `POST /api/import/telegram/session/accept` — `{ id, ... }`
+- `POST /api/import/telegram/session/reject` — `{ id }`
+- `POST /api/articles/translate` — `{ path, ... }`
+
+`GET`-чтения этих ресурсов (`GET /api/chats/{id}`, `GET /api/import/telegram/session/{id}`,
+`GET /api/articles/translate/{path...}`) остаются без изменений.
+
+#### Сценарий: Переименование чат-сессии
+
+- **WHEN** `POST /api/chats/update` с телом `{ id, title }`
+- **THEN** сессия переименовывается, возвращается `{ id, title }`; при пустом `title` — 400,
+  при отсутствии сессии — 404
+
+#### Сценарий: Приём telegram-сессии
+
+- **WHEN** `POST /api/import/telegram/session/accept` с телом `{ id, ... }`
+- **THEN** сессия принимается так же, как ранее при `POST .../session/{id}/accept`
 
