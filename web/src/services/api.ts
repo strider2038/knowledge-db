@@ -532,9 +532,10 @@ export async function getNodeDumpImagesLogs(
 }
 
 export async function postTranslate(path: string): Promise<TranslateStatus> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/articles/translate/${encoded}`, {
+  const res = await apiFetch(`${API_URL}/api/articles/translate`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -658,14 +659,14 @@ export async function acceptImportItem(
   typeHint?: 'auto' | 'article' | 'link' | 'note',
   contentMode?: ContentMode
 ): Promise<ImportAcceptResponse> {
-  const body: Record<string, string> = {};
+  const body: Record<string, string> = { id };
   if (typeHint && typeHint !== 'auto') {
     body.type_hint = typeHint;
   }
   if (contentMode && contentMode !== 'auto') {
     body.content_mode = contentMode;
   }
-  const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/accept`, {
+  const res = await apiFetch(`${API_URL}/api/import/telegram/session/accept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -678,10 +679,10 @@ export async function acceptImportItem(
 }
 
 export async function rejectImportItem(id: string): Promise<ImportRejectResponse> {
-  const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/reject`, {
+  const res = await apiFetch(`${API_URL}/api/import/telegram/session/reject`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ id }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

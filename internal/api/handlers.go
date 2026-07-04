@@ -117,7 +117,7 @@ func (h *Handler) SetDebugIssueStore(store debugIssueStore) {
 	h.debugStore = store
 }
 
-// PostArticleTranslate обрабатывает POST /api/articles/translate/{path...}.
+// PostArticleTranslate обрабатывает POST /api/articles/translate.
 func (h *Handler) PostArticleTranslate(w http.ResponseWriter, r *http.Request) {
 	h.handleArticleTranslate(w, r, true)
 }
@@ -765,7 +765,16 @@ func (h *Handler) handleArticleTranslate(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	path := r.PathValue("path")
+	var path string
+	if isPost {
+		var req struct {
+			Path string `json:"path"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		path = strings.TrimSpace(req.Path)
+	} else {
+		path = r.PathValue("path")
+	}
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 

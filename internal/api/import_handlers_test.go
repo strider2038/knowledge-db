@@ -120,8 +120,8 @@ func TestImportTelegramAccept_WhenValid(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 
-	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
-		strings.NewReader(`{"type_hint":"article"}`),
+	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/accept",
+		strings.NewReader(`{"id":"`+createData.SessionID+`","type_hint":"article"}`),
 		apitest.WithContentType("application/json"))
 	acceptResp.IsOK()
 	acceptResp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -151,8 +151,8 @@ func TestImportTelegramAccept_WhenInvalidContentMode_Expect400(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 
-	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
-		strings.NewReader(`{"content_mode":"copy"}`),
+	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/accept",
+		strings.NewReader(`{"id":"`+createData.SessionID+`","content_mode":"copy"}`),
 		apitest.WithContentType("application/json"))
 	acceptResp.IsBadRequest()
 	acceptResp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -183,8 +183,8 @@ func TestImportTelegramAccept_WhenVerbatimMode_ExpectPassedToIngester(t *testing
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 
-	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
-		strings.NewReader(`{"content_mode":"verbatim","type_hint":"note"}`),
+	acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/accept",
+		strings.NewReader(`{"id":"`+createData.SessionID+`","content_mode":"verbatim","type_hint":"note"}`),
 		apitest.WithContentType("application/json"))
 	acceptResp.IsOK()
 	acceptResp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -210,8 +210,8 @@ func TestImportTelegramReject_WhenValid(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &createData))
 
-	rejectResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/reject",
-		strings.NewReader(`{}`),
+	rejectResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/reject",
+		strings.NewReader(`{"id":"`+createData.SessionID+`"}`),
 		apitest.WithContentType("application/json"))
 	rejectResp.IsOK()
 	rejectResp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -241,15 +241,15 @@ func TestImportTelegramAccept_WhenSessionComplete_Expect409(t *testing.T) {
 
 	// Accept both items
 	for range 2 {
-		acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
-			strings.NewReader(`{}`),
+		acceptResp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/accept",
+			strings.NewReader(`{"id":"`+createData.SessionID+`"}`),
 			apitest.WithContentType("application/json"))
 		acceptResp.IsOK()
 	}
 
 	// Third accept — сессия завершена, нет текущей записи
-	resp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/"+createData.SessionID+"/accept",
-		strings.NewReader(`{}`),
+	resp := apitest.HandlePOST(t, handler, "/api/import/telegram/session/accept",
+		strings.NewReader(`{"id":"`+createData.SessionID+`"}`),
 		apitest.WithContentType("application/json"))
 	resp.HasCode(http.StatusConflict)
 	resp.HasJSON(func(j *assertjson.AssertJSON) {
