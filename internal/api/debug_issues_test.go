@@ -67,7 +67,7 @@ func TestPostDebugIssue_WhenValidPayload_ExpectOK(t *testing.T) {
 	require.Equal(t, "button is broken", store.lastPayload.Description)
 }
 
-func TestPatchDebugIssueStatus_WhenValidStatus_ExpectOK(t *testing.T) {
+func TestUpdateDebugIssueStatus_WhenValidStatus_ExpectOK(t *testing.T) {
 	t.Parallel()
 	h := api.NewHandler(t.TempDir(), &ingestion.StubIngester{})
 	store := &debugIssueStoreStub{}
@@ -75,7 +75,7 @@ func TestPatchDebugIssueStatus_WhenValidStatus_ExpectOK(t *testing.T) {
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPatch, "/api/debug/issues/issue-1", bytes.NewBufferString(`{"status":"fixed"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/debug/issues/update", bytes.NewBufferString(`{"id":"issue-1","status":"fixed"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -85,14 +85,14 @@ func TestPatchDebugIssueStatus_WhenValidStatus_ExpectOK(t *testing.T) {
 	require.Equal(t, "fixed", store.lastStatus)
 }
 
-func TestPatchDebugIssueStatus_WhenInvalidStatus_ExpectBadRequest(t *testing.T) {
+func TestUpdateDebugIssueStatus_WhenInvalidStatus_ExpectBadRequest(t *testing.T) {
 	t.Parallel()
 	h := api.NewHandler(t.TempDir(), &ingestion.StubIngester{})
 	h.SetDebugIssueStore(&debugIssueStoreStub{})
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPatch, "/api/debug/issues/issue-1", bytes.NewBufferString(`{"status":"unknown"}`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/debug/issues/update", bytes.NewBufferString(`{"id":"issue-1","status":"unknown"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

@@ -86,14 +86,20 @@ func appendNodeContext(b *strings.Builder, node *kb.Node) {
 	b.WriteString(node.Content)
 }
 
-// PostNodeAgentEdit обрабатывает POST /api/nodes/{path...}/agent-edit.
+// PostNodeAgentEdit обрабатывает POST /api/nodes/agent-edit.
 func (h *Handler) PostNodeAgentEdit(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimSuffix(r.PathValue("path"), "/agent-edit")
 	var req struct {
+		Path        string `json:"path"`
 		Instruction string `json:"instruction"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	path := strings.TrimSpace(req.Path)
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
 
 		return
 	}

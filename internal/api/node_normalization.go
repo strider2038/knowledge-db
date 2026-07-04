@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -65,9 +66,22 @@ func buildNormalizationPrompt(node *kb.Node) string {
 	return b.String()
 }
 
-// PostNodeNormalize обрабатывает POST /api/nodes/{path...}/normalize.
+// PostNodeNormalize обрабатывает POST /api/nodes/normalize.
 func (h *Handler) PostNodeNormalize(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimSuffix(r.PathValue("path"), "/normalize")
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	path := strings.TrimSpace(req.Path)
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
 	job, err := h.startNormalizeJob(r.Context(), path)
 	if err != nil {
 		writeError(w, httpStatusFromJobErr(err), err.Error())

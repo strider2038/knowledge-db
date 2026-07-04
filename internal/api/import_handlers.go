@@ -115,7 +115,7 @@ func (h *Handler) ImportTelegramGetSession(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, resp)
 }
 
-// ImportTelegramAccept обрабатывает POST /api/import/telegram/session/:id/accept.
+// ImportTelegramAccept обрабатывает POST /api/import/telegram/session/accept.
 func (h *Handler) ImportTelegramAccept(w http.ResponseWriter, r *http.Request) {
 	if h.sessionStore == nil {
 		clog.Warn(r.Context(), "import telegram accept: not configured")
@@ -124,18 +124,18 @@ func (h *Handler) ImportTelegramAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := r.PathValue("id")
+	var req struct {
+		ID          string `json:"id"`
+		TypeHint    string `json:"type_hint"`
+		ContentMode string `json:"content_mode"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	id := req.ID
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "session id required")
 
 		return
 	}
-
-	var req struct {
-		TypeHint    string `json:"type_hint"`
-		ContentMode string `json:"content_mode"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
 	contentMode := req.ContentMode
 	if contentMode == "" {
 		contentMode = string(ingestion.ContentModeAuto)
@@ -179,7 +179,7 @@ func (h *Handler) ImportTelegramAccept(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
-// ImportTelegramReject обрабатывает POST /api/import/telegram/session/:id/reject.
+// ImportTelegramReject обрабатывает POST /api/import/telegram/session/reject.
 func (h *Handler) ImportTelegramReject(w http.ResponseWriter, r *http.Request) {
 	if h.sessionStore == nil {
 		clog.Warn(r.Context(), "import telegram reject: not configured")
@@ -188,7 +188,11 @@ func (h *Handler) ImportTelegramReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := r.PathValue("id")
+	var req struct {
+		ID string `json:"id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	id := req.ID
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "session id required")
 

@@ -15,8 +15,13 @@ type createChatSessionRequest struct {
 	Title string `json:"title"`
 }
 
-type renameChatSessionRequest struct {
+type updateChatSessionRequest struct {
+	ID    string `json:"id"`
 	Title string `json:"title"`
+}
+
+type deleteChatSessionRequest struct {
+	ID string `json:"id"`
 }
 
 func (h *Handler) GetChats(w http.ResponseWriter, r *http.Request) {
@@ -81,21 +86,21 @@ func (h *Handler) GetChatByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-func (h *Handler) PatchChatByID(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdateChat(w http.ResponseWriter, r *http.Request) {
 	if h.chatStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "chat store unavailable")
 
 		return
 	}
-	id := r.PathValue("id")
-	if id == "" {
-		writeError(w, http.StatusBadRequest, "chat id required")
+	var req updateChatSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 
 		return
 	}
-	var req renameChatSessionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "chat id required")
 
 		return
 	}
@@ -117,13 +122,19 @@ func (h *Handler) PatchChatByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": id, "title": strings.TrimSpace(req.Title)})
 }
 
-func (h *Handler) DeleteChatByID(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	if h.chatStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "chat store unavailable")
 
 		return
 	}
-	id := r.PathValue("id")
+	var req deleteChatSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "chat id required")
 

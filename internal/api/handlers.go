@@ -117,7 +117,7 @@ func (h *Handler) SetDebugIssueStore(store debugIssueStore) {
 	h.debugStore = store
 }
 
-// PostArticleTranslate обрабатывает POST /api/articles/translate/{path...}.
+// PostArticleTranslate обрабатывает POST /api/articles/translate.
 func (h *Handler) PostArticleTranslate(w http.ResponseWriter, r *http.Request) {
 	h.handleArticleTranslate(w, r, true)
 }
@@ -188,9 +188,17 @@ func (h *Handler) GetNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, node)
 }
 
-// DeleteNode обрабатывает DELETE /api/nodes/{path...}.
+// DeleteNode обрабатывает POST /api/nodes/delete.
 func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
-	path := r.PathValue("path")
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	path := strings.TrimSpace(req.Path)
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 
@@ -212,46 +220,20 @@ func (h *Handler) DeleteNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"path": path, "deleted": true})
 }
 
-// MoveNode обрабатывает POST /api/nodes/{path...}/move (matched via POST /api/nodes/{path...}).
+// MoveNode обрабатывает POST /api/nodes/move.
 func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
-	path := r.PathValue("path")
-	if path == "" {
-		writeError(w, http.StatusBadRequest, "path required")
-
-		return
-	}
-	if strings.HasSuffix(path, "/refresh-description") {
-		h.RefreshDescription(w, r)
-
-		return
-	}
-	if strings.HasSuffix(path, "/normalize") {
-		h.PostNodeNormalize(w, r)
-
-		return
-	}
-	if strings.HasSuffix(path, "/agent-edit") {
-		h.PostNodeAgentEdit(w, r)
-
-		return
-	}
-	if strings.HasSuffix(path, "/dump-images") {
-		h.PostNodeDumpImages(w, r)
-
-		return
-	}
-	// Extract actual node path: expected pattern is "{nodePath}/move"
-	nodePath, _ := strings.CutSuffix(path, "/move")
-	if nodePath == "" {
-		writeError(w, http.StatusBadRequest, "path required")
-
-		return
-	}
 	var req struct {
+		Path       string `json:"path"`
 		TargetPath string `json:"target_path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	path := strings.TrimSpace(req.Path)
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
 
 		return
 	}
@@ -260,10 +242,10 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	node, err := kb.MoveNode(r.Context(), h.dataPath, nodePath, req.TargetPath)
+	node, err := kb.MoveNode(r.Context(), h.dataPath, path, req.TargetPath)
 	if err != nil {
 		if errors.Is(err, kb.ErrNodeNotFound) {
-			clog.Debug(r.Context(), "move node: not found", "path", nodePath)
+			clog.Debug(r.Context(), "move node: not found", "path", path)
 			writeError(w, http.StatusNotFound, "node not found")
 
 			return
@@ -288,17 +270,24 @@ func (h *Handler) MoveNode(w http.ResponseWriter, r *http.Request) {
 	if h.syncWorker != nil && node.ID != "" {
 		h.syncWorker.Send(r.Context(), index.NodeMovedEvent{
 			NodeID:  node.ID,
-			OldPath: nodePath,
+			OldPath: path,
 			NewPath: node.Path,
 		})
 	}
 	writeJSON(w, node)
 }
 
-// RefreshDescription обрабатывает POST /api/nodes/{path...}/refresh-description.
+// RefreshDescription обрабатывает POST /api/nodes/refresh-description.
 func (h *Handler) RefreshDescription(w http.ResponseWriter, r *http.Request) {
-	path := r.PathValue("path")
-	path, _ = strings.CutSuffix(path, "/refresh-description")
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	path := strings.TrimSpace(req.Path)
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 
@@ -332,22 +321,35 @@ func (h *Handler) RefreshDescription(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, node)
 }
 
-// PatchNode обрабатывает PATCH /api/nodes/{path...} — частичное обновление frontmatter узла.
-func (h *Handler) PatchNode(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPatch {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+// UpdateNode обрабатывает POST /api/nodes/update — частичное обновление frontmatter узла.
+func (h *Handler) UpdateNode(w http.ResponseWriter, r *http.Request) {
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 
 		return
 	}
-	path := r.PathValue("path")
-	if path == "" {
+	if len(raw) == 0 {
+		writeError(w, http.StatusBadRequest, "body must contain at least one field")
+
+		return
+	}
+	pathRaw, ok := raw["path"]
+	if !ok {
 		writeError(w, http.StatusBadRequest, "path required")
 
 		return
 	}
-	var raw map[string]json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+	var pathValue string
+	if err := json.Unmarshal(pathRaw, &pathValue); err != nil {
+		writeError(w, http.StatusBadRequest, "path must be a string")
+
+		return
+	}
+	path := strings.TrimSpace(pathValue)
+	delete(raw, "path")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
 
 		return
 	}
@@ -763,7 +765,16 @@ func (h *Handler) handleArticleTranslate(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	path := r.PathValue("path")
+	var path string
+	if isPost {
+		var req struct {
+			Path string `json:"path"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		path = strings.TrimSpace(req.Path)
+	} else {
+		path = r.PathValue("path")
+	}
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "path required")
 

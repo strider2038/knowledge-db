@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -31,9 +32,22 @@ type dumpImagesLogsResponse struct {
 	NextOffset int64               `json:"next_offset"`
 }
 
-// PostNodeDumpImages обрабатывает POST /api/nodes/{path...}/dump-images.
+// PostNodeDumpImages обрабатывает POST /api/nodes/dump-images.
 func (h *Handler) PostNodeDumpImages(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimSuffix(r.PathValue("path"), "/dump-images")
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	path := strings.TrimSpace(req.Path)
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "path required")
+
+		return
+	}
 	job, err := h.startDumpImagesJob(r.Context(), path)
 	if err != nil {
 		writeError(w, httpStatusFromJobErr(err), err.Error())

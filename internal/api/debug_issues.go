@@ -64,23 +64,24 @@ func (h *Handler) PostDebugIssue(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) PatchDebugIssueStatus(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UpdateDebugIssueStatus(w http.ResponseWriter, r *http.Request) {
 	if h.debugStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "debug issue store not configured")
 
 		return
 	}
-	issueID := strings.TrimSpace(r.PathValue("id"))
-	if issueID == "" {
-		writeError(w, http.StatusBadRequest, "id is required")
-
-		return
-	}
 	var req struct {
+		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
+
+		return
+	}
+	issueID := strings.TrimSpace(req.ID)
+	if issueID == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
 
 		return
 	}

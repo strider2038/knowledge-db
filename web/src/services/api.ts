@@ -237,11 +237,10 @@ export async function patchNodeMetadata(
   path: string,
   payload: PatchNodeMetadataRequest
 ): Promise<Node> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}`, {
-    method: 'PATCH',
+  const res = await apiFetch(`${API_URL}/api/nodes/update`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ path, ...payload }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -284,9 +283,10 @@ export async function getKeywordSuggestions(): Promise<string[]> {
 }
 
 export async function refreshNodeDescription(path: string): Promise<JobOperation> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/refresh-description`, {
+  const res = await apiFetch(`${API_URL}/api/nodes/refresh-description`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -369,9 +369,10 @@ export interface NodeDumpImagesLogsResponse {
 }
 
 export async function startNodeNormalization(path: string): Promise<NodeNormalizeOperation> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/normalize`, {
+  const res = await apiFetch(`${API_URL}/api/nodes/normalize`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -461,11 +462,10 @@ export async function startNodeAgentEdit(
   path: string,
   instruction: string,
 ): Promise<NodeAgentEditOperation> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/agent-edit`, {
+  const res = await apiFetch(`${API_URL}/api/nodes/agent-edit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ path, instruction }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -497,9 +497,10 @@ export async function getNodeAgentEditLogs(
 }
 
 export async function startNodeDumpImages(path: string): Promise<NodeDumpImagesOperation> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/dump-images`, {
+  const res = await apiFetch(`${API_URL}/api/nodes/dump-images`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -531,9 +532,10 @@ export async function getNodeDumpImagesLogs(
 }
 
 export async function postTranslate(path: string): Promise<TranslateStatus> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/articles/translate/${encoded}`, {
+  const res = await apiFetch(`${API_URL}/api/articles/translate`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -657,14 +659,14 @@ export async function acceptImportItem(
   typeHint?: 'auto' | 'article' | 'link' | 'note',
   contentMode?: ContentMode
 ): Promise<ImportAcceptResponse> {
-  const body: Record<string, string> = {};
+  const body: Record<string, string> = { id };
   if (typeHint && typeHint !== 'auto') {
     body.type_hint = typeHint;
   }
   if (contentMode && contentMode !== 'auto') {
     body.content_mode = contentMode;
   }
-  const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/accept`, {
+  const res = await apiFetch(`${API_URL}/api/import/telegram/session/accept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -677,10 +679,10 @@ export async function acceptImportItem(
 }
 
 export async function rejectImportItem(id: string): Promise<ImportRejectResponse> {
-  const res = await apiFetch(`${API_URL}/api/import/telegram/session/${encodeURIComponent(id)}/reject`, {
+  const res = await apiFetch(`${API_URL}/api/import/telegram/session/reject`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ id }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -695,9 +697,10 @@ export interface DeleteNodeResponse {
 }
 
 export async function deleteNode(path: string): Promise<DeleteNodeResponse> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}`, {
-    method: 'DELETE',
+  const res = await apiFetch(`${API_URL}/api/nodes/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -707,11 +710,10 @@ export async function deleteNode(path: string): Promise<DeleteNodeResponse> {
 }
 
 export async function moveNode(path: string, targetPath: string): Promise<Node> {
-  const encoded = path.split('/').map(encodeURIComponent).join('/');
-  const res = await apiFetch(`${API_URL}/api/nodes/${encoded}/move`, {
+  const res = await apiFetch(`${API_URL}/api/nodes/move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ target_path: targetPath }),
+    body: JSON.stringify({ path, target_path: targetPath }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -909,10 +911,10 @@ export async function getChat(id: string): Promise<{ session: ChatSession; messa
 }
 
 export async function renameChat(id: string, title: string): Promise<void> {
-  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
+  const res = await apiFetch(`${API_URL}/api/chats/update`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ id, title }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -921,7 +923,11 @@ export async function renameChat(id: string, title: string): Promise<void> {
 }
 
 export async function deleteChat(id: string): Promise<void> {
-  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_URL}/api/chats/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to delete chat');

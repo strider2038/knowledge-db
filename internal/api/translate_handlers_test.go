@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/muonsoft/api-testing/apitest"
@@ -48,7 +49,9 @@ func TestPostArticleTranslate_WhenQueueNil_Expect503(t *testing.T) {
 	t.Parallel()
 	handler := setupTranslateTestHandler(t, false)
 
-	resp := apitest.HandlePOST(t, handler, "/api/articles/translate/go/test-article", nil)
+	resp := apitest.HandlePOST(t, handler, "/api/articles/translate",
+		strings.NewReader(`{"path":"go/test-article"}`),
+		apitest.WithContentType("application/json"))
 
 	resp.HasCode(http.StatusServiceUnavailable)
 	resp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -69,7 +72,9 @@ func TestPostArticleTranslate_WhenNodeNotFound_Expect404(t *testing.T) {
 	t.Parallel()
 	handler := setupTranslateTestHandler(t, true)
 
-	resp := apitest.HandlePOST(t, handler, "/api/articles/translate/go/missing-article", nil)
+	resp := apitest.HandlePOST(t, handler, "/api/articles/translate",
+		strings.NewReader(`{"path":"go/missing-article"}`),
+		apitest.WithContentType("application/json"))
 
 	resp.HasCode(http.StatusNotFound)
 	resp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -97,7 +102,9 @@ Content`
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	resp := apitest.HandlePOST(t, mux, "/api/articles/translate/topic/node1", nil)
+	resp := apitest.HandlePOST(t, mux, "/api/articles/translate",
+		strings.NewReader(`{"path":"topic/node1"}`),
+		apitest.WithContentType("application/json"))
 
 	resp.HasCode(http.StatusBadRequest)
 	resp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -109,7 +116,9 @@ func TestPostArticleTranslate_WhenNoTranslation_ExpectPending(t *testing.T) {
 	t.Parallel()
 	handler := setupTranslateTestHandler(t, true)
 
-	resp := apitest.HandlePOST(t, handler, "/api/articles/translate/go/test-article", nil)
+	resp := apitest.HandlePOST(t, handler, "/api/articles/translate",
+		strings.NewReader(`{"path":"go/test-article"}`),
+		apitest.WithContentType("application/json"))
 
 	resp.IsOK()
 	resp.HasJSON(func(j *assertjson.AssertJSON) {
@@ -121,13 +130,17 @@ func TestPostArticleTranslate_WhenAlreadyPending_ExpectNoDuplicate(t *testing.T)
 	t.Parallel()
 	handler := setupTranslateTestHandler(t, true)
 
-	resp1 := apitest.HandlePOST(t, handler, "/api/articles/translate/go/test-article", nil)
+	resp1 := apitest.HandlePOST(t, handler, "/api/articles/translate",
+		strings.NewReader(`{"path":"go/test-article"}`),
+		apitest.WithContentType("application/json"))
 	resp1.IsOK()
 	resp1.HasJSON(func(j *assertjson.AssertJSON) {
 		j.Node("status").IsString().EqualTo("pending")
 	})
 
-	resp2 := apitest.HandlePOST(t, handler, "/api/articles/translate/go/test-article", nil)
+	resp2 := apitest.HandlePOST(t, handler, "/api/articles/translate",
+		strings.NewReader(`{"path":"go/test-article"}`),
+		apitest.WithContentType("application/json"))
 	resp2.IsOK()
 	resp2.HasJSON(func(j *assertjson.AssertJSON) {
 		j.Node("status").IsString().EqualTo("pending")
@@ -210,7 +223,9 @@ lang: ru
 	mux, err := api.NewMux(h, nil)
 	require.NoError(t, err)
 
-	resp := apitest.HandlePOST(t, mux, "/api/articles/translate/go/test-article", nil)
+	resp := apitest.HandlePOST(t, mux, "/api/articles/translate",
+		strings.NewReader(`{"path":"go/test-article"}`),
+		apitest.WithContentType("application/json"))
 
 	resp.IsOK()
 	resp.HasJSON(func(j *assertjson.AssertJSON) {
