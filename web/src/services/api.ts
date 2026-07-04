@@ -910,10 +910,10 @@ export async function getChat(id: string): Promise<{ session: ChatSession; messa
 }
 
 export async function renameChat(id: string, title: string): Promise<void> {
-  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
+  const res = await apiFetch(`${API_URL}/api/chats/update`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ id, title }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -922,7 +922,11 @@ export async function renameChat(id: string, title: string): Promise<void> {
 }
 
 export async function deleteChat(id: string): Promise<void> {
-  const res = await apiFetch(`${API_URL}/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_URL}/api/chats/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error || 'Failed to delete chat');

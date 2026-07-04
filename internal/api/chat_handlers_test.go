@@ -301,11 +301,13 @@ func TestChatsCRUD_WhenValidFlow_ExpectSuccess(t *testing.T) {
 	getResp.IsOK()
 	assert.Contains(t, getResp.Recorder().Body.String(), sessionID)
 
-	patchResp := apitest.HandlePATCH(t, handler, "/api/chats/"+sessionID, strings.NewReader(`{"title":"Renamed"}`))
+	patchResp := apitest.HandlePOST(t, handler, "/api/chats/update",
+		strings.NewReader(`{"id":"`+sessionID+`","title":"Renamed"}`), apitest.WithJSONContentType())
 	patchResp.IsOK()
 	assert.Contains(t, patchResp.Recorder().Body.String(), "Renamed")
 
-	deleteResp := apitest.HandleDELETE(t, handler, "/api/chats/"+sessionID)
+	deleteResp := apitest.HandlePOST(t, handler, "/api/chats/delete",
+		strings.NewReader(`{"id":"`+sessionID+`"}`), apitest.WithJSONContentType())
 	deleteResp.IsOK()
 
 	getMissing := apitest.HandleGET(t, handler, "/api/chats/"+sessionID)
