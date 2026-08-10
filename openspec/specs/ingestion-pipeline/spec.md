@@ -49,7 +49,7 @@ IngestURL — явный метод для обработки URL. Исполь�
 
 Система ДОЛЖНА (SHALL) использовать LLM (OpenAI-совместимый API, библиотека github.com/openai/openai-go, Responses API) для оркестрации ingestion. LLM MUST получать на вход текст пользователя и компактный контекст размещения (`placement context`), подготовленный pipeline перед первым LLM-запросом. Placement context MUST включать краткую карту базы, ранжированные candidate themes, candidate keywords и similar nodes; система MUST NOT отправлять в prompt полный неранжированный список всех keywords как основной механизм выбора.
 
-Placement context MUST строиться локально и offline-first: при доступном локальном поисковом индексе система SHALL использовать его для подбора похожих узлов и словаря терминов; если индекс недоступен, система MUST использовать fallback-обход файлов базы и frontmatter. Candidate themes MUST учитывать похожие узлы, совпадение title/annotation/keywords/path, `source_kind`, `content_profile` и плотность темы. Candidate keywords MUST учитывать термины входного материала, keywords похожих узлов, top keywords candidate themes и частотность. Система MUST NOT вводить ручной словарь синонимов keywords в рамках placement builder.
+Placement context MUST строиться локально и offline-first: при доступном локальном поисковом индексе система SHALL использовать его для подбора похожих узлов и словаря терминов; если индекс недоступен, система MUST использовать fallback-обход файлов базы и frontmatter. Candidate themes MUST учитывать предметные сигналы: похожие узлы и точные совпадения значимых токенов в title/annotation/keywords/path. Размер темы (`node_count`), `source_kind`, `content_profile` и `type` MUST NOT давать положительный вклад в предметный score. Пустая родительская тема MUST NOT становиться candidate theme только из-за совпадения дочернего узла. Краткая карта базы MUST сохранять представительство разных корневых веток, даже если одна ветка содержит существенно больше узлов. Запрос для локального placement-поиска MUST содержать не более 24 значимых токенов и MUST NOT включать диагностические поля `source_kind`, `content_profile` и `type`. Candidate keywords MUST учитывать термины входного материала, keywords похожих узлов, top keywords candidate themes и частотность. Система MUST NOT вводить ручной словарь синонимов keywords в рамках placement builder.
 
 Доступные инструменты (tools) для LLM:
 - `fetch_url_content(url)` — полное извлечение контента из URL (для статей); LLM получает превью первых 2000 символов для анализа метаданных, включая Author; полный контент кешируется и сохраняется автоматически
@@ -81,6 +81,21 @@ Placement context MUST строиться локально и offline-first: п�
 
 - **WHEN** placement context содержит candidate theme "go/concurrency" и контент связан с конкурентностью в Go
 - **THEN** LLM MUST предпочитать candidate theme, если она подходит по смыслу
+
+#### Сценарий: Формат источника не определяет предмет
+
+- **WHEN** новый материал посвящён SMS-верификации, а крупная ветка `ai/agentic-coding` содержит много статей того же `source_kind` и `content_profile`
+- **THEN** размер ветки и совпадение диагностических полей MUST NOT повышать score `ai/agentic-coding`
+
+#### Сценарий: Пустая родительская тема не наследует score
+
+- **WHEN** похожий узел находится в `ai/agentic-coding/skills`, а в `ai/agentic-coding` нет собственных узлов
+- **THEN** дочерняя тема MAY быть candidate theme, а пустая родительская тема MUST NOT появляться только из-за этого совпадения
+
+#### Сценарий: Карта базы сбалансирована по корневым веткам
+
+- **WHEN** одна корневая ветка содержит больше тем, чем лимит краткой карты
+- **THEN** краткая карта MUST также содержать темы из других непустых корневых веток
 
 #### Сценарий: Первичный placement context достаточен
 
