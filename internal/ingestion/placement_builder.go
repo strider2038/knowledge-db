@@ -68,10 +68,10 @@ func (b *PlacementBuilder) Build(ctx context.Context, input PlacementBuildInput)
 
 	explicitTheme := findExplicitThemePath(input.Text, collectThemes(tree))
 	terms := extractPlacementTerms(query)
-	similarNodes := mergeSimilarNodes(indexSimilar, scoreSimilarNodes(nodes, terms, input))
+	similarNodes := mergeSimilarNodes(indexSimilar, scoreSimilarNodes(nodes, terms))
 	themeProfiles := buildThemeProfiles(tree, nodes)
 	themeMap := buildThemeMap(themeProfiles)
-	candidateThemes := scoreThemeCandidates(themeProfiles, similarNodes, terms, input, explicitTheme)
+	candidateThemes := scoreThemeCandidates(themeProfiles, similarNodes, terms, explicitTheme)
 	candidateKeywords := scoreKeywordCandidates(nodes, candidateThemes, similarNodes, terms, curatedKeywords)
 
 	legacyPromptContextSize := estimatedLegacyPromptContextSize(tree, nodes)
@@ -209,13 +209,11 @@ func (b *PlacementBuilder) loadNodeProfiles(ctx context.Context) ([]nodeProfile,
 }
 
 type themeProfile struct {
-	Path            string
-	ParentPath      string
-	NodeCount       int
-	KeywordCounts   map[string]int
-	SourceKinds     map[string]int
-	ContentProfiles map[string]int
-	Examples        []string
+	Path          string
+	ParentPath    string
+	NodeCount     int
+	KeywordCounts map[string]int
+	Examples      []string
 }
 
 type scoredTheme struct {
@@ -241,12 +239,6 @@ func buildThemeProfiles(tree *kb.TreeNode, nodes []nodeProfile) map[string]*them
 		for _, keyword := range node.Keywords {
 			profile.KeywordCounts[keyword]++
 		}
-		if node.SourceKind != "" {
-			profile.SourceKinds[node.SourceKind]++
-		}
-		if node.ContentProfile != "" {
-			profile.ContentProfiles[node.ContentProfile]++
-		}
 		if len(profile.Examples) < 3 {
 			profile.Examples = append(profile.Examples, firstNonEmptyString(node.Title, node.Path))
 		}
@@ -257,18 +249,16 @@ func buildThemeProfiles(tree *kb.TreeNode, nodes []nodeProfile) map[string]*them
 
 func newThemeProfile(themePath string) *themeProfile {
 	return &themeProfile{
-		Path:            themePath,
-		ParentPath:      parentThemePath(themePath),
-		KeywordCounts:   make(map[string]int),
-		SourceKinds:     make(map[string]int),
-		ContentProfiles: make(map[string]int),
+		Path:          themePath,
+		ParentPath:    parentThemePath(themePath),
+		KeywordCounts: make(map[string]int),
 	}
 }
 
-func scoreSimilarNodes(nodes []nodeProfile, terms []string, input PlacementBuildInput) []llm.SimilarNode {
+func scoreSimilarNodes(nodes []nodeProfile, terms []string) []llm.SimilarNode {
 	similar := make([]llm.SimilarNode, 0, len(nodes))
 	for _, node := range nodes {
-		score, reasons := scoreNode(node, terms, input)
+		score, reasons := scoreNode(node, terms)
 		if score <= 0 {
 			continue
 		}
@@ -295,44 +285,36 @@ func scoreSimilarNodes(nodes []nodeProfile, terms []string, input PlacementBuild
 	return similar
 }
 
-func scoreNode(node nodeProfile, terms []string, input PlacementBuildInput) (float64, []string) {
+func scoreNode(node nodeProfile, terms []string) (float64, []string) {
 	var score float64
 	reasonSet := make(map[string]struct{})
-	title := normalizePlacementText(node.Title)
-	annotation := normalizePlacementText(node.Annotation)
-	body := normalizePlacementText(node.Content)
-	pathText := normalizePlacementText(strings.ReplaceAll(node.Path, "/", " "))
-	keywords := normalizePlacementText(strings.Join(node.Keywords, " "))
+	pathTokens := placementTokenSet(strings.ReplaceAll(node.Path, "/", " "))
+	titleTokens := placementTokenSet(node.Title)
+	keywordTokens := placementTokenSet(strings.Join(node.Keywords, " "))
+	annotationTokens := placementTokenSet(node.Annotation)
+	bodyTokens := placementTokenSet(node.Content)
 
 	for _, term := range terms {
-		if strings.Contains(pathText, term) {
+		if placementTokensContainTerm(pathTokens, term) {
 			score += 4
 			reasonSet["path"] = struct{}{}
 		}
-		if strings.Contains(title, term) {
+		if placementTokensContainTerm(titleTokens, term) {
 			score += 3
 			reasonSet["title"] = struct{}{}
 		}
-		if strings.Contains(keywords, term) {
+		if placementTokensContainTerm(keywordTokens, term) {
 			score += 3
 			reasonSet["keywords"] = struct{}{}
 		}
-		if strings.Contains(annotation, term) {
+		if placementTokensContainTerm(annotationTokens, term) {
 			score += 1.5
 			reasonSet["annotation"] = struct{}{}
 		}
-		if strings.Contains(body, term) {
+		if placementTokensContainTerm(bodyTokens, term) {
 			score += 0.5
 			reasonSet["body"] = struct{}{}
 		}
-	}
-	if input.SourceKind != "" && node.SourceKind == input.SourceKind {
-		score += 1
-		reasonSet["source_kind"] = struct{}{}
-	}
-	if input.ContentProfile != "" && node.ContentProfile == input.ContentProfile {
-		score += 1
-		reasonSet["content_profile"] = struct{}{}
 	}
 
 	return score, sortedKeys(reasonSet)
@@ -342,12 +324,11 @@ func scoreThemeCandidates(
 	profiles map[string]*themeProfile,
 	similarNodes []llm.SimilarNode,
 	terms []string,
-	input PlacementBuildInput,
 	explicitTheme string,
 ) []llm.ThemeCandidate {
 	scored := make(map[string]*scoredTheme, len(profiles))
 	for themePath, profile := range profiles {
-		score, reasons := scoreThemeProfile(themePath, profile, terms, input, explicitTheme)
+		score, reasons := scoreThemeProfile(themePath, profile, terms, explicitTheme)
 		scored[themePath] = &scoredTheme{candidate: llm.ThemeCandidate{
 			Path:        themePath,
 			ParentPath:  profile.ParentPath,
@@ -365,8 +346,8 @@ func scoreThemeCandidates(
 		}
 		addThemeSignal(scored, profiles, themePath, node.Score, "similar_node", node.Title)
 		parent := parentThemePath(themePath)
-		if parent != "" {
-			addThemeSignal(scored, profiles, parent, node.Score*0.35, "similar_node_parent", node.Title)
+		if parentProfile := profiles[parent]; parent != "" && parentProfile != nil && parentProfile.NodeCount > 0 {
+			addThemeSignal(scored, profiles, parent, node.Score*0.15, "similar_node_parent", node.Title)
 		}
 	}
 
@@ -393,16 +374,11 @@ func scoreThemeProfile(
 	themePath string,
 	profile *themeProfile,
 	terms []string,
-	input PlacementBuildInput,
 	explicitTheme string,
 ) (float64, map[string]struct{}) {
-	score := densityScore(profile.NodeCount)
+	var score float64
 	reasons := map[string]struct{}{}
-	if score > 0 {
-		reasons["theme_density"] = struct{}{}
-	}
 	score += scoreThemeTextSignals(themePath, profile.KeywordCounts, terms, reasons)
-	score += scoreThemeProfileSignals(profile, input, reasons)
 	if explicitTheme != "" && themePath == explicitTheme {
 		score += 100
 		reasons["explicit_user_instruction"] = struct{}{}
@@ -413,9 +389,8 @@ func scoreThemeProfile(
 
 func scoreThemeTextSignals(themePath string, keywordCounts map[string]int, terms []string, reasons map[string]struct{}) float64 {
 	var score float64
-	pathText := normalizePlacementText(strings.ReplaceAll(themePath, "/", " "))
 	for _, term := range terms {
-		if strings.Contains(pathText, term) {
+		if placementTextContainsTerm(strings.ReplaceAll(themePath, "/", " "), term) {
 			score += 4
 			reasons["path"] = struct{}{}
 		}
@@ -430,26 +405,12 @@ func scoreThemeTextSignals(themePath string, keywordCounts map[string]int, terms
 
 func themeKeywordsContainTerm(keywordCounts map[string]int, term string) bool {
 	for keyword := range keywordCounts {
-		if strings.Contains(normalizePlacementText(keyword), term) {
+		if placementTextContainsTerm(keyword, term) {
 			return true
 		}
 	}
 
 	return false
-}
-
-func scoreThemeProfileSignals(profile *themeProfile, input PlacementBuildInput, reasons map[string]struct{}) float64 {
-	var score float64
-	if input.SourceKind != "" && profile.SourceKinds[input.SourceKind] > 0 {
-		score += 1.5
-		reasons["source_kind"] = struct{}{}
-	}
-	if input.ContentProfile != "" && profile.ContentProfiles[input.ContentProfile] > 0 {
-		score += 1.5
-		reasons["content_profile"] = struct{}{}
-	}
-
-	return score
 }
 
 func addThemeSignal(
@@ -582,7 +543,7 @@ func addInputTermKeywords(scores map[string]*keywordScore, nodes []nodeProfile, 
 func addMatchingNodeKeywords(scores map[string]*keywordScore, nodes []nodeProfile, term string) {
 	for _, node := range nodes {
 		for _, keyword := range node.Keywords {
-			if strings.Contains(normalizePlacementText(keyword), term) {
+			if placementTextContainsTerm(keyword, term) {
 				addKeywordScore(scores, keyword, 3, node.ThemePath, "input_term")
 			}
 		}
@@ -675,36 +636,89 @@ func mergeSimilarNodes(primary, fallback []llm.SimilarNode) []llm.SimilarNode {
 }
 
 func buildPlacementQuery(input PlacementBuildInput) string {
-	parts := []string{input.Text, input.SourceURL, input.SourceAuthor, input.SourceKind, input.ContentProfile, input.Type}
+	parts := []string{input.Text, input.SourceURL, input.SourceAuthor}
 
-	return strings.Join(parts, " ")
+	return strings.Join(extractPlacementTerms(strings.Join(parts, " ")), " ")
 }
 
 func extractPlacementTerms(text string) []string {
 	fields := strings.FieldsFunc(normalizePlacementText(text), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 	})
-	seen := make(map[string]struct{}, len(fields))
-	terms := make([]string, 0, len(fields))
-	for _, field := range fields {
+	type termStat struct {
+		value      string
+		count      int
+		firstIndex int
+	}
+	stats := make(map[string]*termStat, len(fields))
+	for i, field := range fields {
 		field = strings.TrimSpace(field)
-		if len([]rune(field)) < 2 {
+		if len([]rune(field)) < 3 {
 			continue
 		}
 		if _, ok := placementStopWords[field]; ok {
 			continue
 		}
-		if _, ok := seen[field]; ok {
-			continue
+		stat := stats[field]
+		if stat == nil {
+			stat = &termStat{value: field, firstIndex: i}
+			stats[field] = stat
 		}
-		seen[field] = struct{}{}
-		terms = append(terms, field)
+		stat.count++
 	}
-	if len(terms) > 80 {
-		terms = terms[:80]
+	ordered := make([]termStat, 0, len(stats))
+	for _, stat := range stats {
+		ordered = append(ordered, *stat)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].count != ordered[j].count {
+			return ordered[i].count > ordered[j].count
+		}
+		if ordered[i].firstIndex != ordered[j].firstIndex {
+			return ordered[i].firstIndex < ordered[j].firstIndex
+		}
+
+		return ordered[i].value < ordered[j].value
+	})
+	if len(ordered) > placementTermLimit {
+		ordered = ordered[:placementTermLimit]
+	}
+	terms := make([]string, len(ordered))
+	for i, stat := range ordered {
+		terms[i] = stat.value
 	}
 
 	return terms
+}
+
+func placementTextContainsTerm(text, term string) bool {
+	return placementTokensContainTerm(placementTokenSet(text), term)
+}
+
+func placementTokenSet(text string) map[string]struct{} {
+	tokens := make(map[string]struct{})
+	for _, token := range strings.FieldsFunc(normalizePlacementText(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	}) {
+		tokens[token] = struct{}{}
+		tokens[placementTokenBase(token)] = struct{}{}
+	}
+
+	return tokens
+}
+
+func placementTokensContainTerm(tokens map[string]struct{}, term string) bool {
+	_, ok := tokens[placementTokenBase(term)]
+
+	return ok
+}
+
+func placementTokenBase(token string) string {
+	if len(token) > 4 && strings.HasSuffix(token, "s") {
+		return strings.TrimSuffix(token, "s")
+	}
+
+	return token
 }
 
 func findExplicitThemePath(text string, themes []string) string {
@@ -819,19 +833,6 @@ func topKeywordCounts(counts map[string]int, limit int) []string {
 	return result
 }
 
-func densityScore(count int) float64 {
-	switch {
-	case count >= 10:
-		return 2.5
-	case count >= 5:
-		return 1.5
-	case count > 0:
-		return 0.5
-	default:
-		return 0
-	}
-}
-
 func sortedKeys(set map[string]struct{}) []string {
 	result := make([]string, 0, len(set))
 	for key := range set {
@@ -864,11 +865,44 @@ func containsString(values []string, needle string) bool {
 }
 
 func limitThemeSummary(items []llm.ThemeSummary, limit int) []llm.ThemeSummary {
-	if len(items) > limit {
-		return items[:limit]
+	if limit <= 0 || len(items) == 0 {
+		return nil
+	}
+	if len(items) <= limit {
+		return items
 	}
 
-	return items
+	byRoot := make(map[string][]llm.ThemeSummary)
+	for _, item := range items {
+		root := strings.SplitN(item.Path, "/", 2)[0]
+		byRoot[root] = append(byRoot[root], item)
+	}
+	roots := make([]string, 0, len(byRoot))
+	for root := range byRoot {
+		roots = append(roots, root)
+	}
+	sort.Strings(roots)
+
+	result := make([]llm.ThemeSummary, 0, limit)
+	for depth := 0; len(result) < limit; depth++ {
+		added := false
+		for _, root := range roots {
+			branch := byRoot[root]
+			if depth >= len(branch) {
+				continue
+			}
+			result = append(result, branch[depth])
+			added = true
+			if len(result) == limit {
+				break
+			}
+		}
+		if !added {
+			break
+		}
+	}
+
+	return result
 }
 
 func limitThemeCandidates(items []llm.ThemeCandidate, limit int) []llm.ThemeCandidate {
@@ -904,7 +938,10 @@ func maxFloat(a, b float64) float64 {
 }
 
 var placementStopWords = map[string]struct{}{
-	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "for": {}, "from": {}, "in": {}, "is": {}, "of": {}, "on": {}, "or": {}, "the": {}, "to": {}, "with": {},
-	"автор": {}, "без": {}, "в": {}, "во": {}, "для": {}, "и": {}, "из": {}, "как": {}, "на": {}, "не": {}, "о": {}, "об": {}, "от": {}, "по": {}, "про": {}, "с": {}, "со": {}, "что": {}, "это": {},
+	"a": {}, "add": {}, "an": {}, "and": {}, "are": {}, "article": {}, "as": {}, "base": {}, "for": {}, "from": {}, "in": {}, "is": {}, "knowledge": {}, "material": {}, "note": {}, "of": {}, "on": {}, "or": {}, "repo": {}, "repository": {}, "save": {}, "store": {}, "the": {}, "to": {}, "with": {},
+	"автор": {}, "база": {}, "базу": {}, "без": {}, "в": {}, "во": {}, "добавить": {}, "добавь": {}, "для": {}, "и": {}, "из": {}, "как": {}, "материал": {}, "на": {}, "не": {}, "о": {}, "об": {}, "от": {}, "по": {}, "про": {}, "репозиторий": {}, "с": {}, "ссылка": {}, "сохрани": {}, "сохранить": {}, "со": {}, "статья": {}, "статью": {}, "что": {}, "это": {}, "заметка": {}, "заметку": {}, "знаний": {},
 	"source": {}, "kind": {}, "content": {}, "profile": {}, "recommended": {}, "type": {}, "url": {},
+	"http": {}, "https": {}, "www": {}, "com": {}, "org": {}, "github": {},
 }
+
+const placementTermLimit = 24

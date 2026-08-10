@@ -38,6 +38,11 @@ func TestBuildSystemPrompt_WhenPlacementContextProvided_ExpectCompactContextWith
 	assert.Contains(t, prompt, "goroutines")
 	assert.NotContains(t, prompt, "## Existing keywords")
 	assert.NotContains(t, prompt, "## Existing themes")
+	assert.Contains(t, prompt, "Выбирай theme_path по ПРЕДМЕТУ материала")
+	assert.Contains(t, prompt, "source_kind, content_profile и type — диагностические свойства")
+	assert.Contains(t, prompt, "Candidate themes — подсказки, а не обязательный выбор")
+	assert.Contains(t, prompt, "Не используй catch-all тему только потому, что в ней уже много узлов")
+	assert.Contains(t, prompt, "Память агентов, RAG/retrieval, MCP/integrations, модели и обычные online services — отдельные предметы")
 }
 
 func TestBuildSystemPrompt_WhenExplicitThemePathProvided_ExpectPriorityInstruction(t *testing.T) {

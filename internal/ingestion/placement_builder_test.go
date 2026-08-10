@@ -2,7 +2,9 @@ package ingestion_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -162,6 +164,114 @@ annotation: "Skills for Claude Code agents."
 	assert.Contains(t, placementKeywordNames(context.CandidateKeywords), "agent skills")
 }
 
+func TestPlacementBuilder_Build_WhenLargeThemeOnlyMatchesSourceProfile_ExpectNoCatchAllBoost(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	files := map[string]string{
+		"security/auth/sms-verification.md": `---
+title: SMS Verification
+keywords: [SMS, verification, authentication]
+source_kind: repository
+content_profile: repository_profile
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+annotation: "SMS verification and authentication flows."
+---
+One-time codes for user authentication.
+`,
+	}
+	for i := range 15 {
+		files[fmt.Sprintf("ai/agentic-coding/tool-%02d.md", i)] = fmt.Sprintf(`---
+title: Coding Agent Tool %02d
+keywords: [coding agents, developer tools]
+source_kind: repository
+content_profile: repository_profile
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+annotation: "Repository profile for an agentic coding tool."
+---
+Coding assistant workflows.
+`, i)
+	}
+	ctx := context.Background()
+	store, basePath := seedPlacementBase(t, files)
+	builder := ingestion.NewPlacementBuilder(store, basePath, nil)
+
+	// Act
+	placement, _, err := builder.Build(ctx, ingestion.PlacementBuildInput{
+		Text:           "Сохрани материал про SMS verification для authentication",
+		SourceKind:     "repository",
+		ContentProfile: "repository_profile",
+		Type:           "link",
+	})
+
+	// Assert
+	require.NoError(t, err)
+	require.NotEmpty(t, placement.CandidateThemes)
+	assert.Equal(t, "security/auth", placement.CandidateThemes[0].Path)
+	assert.NotContains(t, placementThemePaths(placement.CandidateThemes), "ai/agentic-coding")
+}
+
+func TestPlacementBuilder_Build_WhenOnlyChildThemeHasNodes_ExpectEmptyParentExcluded(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	ctx := context.Background()
+	store, basePath := seedPlacementBase(t, map[string]string{
+		"ai/agentic-coding/skills/repository-skills.md": `---
+title: Repository Agent Skills
+keywords: [agent skills, tool instructions]
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+annotation: "Reusable skills for coding agents."
+---
+Agent skills and tool instructions.
+`,
+	})
+	builder := ingestion.NewPlacementBuilder(store, basePath, nil)
+
+	// Act
+	placement, _, err := builder.Build(ctx, ingestion.PlacementBuildInput{
+		Text: "Материал про repository agent skills и tool instructions",
+	})
+
+	// Assert
+	require.NoError(t, err)
+	paths := placementThemePaths(placement.CandidateThemes)
+	assert.Contains(t, paths, "ai/agentic-coding/skills")
+	assert.NotContains(t, paths, "ai/agentic-coding")
+}
+
+func TestPlacementBuilder_Build_WhenOneRootDominates_ExpectBalancedThemeMap(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	files := map[string]string{
+		"programming/security/input-validation.md": placementFixture("Input Validation", "security validation"),
+		"it/services/sms-provider.md":              placementFixture("SMS Provider", "sms provider"),
+	}
+	for i := range 50 {
+		files[fmt.Sprintf("ai/topic-%02d/node.md", i)] = placementFixture(
+			fmt.Sprintf("AI Topic %02d", i),
+			fmt.Sprintf("ai topic %02d", i),
+		)
+	}
+	ctx := context.Background()
+	store, basePath := seedPlacementBase(t, files)
+	builder := ingestion.NewPlacementBuilder(store, basePath, nil)
+
+	// Act
+	placement, _, err := builder.Build(ctx, ingestion.PlacementBuildInput{Text: "Новый материал"})
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, placement.ThemeMap, llm.PlacementThemeMapLimit)
+	paths := placementThemeSummaryPaths(placement.ThemeMap)
+	assert.True(t, containsPathRoot(paths, "programming"), paths)
+	assert.True(t, containsPathRoot(paths, "it"), paths)
+}
+
 func seedPlacementBase(tb testing.TB, files map[string]string) (*kb.Store, string) {
 	tb.Helper()
 
@@ -183,4 +293,44 @@ func placementKeywordNames(keywords []llm.KeywordCandidate) []string {
 	}
 
 	return result
+}
+
+func placementThemePaths(themes []llm.ThemeCandidate) []string {
+	result := make([]string, 0, len(themes))
+	for _, theme := range themes {
+		result = append(result, theme.Path)
+	}
+
+	return result
+}
+
+func placementThemeSummaryPaths(themes []llm.ThemeSummary) []string {
+	result := make([]string, 0, len(themes))
+	for _, theme := range themes {
+		result = append(result, theme.Path)
+	}
+
+	return result
+}
+
+func containsPathRoot(paths []string, root string) bool {
+	for _, path := range paths {
+		if path == root || strings.HasPrefix(path, root+"/") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func placementFixture(title, keywords string) string {
+	return fmt.Sprintf(`---
+title: %s
+keywords: [%s]
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+annotation: "Placement fixture."
+---
+Fixture content.
+`, title, keywords)
 }
