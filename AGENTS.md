@@ -104,10 +104,11 @@ Skills live in **`.agents/skills/<name>/SKILL.md`** (project-local; no git subtr
 
 | Skill | Use when |
 |-------|----------|
+| `openspec-propose` | Quick path: create a change and generate all artifacts in one step (`/opsx:propose`) |
 | `openspec-apply-change` | Implementing tasks from a change |
 | `openspec-verify-change` | Verifying implementation vs specs |
 | `openspec-archive-change` | Archiving a completed change |
-| `openspec-new-change`, `openspec-continue-change`, `openspec-explore`, `openspec-ff-change`, `openspec-onboard`, `openspec-sync-specs`, `openspec-bulk-archive-change` | OpenSpec artifact workflow |
+| `openspec-new-change`, `openspec-continue-change`, `openspec-explore`, `openspec-ff-change`, `openspec-onboard`, `openspec-sync-specs`, `openspec-bulk-archive-change` | OpenSpec artifact workflow (step-by-step) |
 
 Start with **`openspec-apply-change`** for implementation; use **`openspec-explore`** for design-only discussions.
 

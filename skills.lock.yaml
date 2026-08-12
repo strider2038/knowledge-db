@@ -2,7 +2,7 @@ version: 3
 hub:
     repo: https://github.com/muonsoft/skills.git
     ref: main
-    commit: 0417bb62bf8b5e18fdbc92ec7e1689b80b786673
+    commit: 3335dae04f91efedf4efacc46fb1572a1b7a2534
 preset: web-app
 include:
     - theme: process
@@ -36,6 +36,7 @@ selected_paths:
     - openspec-ff-change
     - openspec-new-change
     - openspec-onboard
+    - openspec-propose
     - openspec-sync-specs
     - openspec-verify-change
     - runnable-background-processes
@@ -48,7 +49,7 @@ selected_paths:
     - web-frontend-tests
 skills:
     agent-memory-usage:
-        upstream_hash: sha256:ad73f95434d1de4f2cd1abbf93865f61a6ff4eb9f0f2d02f6e3f7d92da1360f4
+        upstream_hash: sha256:05e727fa5b0d456b5d44ab28fd9d8424d7fdc82fa5fab0b36346d3aff5210661
     agentmem-onboarding:
         upstream_hash: sha256:54d2e1681d8b076b308c7f3651cfda4d3eae1ba2e8e11b0c3fd21957b5864940
     banner-design:
@@ -80,31 +81,33 @@ skills:
     modern-web-guidance:
         upstream_hash: sha256:6919dab483514c10226ebad4b446b3ce1cc38f6a9339b5fd35552a9b06b05553
     openspec-apply-change:
-        upstream_hash: sha256:80c4b8cfef9c48cc5427b6b85b5c8836fdf7792b3efcd4c6f7efdc7c2d2f016c
+        upstream_hash: sha256:9796c7593b38fc0399c4d5b9006f50b179801518810878ac0357a67704d1f969
     openspec-archive-change:
-        upstream_hash: sha256:6a7ef696bbdf2b985d2da57246d4949f41a228bd04b2dcd132cc4a83bb0a2aba
+        upstream_hash: sha256:54e94c94303fb85ca648c9d8cafd7f652e1522622733a8f6ccc430b179b91c80
     openspec-bulk-archive-change:
-        upstream_hash: sha256:793dbfe20c70a679f39951b1bebe3bd6c63843b1dea3d5f2a5cbbf962b0098b7
+        upstream_hash: sha256:3fe5f395878941b7ced6a12a935f2b0b2edf3660b1e78e11f063ac20111625b9
     openspec-continue-change:
-        upstream_hash: sha256:5f417e9d04d0265c3272185afb13e79d84d94970801b2f78c21c1c19dbaf184c
+        upstream_hash: sha256:21653948c000f3612e3c3bfed18f78b9705c3ca07c4e530e6cad6652ec85c0c3
     openspec-explore:
-        upstream_hash: sha256:d7b8734a4700a0d61e0caef0361b8586dbfa02c4af72b267831d80b129d5f3c5
+        upstream_hash: sha256:674eaca19455e9dff0c07c7eb20b737b47b99c6e484d16dbd9a4379e82e06746
     openspec-ff-change:
-        upstream_hash: sha256:44aa741e0f6a756fbb0246a59f70cee10492a67956f92f36d5557b39454238c3
+        upstream_hash: sha256:72896e84404285171834456115fd10ae23db747713fe3d2e3898eb379592c363
     openspec-new-change:
-        upstream_hash: sha256:0c60ac7dfa988f780fac036393450a05b2e1276ea604b058640f8d7bbed84733
+        upstream_hash: sha256:0ca7842d48f0cbc80a9b441267c244da5c7c31a5d623b4d9ebc5ec2fc40a75d9
     openspec-onboard:
-        upstream_hash: sha256:98877b080c6362b87f3e0562f283976f2db96b849d1172b45e0f1cebf4ba14b7
+        upstream_hash: sha256:a20024101e6267ae452d7840117d424e7e9ca7acc72a14574b53c5ece92d9b0e
+    openspec-propose:
+        upstream_hash: sha256:6adda8de85ba9b1feb2a32c954ae4a9e2abf59ed98227018fd85b1c82b3e4399
     openspec-sync-specs:
-        upstream_hash: sha256:6ba50a33f3617e8545410ff685a67fa678c653cef86a077a02e83d67d7bfbaa9
+        upstream_hash: sha256:f72f06bd8b7a5e7b56a1423205ebd357e2c3c29c55c37eaa8f8b7f3f3d3389ca
     openspec-verify-change:
-        upstream_hash: sha256:fb7e3a2f025b049bf197f4e89b0becaa8d2cefd21a4cbbc19072c67fbfccba13
+        upstream_hash: sha256:741266a1a024fcf963d8c2ee179fc4e6e545213d1b32e8a2c05cfeb3968d67bf
     runnable-background-processes:
         upstream_hash: sha256:4dc5a488f4ce172607270d1130651ce75df2704fe9738757ddc5e214e7abf672
     slides:
         upstream_hash: sha256:c8476d4e9f23cb39a87a053ecfc4cb62aaa7697d366a438107686ba467ad2e65
     task-delegation:
-        upstream_hash: sha256:c54da2806cfa9e85461f679eaad120b029b82ea501005923b3b695d70e2eedaf
+        upstream_hash: sha256:fc4c50e96a3ae50fd6a78b0ce68e18b3d2067aee7c3b7a99e0d2e709d46a2fde
     ui-styling:
         upstream_hash: sha256:d17d754f5f37144d1a78096bb389f09d0aefdd7b202823746f6a25433548d5dc
     ui-ux-pro-max:
