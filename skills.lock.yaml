@@ -2,7 +2,7 @@ version: 4
 hub:
     repo: https://github.com/muonsoft/skills.git
     ref: main
-    commit: 3261575c5b6926dc943625e6890749aa95f49ba3
+    commit: f5a564586bd9f86db9d6fb7bf11847018ced70dd
 preset: web-app
 include:
     - theme: process
@@ -12,7 +12,6 @@ exclude:
     - id: web-static-frontend
 providers:
     - claude
-    - codex
     - cursor
 selected_packages:
     - agent-memory-usage
@@ -33,15 +32,10 @@ selected_packages:
     - modern-web-guidance
     - openspec-apply-change
     - openspec-archive-change
-    - openspec-bulk-archive-change
-    - openspec-continue-change
     - openspec-explore
-    - openspec-ff-change
-    - openspec-new-change
-    - openspec-onboard
     - openspec-propose
     - openspec-sync-specs
-    - openspec-verify-change
+    - openspec-update-change
     - openspec-workflow
     - runnable-background-processes
     - skill-authoring
@@ -216,294 +210,68 @@ packages:
               installed_hash: sha256:ad754389a1f7d6ca8e9e08119c1738305448327ad85447e3e6b81fbbc321136e
     openspec-apply-change:
         hub_path: process/openspec-apply-change
-        upstream_hash: sha256:231812e79ecae4aaf4fe9535534c93a9d721feef2052ef2db4e716bbf5993a51
+        upstream_hash: sha256:ced3fe15f17d7ea871932f031699bd34da209e8eaeabfb3a2a5192c8426fd3d2
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/openspec-apply-change
-              installed_hash: sha256:231812e79ecae4aaf4fe9535534c93a9d721feef2052ef2db4e716bbf5993a51
+              installed_hash: sha256:ced3fe15f17d7ea871932f031699bd34da209e8eaeabfb3a2a5192c8426fd3d2
     openspec-archive-change:
         hub_path: process/openspec-archive-change
-        upstream_hash: sha256:0bb1bc275a06b800e48001b05528cf337c4d38ab532203896539abaa1d2ea880
+        upstream_hash: sha256:1262e80d26c2e79f55a8da1f4e7322324e77763c6da005354f0eb2d96ed2c573
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/openspec-archive-change
-              installed_hash: sha256:0bb1bc275a06b800e48001b05528cf337c4d38ab532203896539abaa1d2ea880
-    openspec-bulk-archive-change:
-        hub_path: process/openspec-bulk-archive-change
-        upstream_hash: sha256:a645f0efd7718c8ebfd599f84f6226d631cedae9052e88046ee578baf272789c
-        artifacts:
-            - id: skill
-              kind: skill
-              mode: tree
-              src: .
-              dest: .agents/skills/openspec-bulk-archive-change
-              installed_hash: sha256:a645f0efd7718c8ebfd599f84f6226d631cedae9052e88046ee578baf272789c
-    openspec-continue-change:
-        hub_path: process/openspec-continue-change
-        upstream_hash: sha256:97c85eaf209e6ad9365b7d72ad51d1b41173205567bfb744d0f2119320b27b42
-        artifacts:
-            - id: skill
-              kind: skill
-              mode: tree
-              src: .
-              dest: .agents/skills/openspec-continue-change
-              installed_hash: sha256:97c85eaf209e6ad9365b7d72ad51d1b41173205567bfb744d0f2119320b27b42
+              installed_hash: sha256:1262e80d26c2e79f55a8da1f4e7322324e77763c6da005354f0eb2d96ed2c573
     openspec-explore:
         hub_path: process/openspec-explore
-        upstream_hash: sha256:1ccfe525f9f19f105138b4a93a436e4450fa99e034a3088a3b9c90e9a8c41d54
+        upstream_hash: sha256:91c08d6757ba1351d99e5ee2c432e8a34ba275f83170e7a8e80689cddb52ce94
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/openspec-explore
-              installed_hash: sha256:1ccfe525f9f19f105138b4a93a436e4450fa99e034a3088a3b9c90e9a8c41d54
-    openspec-ff-change:
-        hub_path: process/openspec-ff-change
-        upstream_hash: sha256:6fc49b7b9b7855f8eadba14e5ac7b34bf562616b64f4de22f798be2c7f7c9ab2
-        artifacts:
-            - id: skill
-              kind: skill
-              mode: tree
-              src: .
-              dest: .agents/skills/openspec-ff-change
-              installed_hash: sha256:6fc49b7b9b7855f8eadba14e5ac7b34bf562616b64f4de22f798be2c7f7c9ab2
-    openspec-new-change:
-        hub_path: process/openspec-new-change
-        upstream_hash: sha256:361b62f06b692359085a2438e6ed72d75370d80e0a90535f3edbc00059fb7811
-        artifacts:
-            - id: skill
-              kind: skill
-              mode: tree
-              src: .
-              dest: .agents/skills/openspec-new-change
-              installed_hash: sha256:361b62f06b692359085a2438e6ed72d75370d80e0a90535f3edbc00059fb7811
-    openspec-onboard:
-        hub_path: process/openspec-onboard
-        upstream_hash: sha256:2ddcb8ceecd366797bd476940c31876bcd3f80db5506f9c47d4ebc2e3abb9515
-        artifacts:
-            - id: skill
-              kind: skill
-              mode: tree
-              src: .
-              dest: .agents/skills/openspec-onboard
-              installed_hash: sha256:2ddcb8ceecd366797bd476940c31876bcd3f80db5506f9c47d4ebc2e3abb9515
+              installed_hash: sha256:91c08d6757ba1351d99e5ee2c432e8a34ba275f83170e7a8e80689cddb52ce94
     openspec-propose:
         hub_path: process/openspec-propose
-        upstream_hash: sha256:a8e88172165136e1273821a57a43cfe88bc98c6530e727a9aa4f3ea917bfa172
+        upstream_hash: sha256:a0e9f68e87e577fe51c54c6ab6d2d5f96f1556e1984c2b0bfa46d3ed37e24571
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/openspec-propose
-              installed_hash: sha256:a8e88172165136e1273821a57a43cfe88bc98c6530e727a9aa4f3ea917bfa172
+              installed_hash: sha256:a0e9f68e87e577fe51c54c6ab6d2d5f96f1556e1984c2b0bfa46d3ed37e24571
     openspec-sync-specs:
         hub_path: process/openspec-sync-specs
-        upstream_hash: sha256:3ff2f6b0f70cba163c01066ef449b5535ba7fcd736d3c71b42133a0066983529
+        upstream_hash: sha256:bba2fb69fe34e0148effa3720aa16020ee19ed327140aad7a3aa07d4a3af4822
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/openspec-sync-specs
-              installed_hash: sha256:3ff2f6b0f70cba163c01066ef449b5535ba7fcd736d3c71b42133a0066983529
-    openspec-verify-change:
-        hub_path: process/openspec-verify-change
-        upstream_hash: sha256:fe237cf1a6ee28a46ebc494180ee273ee4ccbfa3b50c1dbcf630f8d7193a1f38
+              installed_hash: sha256:bba2fb69fe34e0148effa3720aa16020ee19ed327140aad7a3aa07d4a3af4822
+    openspec-update-change:
+        hub_path: process/openspec-update-change
+        upstream_hash: sha256:070f8b09c3a88c4bf01c173f9c0d8ddd04a4f0d8e797b109f3068c0e32da7c29
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
-              dest: .agents/skills/openspec-verify-change
-              installed_hash: sha256:fe237cf1a6ee28a46ebc494180ee273ee4ccbfa3b50c1dbcf630f8d7193a1f38
+              dest: .agents/skills/openspec-update-change
+              installed_hash: sha256:070f8b09c3a88c4bf01c173f9c0d8ddd04a4f0d8e797b109f3068c0e32da7c29
     openspec-workflow:
         hub_path: process/openspec-workflow
-        upstream_hash: sha256:f94be77da7558cca71c4bfcc6dd4cb981d322a5440e35ce00c934b6ee3ed13c8
+        upstream_hash: sha256:e751550c340eab6a21ebfcd705edb73bd60f46db411ab195f056b147dc74175e
         artifacts:
-            - id: claude-apply
-              kind: command
-              mode: file
-              src: claude/commands/opsx/apply.md
-              dest: .claude/commands/opsx/apply.md
-              providers:
-                - claude
-              installed_hash: sha256:9c25d2d522c8c663c1411d6b95f721e2f8d9623cfaf62c38b1af63647752c513
-            - id: claude-archive
-              kind: command
-              mode: file
-              src: claude/commands/opsx/archive.md
-              dest: .claude/commands/opsx/archive.md
-              providers:
-                - claude
-              installed_hash: sha256:629172edd94d531b463451210ea25bccc8559fa7cf68879a42177ed10858255c
-            - id: claude-bulk-archive
-              kind: command
-              mode: file
-              src: claude/commands/opsx/bulk-archive.md
-              dest: .claude/commands/opsx/bulk-archive.md
-              providers:
-                - claude
-              installed_hash: sha256:0a1f882752aaa1c6416649746573960249c134c0f7b1dc760717ec2e7c0294b2
-            - id: claude-continue
-              kind: command
-              mode: file
-              src: claude/commands/opsx/continue.md
-              dest: .claude/commands/opsx/continue.md
-              providers:
-                - claude
-              installed_hash: sha256:2d3e34e746ad42044abf115e17462820af42d1bc68d7721764950f05304fb978
-            - id: claude-explore
-              kind: command
-              mode: file
-              src: claude/commands/opsx/explore.md
-              dest: .claude/commands/opsx/explore.md
-              providers:
-                - claude
-              installed_hash: sha256:5b60a43df1d73057dd28b7d02eaa837f92c9d2163988ac1df263192d8c808efe
-            - id: claude-ff
-              kind: command
-              mode: file
-              src: claude/commands/opsx/ff.md
-              dest: .claude/commands/opsx/ff.md
-              providers:
-                - claude
-              installed_hash: sha256:ae87c4e2b526e4f578b1d606547afb883319c8256c2e2ecf197986cdc86542da
-            - id: claude-new
-              kind: command
-              mode: file
-              src: claude/commands/opsx/new.md
-              dest: .claude/commands/opsx/new.md
-              providers:
-                - claude
-              installed_hash: sha256:8d9e9a25ac49c602f690beb379cf4248bc3625b31aaecb89bad5aa1c92dfc10c
-            - id: claude-onboard
-              kind: command
-              mode: file
-              src: claude/commands/opsx/onboard.md
-              dest: .claude/commands/opsx/onboard.md
-              providers:
-                - claude
-              installed_hash: sha256:0ee641b79e1fdfc55f6223aee166c7518dae23fc66904dd0074fcbea31b7236e
-            - id: claude-propose
-              kind: command
-              mode: file
-              src: claude/commands/opsx/propose.md
-              dest: .claude/commands/opsx/propose.md
-              providers:
-                - claude
-              installed_hash: sha256:487057ff6833833b29aa826a1e64eb694ab82a75ad1da677420a8449fe663b11
-            - id: claude-sync
-              kind: command
-              mode: file
-              src: claude/commands/opsx/sync.md
-              dest: .claude/commands/opsx/sync.md
-              providers:
-                - claude
-              installed_hash: sha256:34e20a73ea02d4f388a462ca1c4ad492490a2f53a1cbe22b868ee01f42a60b6f
-            - id: claude-verify
-              kind: command
-              mode: file
-              src: claude/commands/opsx/verify.md
-              dest: .claude/commands/opsx/verify.md
-              providers:
-                - claude
-              installed_hash: sha256:f6dd9f70bf04118f2663202700f03a2354da45f3685a1a1be1953a20edcfe0f4
-            - id: cursor-apply
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/apply.md
-              dest: .cursor/commands/opsx/apply.md
-              providers:
-                - cursor
-              installed_hash: sha256:8f06b920bb4c62d1b4470767e2f735c5da1afebd8bcc46f9a42fd592e67bc511
-            - id: cursor-archive
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/archive.md
-              dest: .cursor/commands/opsx/archive.md
-              providers:
-                - cursor
-              installed_hash: sha256:a3f0a9bd80ee91e10b0274be469ae68b9c85ac5cc788fb48ceffb94228a71314
-            - id: cursor-bulk-archive
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/bulk-archive.md
-              dest: .cursor/commands/opsx/bulk-archive.md
-              providers:
-                - cursor
-              installed_hash: sha256:e34f657ebae6bcf9289727b0959fc3f0479fe009176ce96d7adc20057d40c205
-            - id: cursor-continue
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/continue.md
-              dest: .cursor/commands/opsx/continue.md
-              providers:
-                - cursor
-              installed_hash: sha256:37310d71bbc91b972f05d0ba123d74022c4fbe6800c1e1ec8dd5dc84f9df737c
-            - id: cursor-explore
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/explore.md
-              dest: .cursor/commands/opsx/explore.md
-              providers:
-                - cursor
-              installed_hash: sha256:60378027be6cfc34d8d51c129d47005f8209def52612141ee0c516285da2830b
-            - id: cursor-ff
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/ff.md
-              dest: .cursor/commands/opsx/ff.md
-              providers:
-                - cursor
-              installed_hash: sha256:3f99f653007a4a4763141a2877b0231fe20d17f6fcf203f784effc068e615743
-            - id: cursor-new
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/new.md
-              dest: .cursor/commands/opsx/new.md
-              providers:
-                - cursor
-              installed_hash: sha256:8b8b80030e31e4478cf2d07c7ca76d780507d5993f27cd185c25257e78565b79
-            - id: cursor-onboard
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/onboard.md
-              dest: .cursor/commands/opsx/onboard.md
-              providers:
-                - cursor
-              installed_hash: sha256:bc75f588e953b293893bd5d24b3b83b20c2373e30b2aa3aacab55407d7a7680e
-            - id: cursor-propose
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/propose.md
-              dest: .cursor/commands/opsx/propose.md
-              providers:
-                - cursor
-              installed_hash: sha256:c8dfe16c655dc496fa654892994b840eb357260a38b57769a8f84066c970bd6b
-            - id: cursor-sync
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/sync.md
-              dest: .cursor/commands/opsx/sync.md
-              providers:
-                - cursor
-              installed_hash: sha256:b48609b523abd80617e0683ec0b4f4b20669bc25d10a3865c0d2336da517b05b
-            - id: cursor-verify
-              kind: command
-              mode: file
-              src: cursor/commands/opsx/verify.md
-              dest: .cursor/commands/opsx/verify.md
-              providers:
-                - cursor
-              installed_hash: sha256:2dda96e197ceaaf51d1e68f7a783376b0c99d88778a445bd42337aa0b03adea8
             - id: spec-driven-schema
               kind: schema
               mode: tree
