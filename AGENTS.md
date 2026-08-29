@@ -104,13 +104,21 @@ Skills live in **`.agents/skills/<name>/SKILL.md`** (project-local; no git subtr
 
 | Skill | Use when |
 |-------|----------|
-| `openspec-propose` | Quick path: create a change and generate all artifacts in one step (`/opsx:propose`) |
+| `work-intake` | Research-first entry point for an idea, symptom, question, or underspecified request |
+| `change-orchestration` | Opt-in Codex/Claude + Cursor workflow with broad semantic slices, profile QA, fresh review, and closeout |
+| `task-delegation` | Herdr-first Cursor delegation with executor-script recovery |
+| `openspec-propose` | Create a change and generate the artifacts defined by the configured schema |
 | `openspec-apply-change` | Implementing tasks from a change |
-| `openspec-verify-change` | Verifying implementation vs specs |
 | `openspec-archive-change` | Archiving a completed change |
-| `openspec-new-change`, `openspec-continue-change`, `openspec-explore`, `openspec-ff-change`, `openspec-onboard`, `openspec-sync-specs`, `openspec-bulk-archive-change` | OpenSpec artifact workflow (step-by-step) |
+| `openspec-explore` | Read-only investigation and requirements shaping |
+| `openspec-update-change` | Revising existing planning artifacts coherently |
+| `openspec-sync-specs` | Syncing canonical specs without archiving |
 
-Start with **`openspec-apply-change`** for implementation; use **`openspec-explore`** for design-only discussions.
+Start incomplete work with **`work-intake`**, implementation from an existing
+change with **`openspec-apply-change`**, and design-only discussions with
+**`openspec-explore`**. Cursor also installs the opt-in
+`/cursor-orchestration` route; do not run it concurrently with
+`change-orchestration`.
 
 ## Working With The Knowledge Base
 
@@ -155,7 +163,10 @@ After changing the skill template, users with existing KB repos should re-run `k
 
 ## OpenSpec Workflow
 
-- Use OpenSpec for non-trivial behavior changes.
+- Use OpenSpec for non-trivial behavior changes. The project default is
+  `web-change`, with API drafts, DB schema, UI contract, browser QA, structure,
+  and typed tasks. Use the built-in `spec-driven` schema explicitly for bounded
+  work; other full profiles are not vendored by default.
 - Changes live under `openspec/changes/<change-name>/`.
 - Always read the relevant `proposal.md`, `design.md`, `tasks.md`, and delta specs before implementing an OpenSpec change.
 - Mark tasks complete only after the implementation and verification for that task are actually done.

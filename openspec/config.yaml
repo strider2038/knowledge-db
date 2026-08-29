@@ -1,4 +1,4 @@
-schema: spec-driven
+schema: web-change
 
 # Project context (optional)
 # This is shown to AI when creating artifacts.
@@ -41,3 +41,11 @@ rules:
     - "Секции спека: заголовки MUST быть «## Purpose» и «## Requirements» (валидатор OpenSpec проверяет их наличие). Назначение — в разделе Purpose, требования — в разделе Requirements."
     - "Блоки требований: заголовок MUST быть «### Requirement:» (для парсера delta-спеков); далее — описание на русском. Сценарии — «#### Scenario:» или «#### Сценарий:»."
     - "В тексте каждого требования обязательно использовать SHALL или MUST (валидатор OpenSpec проверяет наличие этих ключевых слов). Формат: «Система SHALL …» или «… MUST …». При русскоязычном описании можно комбинировать: «Система ДОЛЖНА (SHALL) …»."
+  api_drafts:
+    - Писать на русском языке; фиксировать POST-action мутации, REST-чтения и snake_case JSON.
+  db_schema:
+    - Описывать отдельно метаданные приложения, markdown/git-хранилище базы знаний и опциональные векторные индексы.
+  ui_contract:
+    - Писать на русском языке; покрывать loading/error/empty states, доступность и mobile capture flows.
+  qa_plan:
+    - Включать точные backend, frontend и browser-команды, роли/фикстуры и проверку git-first/offline поведения.
