@@ -105,6 +105,7 @@ Skills live in **`.agents/skills/<name>/SKILL.md`** (project-local; no git subtr
 | Skill | Use when |
 |-------|----------|
 | `work-intake` | Research-first entry point for an idea, symptom, question, or underspecified request |
+| `codex-orchestration` | Opt-in Codex-native workflow with Sol design/review, broad Terra slices, web-profile QA, and OpenSpec closeout |
 | `change-orchestration` | Opt-in Codex/Claude + Cursor workflow with broad semantic slices, profile QA, fresh review, and closeout |
 | `task-delegation` | Herdr-first Cursor delegation with executor-script recovery |
 | `openspec-propose` | Create a change and generate the artifacts defined by the configured schema |
