@@ -1,5 +1,5 @@
 # Stage 1: build web
-FROM node:22-alpine AS web
+FROM node:24-alpine AS web
 ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 WORKDIR /app/web
@@ -9,7 +9,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: build kb
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 # Уникален на образ: ETag для embed-статики (If-None-Match иначе 304 с прежними бандлами).
 ARG BUILD_ID=
 WORKDIR /app

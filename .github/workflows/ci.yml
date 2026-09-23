@@ -19,7 +19,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
+
+      - run: npm install -g npm@latest
 
       - name: Install OpenSpec
         run: npm install -g @fission-ai/openspec@latest
@@ -35,14 +37,16 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.27.1'
           cache-dependency-path: go.sum
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
+
+      - run: npm install -g npm@latest
 
       - name: Go mod verify
         run: go mod verify
@@ -60,7 +64,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.10.1
+          version: v2.13.2
 
       - name: Test
         run: go test ./... -race -count=1
@@ -73,9 +77,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
+
+      - run: npm install -g npm@latest
 
       - name: Install dependencies
         working-directory: web
@@ -102,14 +108,16 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.27.1'
           cache-dependency-path: go.sum
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
+
+      - run: npm install -g npm@latest
 
       - name: Install Task
         uses: go-task/setup-task@v1
