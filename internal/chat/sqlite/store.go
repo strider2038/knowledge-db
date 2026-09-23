@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -354,7 +355,7 @@ func compactByRunes(items []map[string]string, budget int) []map[string]string {
 		return items
 	}
 	total := 0
-	for i := len(items) - 1; i >= 0; i-- {
+	for i := range slices.Backward(items) {
 		total += len([]rune(items[i]["content"]))
 		if total > budget {
 			if i+1 < len(items) {
@@ -388,7 +389,7 @@ func trimCountByRunes(messages []rec, budget int) int {
 	}
 
 	total := 0
-	for i := len(messages) - 1; i >= 0; i-- {
+	for i := range slices.Backward(messages) {
 		total += len([]rune(messages[i].content))
 		if total > budget {
 			return min(i+1, len(messages)-1)

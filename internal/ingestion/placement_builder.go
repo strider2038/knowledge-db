@@ -874,7 +874,7 @@ func limitThemeSummary(items []llm.ThemeSummary, limit int) []llm.ThemeSummary {
 
 	byRoot := make(map[string][]llm.ThemeSummary)
 	for _, item := range items {
-		root := strings.SplitN(item.Path, "/", 2)[0]
+		root, _, _ := strings.Cut(item.Path, "/")
 		byRoot[root] = append(byRoot[root], item)
 	}
 	roots := make([]string, 0, len(byRoot))

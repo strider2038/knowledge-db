@@ -6,9 +6,9 @@ import (
 	"github.com/gofrs/uuid/v5"
 )
 
-const Header = "X-Request-Id"
+const Header = "X-Request-ID"
 
-// Middleware читает X-Request-Id из заголовка или генерирует UUID, кладёт в context.
+// Middleware читает X-Request-ID из заголовка или генерирует UUID, кладёт в context.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID, err := uuid.FromString(r.Header.Get(Header))

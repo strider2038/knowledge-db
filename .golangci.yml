@@ -33,7 +33,6 @@ linters:
     - gochecknoinits
     - gochecksumtype
     - gocognit
-    - goconst
     - gocritic
     - gocyclo
     - godoclint
@@ -197,7 +196,6 @@ linters:
       - path: internal/.+_test\.go
         linters:
           - testpackage
-          - goconst
       # Проект использует fmt.Errorf для простых ошибок (err113 — sentinel)
       - path: cmd/
         linters:

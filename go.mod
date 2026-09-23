@@ -1,6 +1,6 @@
 module github.com/strider2038/knowledge-db
 
-go 1.25.3
+go 1.27.1
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.0.0

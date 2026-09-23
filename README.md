@@ -25,7 +25,7 @@
 
 ## Требования
 
-- **Go** 1.25+ (сборка `kb`)
+- **Go** 1.27+ (сборка `kb`)
 - **Node.js** 22+ (сборка `web/`, dev с HMR)
 - Опционально: [Task](https://taskfile.dev), [air](https://github.com/air-verse/air) для `task server:dev`
 
