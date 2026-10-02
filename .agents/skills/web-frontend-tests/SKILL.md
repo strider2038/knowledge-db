@@ -109,3 +109,20 @@ import { parseHeadings } from './headings'
 - [ ] API modules mocked at import path used by the component
 - [ ] Router provided for routed pages
 - [ ] Tests run via `npm test` in the frontend package
+
+## Async interaction regressions
+
+Use deferred promises or controlled network routes to test completion order, rather
+than hoping a sleep reproduces a race. Start requests A then B and finish B then A;
+assert the newest data, error and loading state, including an old rejection/finally.
+
+For autosave, edit during an in-flight save, then invoke the dependent action. Assert
+that newer edits survive and the action receives the acknowledged revision returned
+by saving. Cover failed/conflicting saves: preserve the dirty draft and prevent
+navigation or dependent mutation from claiming success. See
+[async-state-consistency](../../../integration/async-state-consistency/SKILL.md).
+
+After list or form rerenders, check focus restoration and keyboard activation. When
+text becomes an icon, query the accessible role/name and verify its action; an icon
+or tooltip existing alone does not prove accessibility. Use a real browser for
+focus traversal, clipping and scroll geometry because jsdom cannot establish them.
