@@ -2,7 +2,7 @@ version: 4
 hub:
     repo: https://github.com/muonsoft/skills.git
     ref: main
-    commit: 9a8dd184f73f340c42a1b8ab057b0bcc35df7270
+    commit: 9de6fe9b278bf04a2327002c2de222b40499cd37
 preset: web-app
 include:
     - theme: process
@@ -31,12 +31,15 @@ selected_packages:
     - database-migrations
     - design
     - design-system
+    - evaluation-integrity
     - form-field-help
+    - go-library-release
     - golang-errors
     - golang-logging
     - golang-tests
     - golang-validation
     - improve
+    - jezweb-ux-audit
     - mcp-tool-input-schema
     - modern-web-guidance
     - openspec-apply-change
@@ -49,8 +52,10 @@ selected_packages:
     - runnable-background-processes
     - skill-authoring
     - slides
+    - structural-code-review
     - ui-styling
     - ui-ux-pro-max
+    - ux-audit
     - ux-form-practices
     - web-constrained-layout
     - web-frontend
@@ -139,14 +144,14 @@ packages:
               installed_hash: sha256:85641f5ae002fd66b64ce9e959845a234a267bf9f61927aeb24a12767a5bbae8
     database-migrations:
         hub_path: databases/database-migrations
-        upstream_hash: sha256:f22b97a00e2ebd47d4c5242304a4dfa7cdbc6844b5e661e816f4bc4e9ee0fe27
+        upstream_hash: sha256:14f4bf07ebf3ef1d67feedf3733648c73d718c8127bdeaff1d1d84dbac77bece
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/database-migrations
-              installed_hash: sha256:f22b97a00e2ebd47d4c5242304a4dfa7cdbc6844b5e661e816f4bc4e9ee0fe27
+              installed_hash: sha256:14f4bf07ebf3ef1d67feedf3733648c73d718c8127bdeaff1d1d84dbac77bece
     design:
         hub_path: frontend/design/design
         upstream_hash: sha256:abf12bf2bcfb2cf73106808e106b9706b193bda419bb9ea884d4c6279d821a59
@@ -167,6 +172,16 @@ packages:
               src: .
               dest: .agents/skills/design-system
               installed_hash: sha256:6b6848e27394d51319aa26b6339a7e6aa3e9dd6c9c3c6d1dc6d7d7b1583715a8
+    evaluation-integrity:
+        hub_path: process/evaluation-integrity
+        upstream_hash: sha256:36d2c9a0ed0854793859ba72f106f106d79291e03ea08388b73b21f267dd96f1
+        artifacts:
+            - id: skill
+              kind: skill
+              mode: tree
+              src: .
+              dest: .agents/skills/evaluation-integrity
+              installed_hash: sha256:36d2c9a0ed0854793859ba72f106f106d79291e03ea08388b73b21f267dd96f1
     form-field-help:
         hub_path: frontend/ux/form-field-help
         upstream_hash: sha256:9e8ef6f57164fc4451a8826a867bd7c5e1c16fccf05bf9e372a5b1cb8850dc79
@@ -177,6 +192,16 @@ packages:
               src: .
               dest: .agents/skills/form-field-help
               installed_hash: sha256:9e8ef6f57164fc4451a8826a867bd7c5e1c16fccf05bf9e372a5b1cb8850dc79
+    go-library-release:
+        hub_path: backend/go/go-library-release
+        upstream_hash: sha256:05b0dd95ba3d2005755ea7d3fa7b46ab1fff2e5b2cd11121f36fe02a7f07cc68
+        artifacts:
+            - id: skill
+              kind: skill
+              mode: tree
+              src: .
+              dest: .agents/skills/go-library-release
+              installed_hash: sha256:05b0dd95ba3d2005755ea7d3fa7b46ab1fff2e5b2cd11121f36fe02a7f07cc68
     golang-errors:
         hub_path: backend/go/golang-errors
         upstream_hash: sha256:e115898c085144a234c46cf6743fbbde3919a40f4b20832ba7ce313d721e51d2
@@ -199,14 +224,14 @@ packages:
               installed_hash: sha256:6f5695589619917cb84ff376318227d1413e688239f0e04ef5f91f9f91a28d1d
     golang-tests:
         hub_path: backend/go/golang-tests
-        upstream_hash: sha256:2f21e771dd7a3e3e9eb3996138dbe8e15d5446c7aded132e1d893179fbc896dd
+        upstream_hash: sha256:2837084839eff466d973617e55f31992857131815986b5653ea39d691f70c7ba
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/golang-tests
-              installed_hash: sha256:2f21e771dd7a3e3e9eb3996138dbe8e15d5446c7aded132e1d893179fbc896dd
+              installed_hash: sha256:2837084839eff466d973617e55f31992857131815986b5653ea39d691f70c7ba
     golang-validation:
         hub_path: backend/go/golang-validation
         upstream_hash: sha256:e5fc59d69c113656728dd5d225e1677fdb9c564ed265356360024b71d59aa012
@@ -227,6 +252,16 @@ packages:
               src: .
               dest: .agents/skills/improve
               installed_hash: sha256:20fe2dad0e22ab6409aece8a1222408ecbd81ac80279110016573ef5bdddc9fc
+    jezweb-ux-audit:
+        hub_path: frontend/ux/jezweb-ux-audit
+        upstream_hash: sha256:0eefcbeed6583d6fb1684eaa8ee1d088fdf5f1bb14191b45240f1af5654bb819
+        artifacts:
+            - id: skill
+              kind: skill
+              mode: tree
+              src: .
+              dest: .agents/skills/jezweb-ux-audit
+              installed_hash: sha256:0eefcbeed6583d6fb1684eaa8ee1d088fdf5f1bb14191b45240f1af5654bb819
     mcp-tool-input-schema:
         hub_path: integration/mcp-tool-input-schema
         upstream_hash: sha256:557f6ec7f118bd436d12a443bde3be17aa0201209ff1140630e53c4824d43c3f
@@ -359,6 +394,16 @@ packages:
               src: .
               dest: .agents/skills/slides
               installed_hash: sha256:cf265eda682febc515b73ec146b264c37e38efb27b8b9442c5246ebde84cb55b
+    structural-code-review:
+        hub_path: process/structural-code-review
+        upstream_hash: sha256:8618f330809c058ef7f0a2032830dc4bf790220a7c15d1959ba4c07bcb310d38
+        artifacts:
+            - id: skill
+              kind: skill
+              mode: tree
+              src: .
+              dest: .agents/skills/structural-code-review
+              installed_hash: sha256:8618f330809c058ef7f0a2032830dc4bf790220a7c15d1959ba4c07bcb310d38
     ui-styling:
         hub_path: frontend/design/ui-styling
         upstream_hash: sha256:0f5f1dfb5b62c2eb5e14046583e703f453a516f66f7d0f5620bb70f6e38e64b1
@@ -379,6 +424,16 @@ packages:
               src: .
               dest: .agents/skills/ui-ux-pro-max
               installed_hash: sha256:845bd0a1875a683db344ca2f3bc44c7859c79553e92bed06996ebd6ea5e40c67
+    ux-audit:
+        hub_path: frontend/ux/ux-audit
+        upstream_hash: sha256:dc18a1c0b47996dd1c9901f9259c88298636d164036b08b117a03707e1239950
+        artifacts:
+            - id: skill
+              kind: skill
+              mode: tree
+              src: .
+              dest: .agents/skills/ux-audit
+              installed_hash: sha256:dc18a1c0b47996dd1c9901f9259c88298636d164036b08b117a03707e1239950
     ux-form-practices:
         hub_path: frontend/ux/ux-form-practices
         upstream_hash: sha256:d272129c6d0fcebb416696df9cbe5753573982ccf65c65e9c7ad89280fc31ce3
@@ -391,14 +446,14 @@ packages:
               installed_hash: sha256:d272129c6d0fcebb416696df9cbe5753573982ccf65c65e9c7ad89280fc31ce3
     web-constrained-layout:
         hub_path: frontend/web/web-constrained-layout
-        upstream_hash: sha256:364e7c444e95b7682cca32e3ed2e91075c326ddfabfe3b04308eab442f408da4
+        upstream_hash: sha256:098a4ffb7a5507fa604a0c61113f96bda97d974463b6cf481e0c1d4696c6edcc
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/web-constrained-layout
-              installed_hash: sha256:364e7c444e95b7682cca32e3ed2e91075c326ddfabfe3b04308eab442f408da4
+              installed_hash: sha256:098a4ffb7a5507fa604a0c61113f96bda97d974463b6cf481e0c1d4696c6edcc
     web-frontend:
         hub_path: frontend/web/web-frontend
         upstream_hash: sha256:986f4bffed43bdbfb7104056895f65318e09821ab8adaae09edb0f13de2b93a3
@@ -411,14 +466,14 @@ packages:
               installed_hash: sha256:986f4bffed43bdbfb7104056895f65318e09821ab8adaae09edb0f13de2b93a3
     web-frontend-tests:
         hub_path: frontend/web/web-frontend-tests
-        upstream_hash: sha256:6e66f62926ff49c4259df3ec2039a2ba7de8c8c758b2155e0c168a4d03f73d39
+        upstream_hash: sha256:e03387217307fa02e50b6a63a74945d9e2e12f3eab1388077085c57f54a0756f
         artifacts:
             - id: skill
               kind: skill
               mode: tree
               src: .
               dest: .agents/skills/web-frontend-tests
-              installed_hash: sha256:6e66f62926ff49c4259df3ec2039a2ba7de8c8c758b2155e0c168a4d03f73d39
+              installed_hash: sha256:e03387217307fa02e50b6a63a74945d9e2e12f3eab1388077085c57f54a0756f
     work-intake:
         hub_path: process/work-intake
         upstream_hash: sha256:f57f6930dac1445ea8815a4101b578f14cc17e4b75b789f2fe8527c6b90eeb39
