@@ -253,7 +253,7 @@ export async function getKeywordSuggestions(): Promise<string[]> {
   const keywordCounts = new Map<string, number>();
   const pageSize = 200;
   let offset = 0;
-  let total = 0;
+  let total: number;
   do {
     const response = await getNodesWithParams({
       path: '',
