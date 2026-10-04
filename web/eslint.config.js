@@ -19,5 +19,9 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // New in eslint-plugin-react-hooks 7; existing pages reset state in effects intentionally.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

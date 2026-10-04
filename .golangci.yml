@@ -142,6 +142,8 @@ linters:
             - codeberg.org
             - modernc.org
   exclusions:
+    paths:
+      - web/node_modules
     generated: lax
     warn-unused: true
     presets:
