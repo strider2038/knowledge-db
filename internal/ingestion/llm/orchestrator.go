@@ -696,7 +696,7 @@ func replayFunctionCallAsInputItem(item responses.ResponseOutputItemUnion) respo
 // Поле id обязательно для OpenRouter при продолжении разговора после tool calls.
 func functionCallOutputAsInputItem(callID, output string) responses.ResponseInputItemUnionParam {
 	o := responses.ResponseInputItemFunctionCallOutputParam{
-		CallID: callID,
+		CallID: param.NewOpt(callID),
 		Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
 			OfString: openai.String(output),
 		},
