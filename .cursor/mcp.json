@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "knowledge-db-debug": {
+      "url": "https://kdb.igorlazarev.ru/api/mcp/debug",
+      "headers": {
+        "Authorization": "Bearer ${env:KB_MCP_DEBUG_API_KEY}"
+      }
+    }
+  }
+}
