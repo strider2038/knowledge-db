@@ -433,6 +433,13 @@ The ingestion pipeline SHALL resolve a **content mode** for each ingest request 
 - **WHEN** client sends `content_mode=link_bookmark` for a URL
 - **THEN** pipeline SHALL create a `link`-oriented node with compact non-empty body based on URL/title/metadata/source text
 - **AND** pipeline SHALL NOT fetch full article content solely to make a long digest
+- **AND** pipeline SHALL NOT upgrade the node to digest even if the model returns `source_kind` `article` or `news`
+
+#### Scenario: Auto bookmark recognized as article or news
+
+- **WHEN** auto mode resolves to `link_bookmark` and the model returns `source_kind` `article` or `news`
+- **THEN** pipeline runs one additional digest pass before persist
+- **AND** the saved node uses `conceptual_digest` for `article` or `brief_digest` for `news`
 
 ### Requirement: Mode-specific LLM instructions
 
@@ -509,9 +516,15 @@ Body emptiness is a repair trigger after mode inference, not the primary mode se
 
 #### Scenario: Refresh bookmark link
 
-- **WHEN** a stored node has `type=link` and empty or `link_bookmark` `content_profile`
+- **WHEN** a stored node has `type=link`, empty or `link_bookmark` `content_profile`, and `source_kind` other than `article` or `news`
 - **THEN** refresh mode is `link_bookmark`
 - **AND** refresh SHALL keep or create compact non-empty semantic body
+
+#### Scenario: Refresh misclassified article bookmark
+
+- **WHEN** a stored node has `type=link`, empty or `link_bookmark` `content_profile`, `source_kind` `article` or `news`, and non-empty `source_url`
+- **THEN** refresh mode is `digest`
+- **AND** refresh SHALL replace the compact bookmark body with a structured digest for that source kind
 
 #### Scenario: Refresh ordinary note
 

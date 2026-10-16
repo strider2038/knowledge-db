@@ -3,6 +3,7 @@ package ingestion
 import (
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/strider2038/knowledge-db/internal/kb"
 )
@@ -135,7 +136,7 @@ func looksLikeNews(host, path, text string) bool {
 	if strings.Contains(path, "/news") || strings.Contains(path, "/release") {
 		return true
 	}
-	for _, marker := range []string{"techcrunch.com", "theverge.com", "wired.com", "venturebeat.com", "reuters.com"} {
+	for _, marker := range []string{"techcrunch.com", "theverge.com", "wired.com", "venturebeat.com", "reuters.com", "3dnews.ru"} {
 		if host == marker || strings.HasSuffix(host, "."+marker) {
 			return true
 		}
@@ -172,8 +173,73 @@ func looksLikeArticle(path, text string) bool {
 	if strings.Contains(path, "/blog") || strings.Contains(path, "/article") || strings.Contains(path, "/posts") {
 		return true
 	}
+	if looksLikeNumericArticlePath(path) {
+		return true
+	}
 
 	return strings.Count(text, " ") > 300 || containsAny(text, "article", "essay", "blog post", "статья")
+}
+
+// looksLikeNumericArticlePath matches CMS article URLs such as /1149821/slug.
+func looksLikeNumericArticlePath(path string) bool {
+	unescaped, err := url.PathUnescape(path)
+	if err != nil {
+		unescaped = path
+	}
+	parts := strings.Split(strings.Trim(unescaped, "/"), "/")
+	if len(parts) != 2 || !isNumericArticleID(parts[0]) {
+		return false
+	}
+
+	return isArticleSlug(parts[1])
+}
+
+func isNumericArticleID(value string) bool {
+	if len(value) < 4 {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isArticleSlug(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			continue
+		}
+
+		return false
+	}
+
+	return true
+}
+
+// digestProfileForSourceKind is the persisted digest shape for article and news sources.
+func digestProfileForSourceKind(kind string) (SourceProfile, bool) {
+	switch kb.SourceKind(strings.TrimSpace(kind)) {
+	case kb.SourceKindArticle:
+		return SourceProfile{
+			SourceKind:      kb.SourceKindArticle,
+			ContentProfile:  kb.ContentProfileConceptualDigest,
+			RecommendedType: nodeTypeNote,
+		}, true
+	case kb.SourceKindNews:
+		return SourceProfile{
+			SourceKind:      kb.SourceKindNews,
+			ContentProfile:  kb.ContentProfileBriefDigest,
+			RecommendedType: nodeTypeNote,
+		}, true
+	default:
+		return SourceProfile{}, false
+	}
 }
 
 func looksLikeLongFormMessage(title, content string) bool {
