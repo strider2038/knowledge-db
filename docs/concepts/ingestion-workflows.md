@@ -238,7 +238,8 @@ LLM не должен быть единственным местом очист�
 |-------------|--------------|-----------|
 | `type=article` + `source_url` | `full_fetch` | восстановить/обновить полную статью |
 | `type=link` + profile кроме пустого/`link_bookmark` | `digest` | обновить structured profile digest |
-| `type=link` + пустой/`link_bookmark` profile | `link_bookmark` | обновить compact semantic body |
+| `type=link` + пустой/`link_bookmark` profile, `source_kind` не `article`/`news` | `link_bookmark` | обновить compact semantic body |
+| `type=link` + пустой/`link_bookmark` profile + `source_kind` `article`/`news` | `digest` | заменить закладку на `conceptual_digest` или `brief_digest` |
 | `type=note` + `conceptual_digest`/`brief_digest` + `source_url` | `digest` | обновить note digest |
 | `type=note` без digest profile | `verbatim` | не переписывать body, только безопасная metadata-актуализация |
 

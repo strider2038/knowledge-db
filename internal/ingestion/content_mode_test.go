@@ -14,9 +14,9 @@ func TestParseContentMode(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		raw    string
-		mode   ingestion.ContentMode
-		valid  bool
+		raw   string
+		mode  ingestion.ContentMode
+		valid bool
 	}{
 		{"", ingestion.ContentModeAuto, true},
 		{"auto", ingestion.ContentModeAuto, true},
@@ -138,12 +138,29 @@ func TestResolveContentMode_TextMarkers(t *testing.T) {
 	assert.Equal(t, ingestion.ContentModeFullFetch, mode)
 }
 
+func TestResolveContentMode_When3DNewsPreview_ExpectDigest(t *testing.T) {
+	t.Parallel()
+
+	raw := "Топологическая фотоника: вычисления на грани\n\nhttps://3dnews.ru/1149821/topologicheskaya-fotonika"
+	sourceURL := "https://3dnews.ru/1149821/topologicheskaya-fotonika"
+	mode := ingestion.ResolveContentMode(ingestion.ResolveInput{
+		RawContent: raw,
+		SourceURL:  sourceURL,
+		Profile:    ingestion.ClassifySource(sourceURL, "", raw, ""),
+	})
+
+	assert.Equal(t, ingestion.ContentModeDigest, mode)
+}
+
 func TestResolveRefreshContentMode(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, ingestion.ContentModeFullFetch, ingestion.ResolveRefreshContentMode("article", "", "https://example.com", ""))
-	assert.Equal(t, ingestion.ContentModeDigest, ingestion.ResolveRefreshContentMode("link", "repository_profile", "https://github.com/a/b", ""))
-	assert.Equal(t, ingestion.ContentModeLinkBookmark, ingestion.ResolveRefreshContentMode("link", "link_bookmark", "https://t.me/channel", ""))
-	assert.Equal(t, ingestion.ContentModeDigest, ingestion.ResolveRefreshContentMode("note", "conceptual_digest", "https://example.com", ""))
-	assert.Equal(t, ingestion.ContentModeVerbatim, ingestion.ResolveRefreshContentMode("note", "", "", "existing body"))
+	assert.Equal(t, ingestion.ContentModeFullFetch, ingestion.ResolveRefreshContentMode("article", "", "", "https://example.com", ""))
+	assert.Equal(t, ingestion.ContentModeDigest, ingestion.ResolveRefreshContentMode("link", "repository_profile", "repository", "https://github.com/a/b", ""))
+	assert.Equal(t, ingestion.ContentModeLinkBookmark, ingestion.ResolveRefreshContentMode("link", "link_bookmark", "", "https://t.me/channel", ""))
+	assert.Equal(t, ingestion.ContentModeLinkBookmark, ingestion.ResolveRefreshContentMode("link", "link_bookmark", "unknown", "https://example.invalid/page", "stub"))
+	assert.Equal(t, ingestion.ContentModeDigest, ingestion.ResolveRefreshContentMode("link", "link_bookmark", "article", "https://3dnews.ru/1149821/topologicheskaya-fotonika", "stub"))
+	assert.Equal(t, ingestion.ContentModeDigest, ingestion.ResolveRefreshContentMode("link", "link_bookmark", "news", "https://3dnews.ru/1149821/topologicheskaya-fotonika", "stub"))
+	assert.Equal(t, ingestion.ContentModeDigest, ingestion.ResolveRefreshContentMode("note", "conceptual_digest", "article", "https://example.com", ""))
+	assert.Equal(t, ingestion.ContentModeVerbatim, ingestion.ResolveRefreshContentMode("note", "", "", "", "existing body"))
 }

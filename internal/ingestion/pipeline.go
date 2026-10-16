@@ -100,34 +100,26 @@ func (p *PipelineIngester) IngestText(ctx context.Context, req IngestRequest) (*
 	})
 	clog.Info(ctx, "ingest text: start", "text_len", len(rawContent), "content_mode", resolvedMode)
 
-	processInput, err := p.buildProcessInput(ctx, rawContent, req.SourceURL, req.SourceAuthor, req.TypeHint, profile, resolvedMode)
+	run, err := p.runIngestOrchestrator(ctx, rawContent, req.SourceURL, req.SourceAuthor, req.TypeHint, profile, requestedMode, resolvedMode)
 	if err != nil {
-		return nil, errors.Errorf("ingest text: build context: %w", err)
+		return nil, errors.Errorf("ingest text: %w", err)
 	}
-
-	llmStart := time.Now()
-	clog.Info(ctx, "ingest: llm process", "content_mode", resolvedMode)
-	result, err := p.orchestrator.Process(ctx, processInput)
-	if err != nil {
-		return nil, errors.Errorf("ingest text: orchestrate: %w", err)
-	}
-	applyProfileToResult(result, profile)
-	if err := p.applyContentModeGuardrails(ctx, resolvedMode, rawContent, processInput, result); err != nil {
+	resolvedMode = run.mode
+	if err := p.applyContentModeGuardrails(ctx, resolvedMode, rawContent, run.input, run.result); err != nil {
 		return nil, errors.Errorf("ingest text: guardrails: %w", err)
 	}
-	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds(), "content_mode", resolvedMode)
 
 	if id := strings.TrimSpace(req.NodeID); id != "" {
-		result.NodeID = id
+		run.result.NodeID = id
 	}
-	node, err := p.saveNode(ctx, result)
+	node, err := p.saveNode(ctx, run.result)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
+	if err := p.maybeTranslateAndSave(ctx, run.result, node); err != nil {
 		clog.Errorf(ctx, "ingest text: translation failed: %w", err)
 	}
-	clog.Info(ctx, "ingest text: complete", "theme", result.ThemePath, "slug", result.Slug, "content_mode", resolvedMode)
+	clog.Info(ctx, "ingest text: complete", "theme", run.result.ThemePath, "slug", run.result.Slug, "content_mode", resolvedMode)
 
 	return &IngestResult{Node: node, ContentMode: resolvedMode}, nil
 }
@@ -171,31 +163,23 @@ func (p *PipelineIngester) IngestURL(ctx context.Context, url string) (*IngestRe
 		SourceURL:  url,
 		Profile:    profile,
 	})
-	processInput, err := p.buildProcessInput(ctx, text, url, sourceAuthor, "", profile, resolvedMode)
+	run, err := p.runIngestOrchestrator(ctx, text, url, sourceAuthor, "", profile, ContentModeAuto, resolvedMode)
 	if err != nil {
-		return nil, errors.Errorf("ingest url: build context: %w", err)
+		return nil, errors.Errorf("ingest url: %w", err)
 	}
-
-	llmStart := time.Now()
-	clog.Info(ctx, "ingest: llm process", "content_mode", resolvedMode)
-	result, err := p.orchestrator.Process(ctx, processInput)
-	if err != nil {
-		return nil, errors.Errorf("ingest url: orchestrate: %w", err)
-	}
-	applyProfileToResult(result, profile)
-	if err := p.applyContentModeGuardrails(ctx, resolvedMode, text, processInput, result); err != nil {
+	resolvedMode = run.mode
+	if err := p.applyContentModeGuardrails(ctx, resolvedMode, text, run.input, run.result); err != nil {
 		return nil, errors.Errorf("ingest url: guardrails: %w", err)
 	}
-	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds(), "content_mode", resolvedMode)
 
-	node, err := p.saveNode(ctx, result)
+	node, err := p.saveNode(ctx, run.result)
 	if err != nil {
 		return nil, err
 	}
-	if err := p.maybeTranslateAndSave(ctx, result, node); err != nil {
+	if err := p.maybeTranslateAndSave(ctx, run.result, node); err != nil {
 		clog.Errorf(ctx, "ingest url: translation failed: %w", err)
 	}
-	clog.Info(ctx, "ingest url: complete", "url", url, "theme", result.ThemePath, "slug", result.Slug, "content_mode", resolvedMode)
+	clog.Info(ctx, "ingest url: complete", "url", url, "theme", run.result.ThemePath, "slug", run.result.Slug, "content_mode", resolvedMode)
 
 	return &IngestResult{Node: node, ContentMode: resolvedMode}, nil
 }
@@ -215,8 +199,9 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 
 	currentType, _ := current.Frontmatter["type"].(string)
 	currentProfile, _ := current.Frontmatter["content_profile"].(string)
+	currentKind, _ := current.Frontmatter["source_kind"].(string)
 	currentBody := strings.TrimSpace(current.Content)
-	resolvedMode := ResolveRefreshContentMode(currentType, currentProfile, sourceURL, currentBody)
+	resolvedMode := ResolveRefreshContentMode(currentType, currentProfile, currentKind, sourceURL, currentBody)
 	text, sourceAuthor, profile, err := p.buildRefreshInput(ctx, sourceURL, currentType, currentProfile, resolvedMode)
 	if err != nil {
 		return nil, errors.Errorf("refresh description: build input: %w", err)
@@ -275,6 +260,53 @@ func (p *PipelineIngester) RefreshDescription(ctx context.Context, path string) 
 	p.notifyNodesChanged(ctx, path)
 
 	return node, nil
+}
+
+type ingestRun struct {
+	input  llm.ProcessInput
+	result *llm.ProcessResult
+	mode   ContentMode
+}
+
+// runIngestOrchestrator calls the LLM and, when auto mode saved an article or news
+// source as a bookmark, runs one digest pass before persistence.
+func (p *PipelineIngester) runIngestOrchestrator(
+	ctx context.Context,
+	rawContent, sourceURL, sourceAuthor, typeHint string,
+	profile SourceProfile,
+	requested, resolved ContentMode,
+) (ingestRun, error) {
+	processInput, err := p.buildProcessInput(ctx, rawContent, sourceURL, sourceAuthor, typeHint, profile, resolved)
+	if err != nil {
+		return ingestRun{}, errors.Errorf("build context: %w", err)
+	}
+
+	llmStart := time.Now()
+	clog.Info(ctx, "ingest: llm process", "content_mode", resolved)
+	result, err := p.orchestrator.Process(ctx, processInput)
+	if err != nil {
+		return ingestRun{}, errors.Errorf("orchestrate: %w", err)
+	}
+	if result != nil {
+		if upgraded, ok := digestProfileForBookmarkUpgrade(requested, resolved, result.SourceKind); ok {
+			clog.Info(ctx, "ingest: upgrading link bookmark to digest", "source_kind", result.SourceKind)
+			resolved = ContentModeDigest
+			profile = upgraded
+			processInput, err = p.buildProcessInput(ctx, rawContent, sourceURL, sourceAuthor, typeHint, profile, resolved)
+			if err != nil {
+				return ingestRun{}, errors.Errorf("build context: %w", err)
+			}
+			clog.Info(ctx, "ingest: llm process", "content_mode", resolved)
+			result, err = p.orchestrator.Process(ctx, processInput)
+			if err != nil {
+				return ingestRun{}, errors.Errorf("orchestrate digest upgrade: %w", err)
+			}
+		}
+	}
+	applyProfileToResult(result, profile)
+	clog.Info(ctx, "ingest: llm process done", "duration_ms", time.Since(llmStart).Milliseconds(), "content_mode", resolved)
+
+	return ingestRun{input: processInput, result: result, mode: resolved}, nil
 }
 
 func (p *PipelineIngester) buildRefreshInput(
@@ -601,11 +633,11 @@ func (p *PipelineIngester) maybeTranslateAndSave(ctx context.Context, result *ll
 		"translation_of":    result.Slug,
 		"translation_of_id": node.ID,
 		"lang":              "ru",
-		"keywords":       result.Keywords,
-		"created":        node.Metadata["created"],
-		"updated":        node.Metadata["updated"],
-		"annotation":     result.Annotation,
-		"type":           "article",
+		"keywords":          result.Keywords,
+		"created":           node.Metadata["created"],
+		"updated":           node.Metadata["updated"],
+		"annotation":        result.Annotation,
+		"type":              "article",
 	}
 	if title, ok := node.Metadata["title"]; ok {
 		translationFrontmatter["title"] = title
