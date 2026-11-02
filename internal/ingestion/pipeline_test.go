@@ -934,6 +934,141 @@ func TestPipelineIngester_IngestURL_WhenRepositoryProfile_ExpectProfilePersisted
 	assert.Equal(t, "link", orc.input.RecommendedType)
 }
 
+func TestPipelineIngester_IngestText_When3DNewsPreview_ExpectNewsDigest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:       []string{"фотоника"},
+			Annotation:     "Краткая новость",
+			ThemePath:      "ai/analytics",
+			Slug:           "topologicheskaya-fotonika",
+			Type:           "note",
+			SourceKind:     "news",
+			ContentProfile: "brief_digest",
+			Content:        "## Суть\n\nЭлектронно-фотонные вычислители.",
+			Title:          "Топологическая фотоника",
+			SourceURL:      "https://3dnews.ru/1149821/topologicheskaya-fotonika",
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:      "Топологическая фотоника: вычисления на грани\n\nhttps://3dnews.ru/1149821/topologicheskaya-fotonika",
+		SourceURL: "https://3dnews.ru/1149821/topologicheskaya-fotonika",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, ingestion.ContentModeDigest, result.ContentMode)
+	assert.Equal(t, "digest", orc.input.ContentMode)
+	assert.Equal(t, "news", orc.input.SourceKind)
+	assert.Equal(t, "brief_digest", orc.input.ContentProfile)
+	assert.Equal(t, "note", result.Node.Metadata["type"])
+	assert.Equal(t, "news", result.Node.Metadata["source_kind"])
+	assert.Equal(t, "brief_digest", result.Node.Metadata["content_profile"])
+}
+
+func TestPipelineIngester_IngestText_WhenBookmarkLabeledArticle_ExpectDigestRetry(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+	sourceURL := "https://example.invalid/page"
+
+	orc := &sequenceOrchestrator{
+		results: []*llm.ProcessResult{
+			{
+				Keywords:       []string{"фотоника"},
+				Annotation:     "Закладка",
+				ThemePath:      "ai/analytics",
+				Slug:           "topologicheskaya-fotonika",
+				Type:           "link",
+				SourceKind:     "article",
+				ContentProfile: "link_bookmark",
+				Content:        "Короткая закладка",
+				Title:          "Топологическая фотоника",
+				SourceURL:      sourceURL,
+			},
+			{
+				Keywords:       []string{"фотоника"},
+				Annotation:     "Выжимка статьи",
+				ThemePath:      "ai/analytics",
+				Slug:           "topologicheskaya-fotonika",
+				Type:           "note",
+				SourceKind:     "article",
+				ContentProfile: "conceptual_digest",
+				Content:        "## Главная идея\n\nВыжимка статьи.",
+				Title:          "Топологическая фотоника",
+				SourceURL:      sourceURL,
+			},
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:      sourceURL,
+		SourceURL: sourceURL,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, orc.inputs, 2)
+	assert.Equal(t, "link_bookmark", orc.inputs[0].ContentMode)
+	assert.Equal(t, "digest", orc.inputs[1].ContentMode)
+	assert.Equal(t, "article", orc.inputs[1].SourceKind)
+	assert.Equal(t, "conceptual_digest", orc.inputs[1].ContentProfile)
+	assert.Equal(t, ingestion.ContentModeDigest, result.ContentMode)
+	assert.Equal(t, "note", result.Node.Metadata["type"])
+	assert.Equal(t, "conceptual_digest", result.Node.Metadata["content_profile"])
+	assert.Equal(t, "## Главная идея\n\nВыжимка статьи.", result.Node.Content)
+}
+
+func TestPipelineIngester_IngestText_WhenExplicitBookmark_ExpectNoDigestUpgrade(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	_ = fs.MkdirAll(base, 0o755)
+	store := kb.NewStore(fs)
+	sourceURL := "https://example.invalid/page"
+
+	orc := &sequenceOrchestrator{
+		results: []*llm.ProcessResult{
+			{
+				Keywords:       []string{"tool"},
+				Annotation:     "Закладка",
+				ThemePath:      "tools",
+				Slug:           "example-page",
+				Type:           "link",
+				SourceKind:     "article",
+				ContentProfile: "link_bookmark",
+				Content:        "Короткая закладка",
+				Title:          "Example",
+				SourceURL:      sourceURL,
+			},
+		},
+	}
+	pipeline := ingestion.NewPipelineIngester(store, orc, &mockFetcher{}, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	result, err := pipeline.IngestText(ctx, ingestion.IngestRequest{
+		Text:        sourceURL,
+		SourceURL:   sourceURL,
+		ContentMode: string(ingestion.ContentModeLinkBookmark),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, orc.inputs, 1)
+	assert.Equal(t, ingestion.ContentModeLinkBookmark, result.ContentMode)
+	assert.Equal(t, "link", result.Node.Metadata["type"])
+	assert.Equal(t, "link_bookmark", result.Node.Metadata["content_profile"])
+}
+
 func TestPipelineIngester_IngestText_WhenArticleURLDigest_ExpectConceptualNote(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1073,6 +1208,51 @@ Old body
 	data, readErr := afero.ReadFile(fs, nodePath)
 	require.NoError(t, readErr)
 	assert.Equal(t, original, string(data))
+}
+
+func TestPipelineIngester_RefreshDescription_WhenArticleBookmark_ExpectDigest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fs := afero.NewMemMapFs()
+	base := testBasePath
+	require.NoError(t, fs.MkdirAll(filepath.Join(base, "ai/analytics"), 0o755))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(base, "ai/analytics/topologicheskaya-fotonika.md"), []byte(testNodeYAML(`---
+title: Топологическая фотоника
+keywords: [фотоника]
+created: "2026-10-16T13:38:42Z"
+updated: "2026-10-16T13:38:42Z"
+annotation: "Короткий анонс"
+type: link
+content_profile: link_bookmark
+source_kind: article
+source_url: "https://3dnews.ru/1149821/topologicheskaya-fotonika"
+---
+
+Короткая закладка
+`)), 0o644))
+	store := kb.NewStore(fs)
+	orc := &mockOrchestrator{
+		result: &llm.ProcessResult{
+			Keywords:       []string{"фотоника"},
+			Annotation:     "Краткая новость",
+			Type:           "note",
+			SourceKind:     "news",
+			ContentProfile: "brief_digest",
+			Content:        "## Суть\n\nЭлектронно-фотонные вычислители.",
+			Title:          "Топологическая фотоника",
+		},
+	}
+	fetch := &mockFetcher{result: &fetcher.FetchResult{Title: "Топологическая фотоника", Content: "Полный текст новости."}}
+	pipeline := ingestion.NewPipelineIngester(store, orc, fetch, &mockCommitter{}, base, false, false, nil, nil, nil)
+
+	node, err := pipeline.RefreshDescription(ctx, "ai/analytics/topologicheskaya-fotonika")
+
+	require.NoError(t, err)
+	assert.Equal(t, "digest", orc.input.ContentMode)
+	assert.Equal(t, "note", node.Metadata["type"])
+	assert.Equal(t, "news", node.Metadata["source_kind"])
+	assert.Equal(t, "brief_digest", node.Metadata["content_profile"])
+	assert.Equal(t, "## Суть\n\nЭлектронно-фотонные вычислители.", node.Content)
 }
 
 func TestPipelineIngester_RefreshDescription_WhenNewsLink_ExpectTypeCorrectedToBriefNote(t *testing.T) {

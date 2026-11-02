@@ -105,9 +105,10 @@ func ResolveContentMode(input ResolveInput) ContentMode {
 }
 
 // ResolveRefreshContentMode infers mode from stored node fields.
-func ResolveRefreshContentMode(nodeType, contentProfile, sourceURL, body string) ContentMode {
+func ResolveRefreshContentMode(nodeType, contentProfile, sourceKind, sourceURL, body string) ContentMode {
 	nodeType = strings.TrimSpace(nodeType)
 	contentProfile = strings.TrimSpace(contentProfile)
+	sourceKind = strings.TrimSpace(sourceKind)
 	sourceURL = strings.TrimSpace(sourceURL)
 	body = strings.TrimSpace(body)
 
@@ -116,6 +117,11 @@ func ResolveRefreshContentMode(nodeType, contentProfile, sourceURL, body string)
 		return ContentModeFullFetch
 	case nodeType == nodeTypeLink:
 		profile := kb.ContentProfile(contentProfile)
+		if (profile == "" || profile == kb.ContentProfileLinkBookmark) && sourceURL != "" {
+			if _, ok := digestProfileForSourceKind(sourceKind); ok {
+				return ContentModeDigest
+			}
+		}
 		if profile == "" || profile == kb.ContentProfileLinkBookmark {
 			return ContentModeLinkBookmark
 		}
@@ -210,6 +216,16 @@ func isTelegramDeliveryURL(rawURL string) bool {
 	rawURL = strings.TrimSpace(strings.ToLower(rawURL))
 
 	return strings.HasPrefix(rawURL, "https://t.me/") || strings.HasPrefix(rawURL, "http://t.me/")
+}
+
+// digestProfileForBookmarkUpgrade rewrites an auto-resolved bookmark when the model
+// recognized an article or news source. An explicit content_mode is left unchanged.
+func digestProfileForBookmarkUpgrade(requested, resolved ContentMode, sourceKind string) (SourceProfile, bool) {
+	if requested.Resolved() || resolved != ContentModeLinkBookmark {
+		return SourceProfile{}, false
+	}
+
+	return digestProfileForSourceKind(sourceKind)
 }
 
 func hasDigestProfile(profile SourceProfile) bool {

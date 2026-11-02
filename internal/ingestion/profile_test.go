@@ -79,6 +79,26 @@ func TestClassifySource_WhenArticle_ExpectConceptualDigest(t *testing.T) {
 	assert.Equal(t, "note", profile.RecommendedType)
 }
 
+func TestClassifySource_When3DNewsURL_ExpectBriefDigest(t *testing.T) {
+	t.Parallel()
+
+	profile := ClassifySource("https://3dnews.ru/1149821/topologicheskaya-fotonika", "Топологическая фотоника", "короткий анонс", "")
+
+	assert.Equal(t, kb.SourceKindNews, profile.SourceKind)
+	assert.Equal(t, kb.ContentProfileBriefDigest, profile.ContentProfile)
+	assert.Equal(t, "note", profile.RecommendedType)
+}
+
+func TestClassifySource_WhenNumericArticlePath_ExpectConceptualDigest(t *testing.T) {
+	t.Parallel()
+
+	profile := ClassifySource("https://example.com/1149821/topologicheskaya-fotonika", "", "", "")
+
+	assert.Equal(t, kb.SourceKindArticle, profile.SourceKind)
+	assert.Equal(t, kb.ContentProfileConceptualDigest, profile.ContentProfile)
+	assert.Equal(t, "note", profile.RecommendedType)
+}
+
 func TestClassifySource_WhenNews_ExpectBriefDigest(t *testing.T) {
 	t.Parallel()
 
