@@ -59,6 +59,9 @@ func Run() error {
 	if err := config.ValidateLogLevel(cfg.LogLevel); err != nil {
 		return err
 	}
+	if err := cfg.ValidateNodeAgent(); err != nil {
+		return errors.Errorf("invalid node agent configuration: %w", err)
+	}
 
 	opts := &slog.HandlerOptions{
 		Level: config.ParseLogLevel(cfg.LogLevel),
@@ -79,8 +82,12 @@ func Run() error {
 	wireIndexNodeNotifications(syncWorker, ingester, translationWorker)
 
 	apiHandler := api.NewHandlerWithUploads(cfg.DataPath, cfg.UploadsDir, ingester, translationQueue)
-	apiHandler.SetNodeNormalizer(api.NewCursorNodeNormalizer())
-	apiHandler.SetNodeAgentEditor(api.NewCursorNodeAgentEditor())
+	api.ConfigureNodeAgentHandlers(apiHandler, cfg.NodeAgent.Agent, api.NodeAgentOptions{
+		Model:    cfg.NodeAgent.Model,
+		APIURL:   cfg.NodeAgent.APIURL,
+		APIKey:   cfg.NodeAgent.APIKey,
+		StateDir: cfg.NodeAgent.StateDir,
+	})
 	debugStore := debugdata.NewStore(cfg.DataPath)
 	apiHandler.SetDebugIssueStore(debugStore)
 	chatStore := buildChatStore(cfg)

@@ -23,6 +23,10 @@ type mockNodeAgentEditor struct {
 	err error
 }
 
+func (m *mockNodeAgentEditor) Available() error {
+	return nil
+}
+
 func (m *mockNodeAgentEditor) EditNode(_ context.Context, _ string, _ *kb.Node, _ string, onLog func(stream, text string)) error {
 	onLog("stdout", "edit line one")
 	onLog("stderr", "edit line two")
@@ -32,6 +36,10 @@ func (m *mockNodeAgentEditor) EditNode(_ context.Context, _ string, _ *kb.Node, 
 
 type blockingAgentEditor struct {
 	release chan struct{}
+}
+
+func (m *blockingAgentEditor) Available() error {
+	return nil
 }
 
 func (m *blockingAgentEditor) EditNode(ctx context.Context, _ string, _ *kb.Node, _ string, onLog func(stream, text string)) error {
@@ -284,4 +292,28 @@ func TestPostNodeAgentEdit_WhenCursorAgentMissing_Expect503(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Contains(t, rec.Body.String(), "cursor-agent not found in PATH")
+}
+
+func TestPostNodeAgentEdit_WhenOpencodeMissing_Expect503(t *testing.T) {
+	t.Setenv("PATH", "")
+	tmp := t.TempDir()
+	themeDir := filepath.Join(tmp, "topic")
+	require.NoError(t, os.MkdirAll(themeDir, 0o755))
+	content := "---\nkeywords: [test]\n---\n\nContent"
+	require.NoError(t, os.WriteFile(filepath.Join(themeDir, "my-node.md"), []byte(content), 0o644))
+
+	h := api.NewHandler(tmp, &ingestion.StubIngester{})
+	h.SetNodeAgentEditor(api.NewOpenCodeNodeAgentEditor(api.NodeAgentOptions{Model: "opencode-go/kimi-k3"}))
+	h.SetGitCommitter(&mockGitCommitter{}, nil, false)
+	mux, err := api.NewMux(h, nil)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	body, err := json.Marshal(map[string]string{"path": "topic/my-node", "instruction": "test"})
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/nodes/agent-edit", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Contains(t, rec.Body.String(), "opencode not found in PATH")
 }

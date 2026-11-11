@@ -66,8 +66,8 @@ function NodeAgentEditDialogForm({ nodePath, onOpenChange, onStarted }: NodeAgen
       <DialogHeader>
         <DialogTitle>Редактировать с агентом</DialogTitle>
         <DialogDescription>
-          Опишите, что нужно изменить в узле. Cursor Agent отредактирует файл на сервере; ход выполнения
-          отобразится в панели логов.
+          Опишите, что нужно изменить в узле. Агент отредактирует файл на сервере; ход выполнения отобразится в
+          панели логов.
         </DialogDescription>
       </DialogHeader>
       <textarea

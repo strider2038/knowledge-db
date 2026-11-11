@@ -36,8 +36,8 @@ type Telegram struct {
 
 // Auth — опциональная сессионная авторизация: пароль, Google OAuth, Yandex OAuth (независимо по env).
 type Auth struct {
-	Login    string `env:"KB_LOGIN" envDefault:""`
-	Password string `env:"KB_PASSWORD" envDefault:""`
+	Login              string        `env:"KB_LOGIN" envDefault:""`
+	Password           string        `env:"KB_PASSWORD" envDefault:""`
 	GoogleClientID     string        `env:"KB_GOOGLE_OAUTH_CLIENT_ID" envDefault:""`
 	GoogleClientSecret string        `env:"KB_GOOGLE_OAUTH_CLIENT_SECRET" envDefault:""`
 	GoogleRedirectURL  string        `env:"KB_GOOGLE_OAUTH_REDIRECT_URL" envDefault:""`
@@ -247,6 +247,7 @@ type Config struct {
 	Telegram  Telegram
 	Auth      Auth
 	Embedding Embedding
+	NodeAgent NodeAgent
 }
 
 // MCPEnabled returns true when MCP endpoint should be enabled.

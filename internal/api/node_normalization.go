@@ -40,6 +40,7 @@ type normalizeLogsResponse struct {
 }
 
 type nodeNormalizer interface {
+	Available() error
 	NormalizeNode(ctx context.Context, dataPath string, node *kb.Node, onLog func(stream, text string)) error
 }
 
@@ -47,6 +48,14 @@ type cursorNodeNormalizer struct{}
 
 func NewCursorNodeNormalizer() nodeNormalizer {
 	return &cursorNodeNormalizer{}
+}
+
+func (n *cursorNodeNormalizer) Available() error {
+	if _, err := exec.LookPath("cursor-agent"); err != nil {
+		return errJobCursorAgentUnavailable
+	}
+
+	return nil
 }
 
 func (n *cursorNodeNormalizer) NormalizeNode(ctx context.Context, dataPath string, node *kb.Node, onLog func(stream, text string)) error {
@@ -146,10 +155,8 @@ func (h *Handler) startNormalizeJob(ctx context.Context, path string) (Job, erro
 	if h.normalizeRunner == nil {
 		return Job{}, errJobNormalizeUnavailable
 	}
-	if _, ok := h.normalizeRunner.(*cursorNodeNormalizer); ok {
-		if _, err := exec.LookPath("cursor-agent"); err != nil {
-			return Job{}, errJobCursorAgentUnavailable
-		}
+	if err := h.normalizeRunner.Available(); err != nil {
+		return Job{}, err
 	}
 	if running, ok := h.jobs.FindRunning(jobTypeNormalize, path); ok {
 		return running, errJobNormalizeAlreadyRunning

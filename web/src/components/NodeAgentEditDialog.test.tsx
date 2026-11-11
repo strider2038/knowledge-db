@@ -20,6 +20,14 @@ describe('NodeAgentEditDialog', () => {
     expect(screen.getByRole('button', { name: 'Запустить' })).toBeDisabled()
   })
 
+  it('does not mention Cursor in description', () => {
+    render(
+      <NodeAgentEditDialog open nodePath="topic/node" onOpenChange={() => {}} onStarted={() => {}} />,
+    )
+    expect(screen.getByText(/Агент отредактирует файл на сервере/)).toBeInTheDocument()
+    expect(screen.queryByText(/Cursor/i)).not.toBeInTheDocument()
+  })
+
   it('starts operation and closes on success', async () => {
     const onStarted = vi.fn()
     const onOpenChange = vi.fn()

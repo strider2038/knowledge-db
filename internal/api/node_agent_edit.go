@@ -41,8 +41,9 @@ type agentEditLogsResponse struct {
 	NextOffset int64               `json:"next_offset"`
 }
 
-// NodeAgentEditor редактирует узел через Cursor Agent (для тестов и bootstrap).
+// NodeAgentEditor редактирует узел через агент (для тестов и bootstrap).
 type NodeAgentEditor interface {
+	Available() error
 	EditNode(ctx context.Context, dataPath string, node *kb.Node, instruction string, onLog func(stream, text string)) error
 }
 
@@ -50,6 +51,14 @@ type cursorNodeAgentEditor struct{}
 
 func NewCursorNodeAgentEditor() NodeAgentEditor {
 	return &cursorNodeAgentEditor{}
+}
+
+func (e *cursorNodeAgentEditor) Available() error {
+	if _, err := exec.LookPath("cursor-agent"); err != nil {
+		return errJobCursorAgentUnavailable
+	}
+
+	return nil
 }
 
 func (e *cursorNodeAgentEditor) EditNode(ctx context.Context, dataPath string, node *kb.Node, instruction string, onLog func(stream, text string)) error {
@@ -174,10 +183,8 @@ func (h *Handler) startAgentEditJob(ctx context.Context, path, instruction strin
 	if h.agentEditRunner == nil {
 		return Job{}, errJobAgentEditUnavailable
 	}
-	if _, ok := h.agentEditRunner.(*cursorNodeAgentEditor); ok {
-		if _, err := exec.LookPath("cursor-agent"); err != nil {
-			return Job{}, errJobCursorAgentUnavailable
-		}
+	if err := h.agentEditRunner.Available(); err != nil {
+		return Job{}, err
 	}
 	if running, ok := h.jobs.FindRunning(jobTypeAgentEdit, path); ok {
 		return running, errJobAgentEditAlreadyRunning

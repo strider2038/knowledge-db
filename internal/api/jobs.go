@@ -37,6 +37,7 @@ var (
 	errJobDescRefreshUnavailable       = errors.New("description refresh unavailable")
 	errJobNormalizeUnavailable         = errors.New("node normalization unavailable")
 	errJobCursorAgentUnavailable       = errors.New("cursor-agent not found in PATH")
+	errJobOpencodeUnavailable          = errors.New("opencode not found in PATH")
 	errJobNodeNotArticle               = errors.New("node is not an article")
 	errJobNormalizeAlreadyRunning      = errors.New("normalization already running for this node")
 	errJobAgentEditAlreadyRunning      = errors.New("agent edit already running for this node")
@@ -361,7 +362,7 @@ func httpStatusFromJobErr(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, ingestion.ErrSourceURLRequired):
 		return http.StatusBadRequest
-	case errors.Is(err, errJobNormalizeUnavailable), errors.Is(err, errJobAgentEditUnavailable), errors.Is(err, errJobCursorAgentUnavailable), errors.Is(err, errJobDescRefreshUnavailable), errors.Is(err, errJobTranslateUnavailable):
+	case errors.Is(err, errJobNormalizeUnavailable), errors.Is(err, errJobAgentEditUnavailable), errors.Is(err, errJobCursorAgentUnavailable), errors.Is(err, errJobOpencodeUnavailable), errors.Is(err, errJobDescRefreshUnavailable), errors.Is(err, errJobTranslateUnavailable):
 		return http.StatusServiceUnavailable
 	default:
 		if errors.Is(err, errJobAgentEditInstructionRequired) || errors.Is(err, errJobAgentEditInstructionTooLong) {
