@@ -297,7 +297,34 @@ docker run -d -p 8080:8080 \
   ghcr.io/strider2038/knowledge-db:latest
 ```
 
-В образе установлен `cursor-agent` (фоновые jobs нормализации/редактирования узлов в UI).
+В образе установлены `cursor-agent` и OpenCode CLI **2.2.7** (`opencode` в `~/.local/bin`) для фоновых jobs нормализации и редактирования узлов в UI. По умолчанию используется Cursor; переключение — переменной `KB_NODE_AGENT`.
+
+### Агент узла (Cursor / OpenCode)
+
+Переменная `KB_NODE_AGENT` задаёт один агент для **нормализации** и **«Редактировать с агентом»**:
+
+| Значение | Поведение |
+|----------|-----------|
+| пусто или `cursor` | Cursor Agent (`cursor-agent` в PATH) |
+| `opencode` | OpenCode v2 (`opencode` в PATH), модель — `KB_NODE_AGENT_MODEL` |
+
+**OpenCode Go (подписка):** `KB_NODE_AGENT=opencode`, `KB_NODE_AGENT_MODEL=opencode-go/<id>` (например `opencode-go/kimi-k3`), `OPENCODE_API_KEY` из [OpenCode Console](https://opencode.ai) → Personal API keys. **`KB_NODE_AGENT_API_URL` для Go не задавайте** — иначе сервер не стартует.
+
+**Свой OpenAI-совместимый endpoint:** `KB_NODE_AGENT_API_URL` и `KB_NODE_AGENT_API_KEY`, модель **без** префикса `opencode-go/`.
+
+Пример Docker с OpenCode Go:
+
+```bash
+docker run -d -p 8080:8080 \
+  -v /path/to/knowledge-base:/data \
+  -e KB_DATA_PATH=/data \
+  -e KB_NODE_AGENT=opencode \
+  -e KB_NODE_AGENT_MODEL=opencode-go/kimi-k3 \
+  -e OPENCODE_API_KEY=your-personal-api-key \
+  ghcr.io/strider2038/knowledge-db:latest
+```
+
+Состояние OpenCode хранится вне репозитория базы (`KB_NODE_AGENT_STATE_DIR` или каталог по умолчанию в user cache).
 
 ### Git в Docker
 

@@ -35,6 +35,7 @@ RUN useradd -m -s /bin/bash kb
 USER kb
 ENV PATH="/home/kb/.local/bin:${PATH}"
 RUN curl https://cursor.com/install -fsS | bash
+RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 2.2.7
 WORKDIR /data
 EXPOSE 8080
 ENTRYPOINT ["/kb", "serve"]
