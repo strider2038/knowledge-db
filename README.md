@@ -297,7 +297,7 @@ docker run -d -p 8080:8080 \
   ghcr.io/strider2038/knowledge-db:latest
 ```
 
-В образе установлены `cursor-agent` и OpenCode CLI **2.2.7** (`opencode` в `~/.local/bin`) для фоновых jobs нормализации и редактирования узлов в UI. По умолчанию используется Cursor; переключение — переменной `KB_NODE_AGENT`.
+В образе установлены `cursor-agent` (`~/.local/bin`) и OpenCode CLI **2.2.7** (`~/.opencode/bin`, этот каталог есть в `PATH` образа) для фоновых jobs нормализации и редактирования узлов в UI. По умолчанию используется Cursor; переключение — переменной `KB_NODE_AGENT`.
 
 ### Агент узла (Cursor / OpenCode)
 

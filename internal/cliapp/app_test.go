@@ -75,3 +75,22 @@ func TestServeCommand_UsesRunServe(t *testing.T) {
 	require.ErrorIs(t, err, expectedErr)
 	require.True(t, called)
 }
+
+func TestExecute_WhenServeFails_ExpectStderrAndExitCode(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+
+	orig := runServe
+	t.Cleanup(func() {
+		runServe = orig
+	})
+	runServe = func() error {
+		return errors.New("invalid node agent configuration: node agent: OPENCODE_API_KEY is required for opencode-go models")
+	}
+
+	var stderr bytes.Buffer
+	code := Execute(context.Background(), []string{"kb", "serve"}, &stderr)
+
+	require.Equal(t, 1, code)
+	require.Contains(t, stderr.String(), "OPENCODE_API_KEY is required")
+}

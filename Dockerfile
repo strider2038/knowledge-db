@@ -33,7 +33,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -s /bin/bash kb
 USER kb
-ENV PATH="/home/kb/.local/bin:${PATH}"
+# cursor-agent ставится в ~/.local/bin.
+# Установщик OpenCode кладёт бинарь в ~/.opencode/bin и правит только shell rc,
+# который процесс `kb serve` не читает.
+ENV PATH="/home/kb/.opencode/bin:/home/kb/.local/bin:${PATH}"
 RUN curl https://cursor.com/install -fsS | bash
 RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 2.2.7
 WORKDIR /data

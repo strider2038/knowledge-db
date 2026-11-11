@@ -8,8 +8,5 @@ import (
 )
 
 func main() {
-	app := cliapp.New()
-	if err := app.Run(context.Background(), os.Args); err != nil {
-		os.Exit(1)
-	}
+	os.Exit(cliapp.Execute(context.Background(), os.Args, os.Stderr))
 }
