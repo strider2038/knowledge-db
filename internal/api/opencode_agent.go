@@ -62,16 +62,10 @@ func (r *openCodeRunner) run(ctx context.Context, dataPath, nodeRelPath, prompt 
 	defer func() { _ = os.RemoveAll(jobRoot) }()
 
 	modelArg := openCodeCLIArg(r.opts)
-	argv := []string{
-		"run", "--standalone", "--format", "json", "--archived",
-		"--dir", dataPath,
-		"--model", modelArg,
-		prompt,
-	}
-
-	cmd := exec.CommandContext(ctx, "opencode", argv...)
+	// OpenCode 2.2 не принимает --dir у run: каталог проекта — это PWD, затем cwd.
+	cmd := exec.CommandContext(ctx, "opencode", openCodeRunArgs(modelArg, prompt)...)
 	cmd.Dir = dataPath
-	cmd.Env = buildOpenCodeChildEnv(jobRoot, r.opts.APIKey)
+	cmd.Env = buildOpenCodeChildEnv(jobRoot, r.opts.APIKey, dataPath)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -272,7 +266,7 @@ func openCodeJobConfigPath(jobRoot string) string {
 	return filepath.Join(jobRoot, "config", "opencode", "opencode.json")
 }
 
-func buildOpenCodeChildEnv(stateRoot, apiKey string) []string {
+func buildOpenCodeChildEnv(stateRoot, apiKey, workDir string) []string {
 	env := os.Environ()
 	xdg := map[string]string{
 		"XDG_CONFIG_HOME": filepath.Join(stateRoot, "config"),
@@ -286,8 +280,19 @@ func buildOpenCodeChildEnv(stateRoot, apiKey string) []string {
 	if strings.TrimSpace(apiKey) != "" {
 		env = setEnvVar(env, "KB_NODE_AGENT_API_KEY", apiKey)
 	}
+	if strings.TrimSpace(workDir) != "" {
+		env = setEnvVar(env, "PWD", workDir)
+	}
 
 	return env
+}
+
+func openCodeRunArgs(modelArg, prompt string) []string {
+	return []string{
+		"run", "--standalone", "--format", "json", "--archived",
+		"--model", modelArg,
+		prompt,
+	}
 }
 
 func setEnvVar(env []string, key, value string) []string {
@@ -412,13 +417,8 @@ func buildOpenCodeCommandSpec(dataPath, nodeRelPath, prompt string, opts NodeAge
 	cfg := buildOpenCodeConfigJSON(nodeRelPath, opts)
 
 	return openCodeCommandSpec{
-		Argv: []string{
-			"opencode", "run", "--standalone", "--format", "json", "--archived",
-			"--dir", dataPath,
-			"--model", modelArg,
-			prompt,
-		},
-		Env:       buildOpenCodeChildEnv(jobRoot, opts.APIKey),
+		Argv:      append([]string{"opencode"}, openCodeRunArgs(modelArg, prompt)...),
+		Env:       buildOpenCodeChildEnv(jobRoot, opts.APIKey, dataPath),
 		Config:    cfg,
 		ModelArg:  modelArg,
 		StateRoot: jobRoot,

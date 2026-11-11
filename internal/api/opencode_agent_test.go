@@ -23,7 +23,8 @@ func TestBuildOpenCodeCommandSpec_OpencodeGo(t *testing.T) {
 	require.Contains(t, joined, "--format json")
 	require.Contains(t, joined, "--archived")
 	require.Contains(t, joined, "--model opencode-go/kimi-k3")
-	require.NotContains(t, strings.Join(spec.Env, "\n"), dataPath)
+	require.NotContains(t, joined, "--dir")
+	require.Contains(t, spec.Env, "PWD="+dataPath)
 
 	for _, key := range []string{"XDG_CONFIG_HOME=", "XDG_DATA_HOME=", "XDG_STATE_HOME=", "XDG_CACHE_HOME="} {
 		var val string
