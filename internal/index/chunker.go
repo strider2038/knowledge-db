@@ -12,6 +12,7 @@ type TextChunk struct {
 
 // ChunkText разбивает текст статьи на фрагменты по заголовкам ##.
 // Секции > 500 токенов режутся по параграфам; секции < 100 токенов мержатся со следующей.
+// Фрагмент длиннее лимита embedding API режется ещё раз, в том числе текст без пробелов.
 func ChunkText(body string) []TextChunk {
 	if strings.TrimSpace(body) == "" {
 		return nil
@@ -24,7 +25,7 @@ func ChunkText(body string) []TextChunk {
 		sec := sections[i]
 		tokenCount := estimateTokens(sec.content)
 
-		if tokenCount < 100 && i+1 < len(sections) {
+		if tokenCount < 100 && len(sec.content) <= maxChunkContentBytes && i+1 < len(sections) {
 			sections[i+1].content = sec.content + "\n\n" + sections[i+1].content
 			if sections[i+1].heading == "" {
 				sections[i+1].heading = sec.heading
@@ -37,7 +38,7 @@ func ChunkText(body string) []TextChunk {
 			subChunks := splitLargeSection(sec.heading, sec.content)
 			chunks = append(chunks, subChunks...)
 		} else {
-			chunks = append(chunks, TextChunk{Heading: sec.heading, Content: sec.content})
+			chunks = append(chunks, chunkWithinLimit(sec.heading, sec.content)...)
 		}
 	}
 
@@ -76,27 +77,107 @@ func splitLargeSection(heading, content string) []TextChunk {
 	paragraphs := splitByParagraphs(content)
 	var chunks []TextChunk
 	var buf strings.Builder
-	bufLen := 0
+	bufTokens := 0
 
-	for _, p := range paragraphs {
-		pTokens := estimateTokens(p)
-		if bufLen+pTokens > 500 && bufLen > 0 {
-			chunks = append(chunks, TextChunk{Heading: heading, Content: strings.TrimSpace(buf.String())})
-			buf.Reset()
-			bufLen = 0
+	flush := func() {
+		if buf.Len() == 0 {
+			return
 		}
-		if buf.Len() > 0 {
-			buf.WriteString("\n\n")
-		}
-		buf.WriteString(p)
-		bufLen += pTokens
+		chunks = append(chunks, TextChunk{Heading: heading, Content: strings.TrimSpace(buf.String())})
+		buf.Reset()
+		bufTokens = 0
 	}
 
-	if buf.Len() > 0 {
-		chunks = append(chunks, TextChunk{Heading: heading, Content: strings.TrimSpace(buf.String())})
+	for _, paragraph := range paragraphs {
+		for _, part := range splitToChunkParts(paragraph) {
+			partTokens := estimateTokens(part)
+			separator := 0
+			if buf.Len() > 0 {
+				separator = 2
+			}
+			if buf.Len() > 0 && (bufTokens+partTokens > 500 || buf.Len()+separator+len(part) > maxChunkContentBytes) {
+				flush()
+			}
+			if buf.Len() > 0 {
+				buf.WriteString("\n\n")
+			}
+			buf.WriteString(part)
+			bufTokens += partTokens
+		}
+	}
+
+	flush()
+
+	return chunks
+}
+
+func chunkWithinLimit(heading, content string) []TextChunk {
+	parts := splitToChunkParts(content)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	chunks := make([]TextChunk, len(parts))
+	for i, part := range parts {
+		chunks[i] = TextChunk{Heading: heading, Content: part}
 	}
 
 	return chunks
+}
+
+// splitToChunkParts cuts text so each piece fits one embeddings input.
+// A single oversized paragraph, including text with no spaces, is split too.
+func splitToChunkParts(text string) []string {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	if estimateTokens(text) <= 500 && len(text) <= maxChunkContentBytes {
+		return []string{text}
+	}
+
+	words := strings.Fields(text)
+	if len(words) <= 1 {
+		return splitByByteLimit(strings.TrimSpace(text), maxChunkContentBytes)
+	}
+
+	var parts []string
+	var buf strings.Builder
+	wordCount := 0
+	flush := func() {
+		if buf.Len() == 0 {
+			return
+		}
+		parts = append(parts, buf.String())
+		buf.Reset()
+		wordCount = 0
+	}
+
+	for _, word := range words {
+		if len(word) > maxChunkContentBytes {
+			flush()
+			parts = append(parts, splitByByteLimit(word, maxChunkContentBytes)...)
+
+			continue
+		}
+
+		extra := len(word)
+		if buf.Len() > 0 {
+			extra++
+		}
+		// estimateTokens counts words*1.3, so the budget is in words, not per-word estimates.
+		if buf.Len() > 0 && (int(float64(wordCount+1)*1.3) > 500 || buf.Len()+extra > maxChunkContentBytes) {
+			flush()
+		}
+		if buf.Len() > 0 {
+			buf.WriteByte(' ')
+		}
+		buf.WriteString(word)
+		wordCount++
+	}
+
+	flush()
+
+	return parts
 }
 
 func splitByParagraphs(content string) []string {

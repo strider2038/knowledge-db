@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +25,7 @@ func TestAPIProvider_Embed_WhenSingleText_ExpectSingleVector(t *testing.T) {
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&req)) //nolint:testifylint // httptest handler
 		assert.Equal(t, "text-embedding-3-small", req.Model)
 		inputs, ok := req.Input.([]any)
-		require.True(t, ok) //nolint:testifylint // httptest handler
+		require.True(t, ok)       //nolint:testifylint // httptest handler
 		require.Len(t, inputs, 1) //nolint:testifylint // httptest handler
 		assert.Equal(t, "hello world", inputs[0])
 
@@ -73,6 +75,43 @@ func TestAPIProvider_Embed_WhenMultipleTexts_ExpectMultipleVectors(t *testing.T)
 	require.Len(t, result, 2)
 	assert.Equal(t, []float32{0.1, 0.2}, result[0])
 	assert.Equal(t, []float32{0.3, 0.4}, result[1])
+}
+
+func TestAPIProvider_Embed_WhenInputTooLong_ExpectTruncatedRequest(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("я", 10000)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req embeddingRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req)) //nolint:testifylint // httptest handler
+		inputs, ok := req.Input.([]any)
+		require.True(t, ok)       //nolint:testifylint // httptest handler
+		require.Len(t, inputs, 1) //nolint:testifylint // httptest handler
+		sent, ok := inputs[0].(string)
+		require.True(t, ok) //nolint:testifylint // httptest handler
+		assert.LessOrEqual(t, len(sent), maxEmbeddingInputBytes)
+		assert.True(t, utf8.ValidString(sent))
+		assert.True(t, strings.HasPrefix(long, sent))
+
+		resp := embeddingResponse{
+			Data: []struct {
+				Embedding []float32 `json:"embedding"`
+				Index     int       `json:"index"`
+			}{
+				{Embedding: []float32{0.5}, Index: 0},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(resp)) //nolint:testifylint // httptest handler
+	}))
+	defer server.Close()
+
+	provider := NewAPIProvider(server.URL, "key", "text-embedding-3-small")
+	result, err := provider.Embed(context.Background(), []string{long})
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, []float32{0.5}, result[0])
 }
 
 func TestAPIProvider_Embed_WhenAPIError_ExpectError(t *testing.T) {

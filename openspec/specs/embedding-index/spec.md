@@ -39,7 +39,7 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 ### Requirement: Markdown-aware chunking
 
-Система ДОЛЖНА (SHALL) предоставлять chunker для разбиения body нод типа `article` на фрагменты. Chunker SHALL использовать заголовки `##` как границы чанков. Секции более ~500 токенов MUST разбиваться по параграфам. Секции менее ~100 токенов MUST объединяться со следующей секцией. Для нод типа `link` (body пустой) и `note` (короткий body) chunking НЕ ДОЛЖЕН применяться — embedding генерируется для полного текста ноды.
+Система ДОЛЖНА (SHALL) предоставлять chunker для разбиения body нод типа `article` на фрагменты. Chunker SHALL использовать заголовки `##` как границы чанков. Секции более ~500 токенов MUST разбиваться по параграфам. Секции менее ~100 токенов MUST объединяться со следующей секцией. Абзац или сплошной текст без пробелов, который сам длиннее лимита одного входа embedding API, MUST разрезаться на несколько чанков, каждый из которых укладывается в этот лимит. Для нод типа `link` (body пустой) и `note` (короткий body) chunking НЕ ДОЛЖЕН применяться — embedding генерируется для полного текста ноды.
 
 #### Scenario: Статья с заголовками ##
 
@@ -61,9 +61,14 @@ Embedding-индекс на SQLite: генерация векторных пре
 - **WHEN** chunker обрабатывает ноду типа `note` с body < 500 токенов
 - **THEN** чанки не создаются, body включается целиком в node embedding
 
+#### Scenario: Абзац длиннее лимита embedding API
+
+- **WHEN** chunker обрабатывает секцию из одного абзаца или сплошного текста, который длиннее лимита одного входа модели
+- **THEN** создаётся несколько чанков, и каждый чанк укладывается в этот лимит
+
 ### Requirement: Embedding-индекс для нод
 
-Система ДОЛЖНА (SHALL) генерировать и хранить embedding для каждой ноды, идентифицируемой **node_id** из frontmatter. Текст для embedding SHALL формироваться: `title + " " + annotation + " " + keywords` — для всех типов; для `note` — дополнительно `+ " " + body`; для `link` — дополнительно `+ " " + body`, если узел содержит `content_profile` и непустое markdown-тело. Поле `labels` MUST NOT входить в текст embedding и MUST NOT входить в searchable text для смыслового/keyword поиска по контенту. Embedding MUST храниться как BLOB (little-endian float32 array) в таблице embeddings. Система MUST хранить content_hash (hash от title+annotation+keywords+type+source_kind+content_profile; **без** labels и **без** id) и body_hash (hash от body) для определения изменений. При индексации ноды система MUST читать `id` из frontmatter и использовать его как node_id в indexed_nodes. При индексации система MUST обновлять searchable text и node_source_urls. Searchable text MUST включать `source_kind`, `content_profile` и body для `note` и профильных `link` узлов. Система MUST создавать chunks для `article`, а также для `note` и `link` узлов с digest body, если body достаточно длинное для chunking.
+Система ДОЛЖНА (SHALL) генерировать и хранить embedding для каждой ноды, идентифицируемой **node_id** из frontmatter. Текст для embedding SHALL формироваться: `title + " " + annotation + " " + keywords` — для всех типов; для `note` — дополнительно `+ " " + body`; для `link` — дополнительно `+ " " + body`, если узел содержит `content_profile` и непустое markdown-тело. Поле `labels` MUST NOT входить в текст embedding и MUST NOT входить в searchable text для смыслового/keyword поиска по контенту. Embedding MUST храниться как BLOB (little-endian float32 array) в таблице embeddings. Система MUST хранить content_hash (hash от title+annotation+keywords+type+source_kind+content_profile; **без** labels и **без** id) и body_hash (hash от body) для определения изменений. При индексации ноды система MUST читать `id` из frontmatter и использовать его как node_id в indexed_nodes. При индексации система MUST обновлять searchable text и node_source_urls. Searchable text MUST включать `source_kind`, `content_profile` и body для `note` и профильных `link` узлов. Система MUST создавать chunks для `article`, а также для `note` и `link` узлов с digest body, если body достаточно длинное для chunking. Если один вход embedding API превышает лимит модели (8192 токенов), система MUST обрезать этот вход до безопасного размера в байтах, записать предупреждение в лог и продолжить индексацию: node embedding, searchable text и чанки сохраняются. Searchable text MUST содержать полное тело; обрезка относится только к тексту, отправляемому в embedding API.
 
 #### Scenario: Индексация новой ноды
 
@@ -89,6 +94,11 @@ Embedding-индекс на SQLite: генерация векторных пре
 
 - **WHEN** нода `type=note` содержит `content_profile=conceptual_digest` и markdown-тело
 - **THEN** body включается в node embedding, searchable text и chunk index при достаточном размере
+
+#### Scenario: Текст узла длиннее лимита embedding API
+
+- **WHEN** текст node embedding для `note` или профильного `link` длиннее лимита одного входа модели
+- **THEN** в API уходит обрезанный префикс, в лог пишется предупреждение, а searchable text и чанки строятся по полному body
 
 #### Scenario: Старый link без digest
 

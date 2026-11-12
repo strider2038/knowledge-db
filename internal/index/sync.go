@@ -206,7 +206,15 @@ func (w *SyncWorker) processSingleNode(ctx context.Context, path string) {
 
 	nodeType, _ := node.Metadata["type"].(string)
 	embeddingText := buildNodeEmbeddingText(node, nodeType)
-	vectors, err := w.provider.Embed(ctx, []string{embeddingText})
+	clippedText, truncated := clipEmbeddingInput(embeddingText)
+	if truncated {
+		clog.Warn(ctx, "sync: node embedding input truncated",
+			"path", path,
+			"bytes_before", len(embeddingText),
+			"bytes_after", len(clippedText),
+		)
+	}
+	vectors, err := w.provider.Embed(ctx, []string{clippedText})
 	if err != nil {
 		clog.Errorf(ctx, "sync: embed node %s: %w", path, err)
 
@@ -265,7 +273,17 @@ func (w *SyncWorker) processChunks(ctx context.Context, nodeID, nodePath, body s
 
 	texts := make([]string, len(textChunks))
 	for i, c := range textChunks {
-		texts[i] = c.Heading + "\n" + c.Content
+		raw := c.Heading + "\n" + c.Content
+		clipped, truncated := clipEmbeddingInput(raw)
+		texts[i] = clipped
+		if truncated {
+			clog.Warn(ctx, "sync: chunk embedding input truncated",
+				"path", nodePath,
+				"chunk", i,
+				"bytes_before", len(raw),
+				"bytes_after", len(clipped),
+			)
+		}
 	}
 
 	vectors, err := w.provider.Embed(ctx, texts)

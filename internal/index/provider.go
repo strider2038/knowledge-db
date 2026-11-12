@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/muonsoft/clog"
 	"github.com/muonsoft/errors"
 )
 
@@ -52,8 +53,9 @@ type apiError struct {
 
 // Embed отправляет тексты на эмбеддинг API и возвращает векторы.
 func (p *APIProvider) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	inputs := clipEmbeddingInputs(ctx, texts)
 	reqBody := embeddingRequest{
-		Input: texts,
+		Input: inputs,
 		Model: p.model,
 	}
 	jsonBody, err := json.Marshal(reqBody)
@@ -107,4 +109,21 @@ func (p *APIProvider) Embed(ctx context.Context, texts []string) ([][]float32, e
 	}
 
 	return embeddings, nil
+}
+
+func clipEmbeddingInputs(ctx context.Context, texts []string) []string {
+	inputs := make([]string, len(texts))
+	for i, text := range texts {
+		clipped, truncated := clipEmbeddingInput(text)
+		inputs[i] = clipped
+		if truncated {
+			clog.Warn(ctx, "embedding input truncated to model limit",
+				"index", i,
+				"bytes_before", len(text),
+				"bytes_after", len(clipped),
+			)
+		}
+	}
+
+	return inputs
 }

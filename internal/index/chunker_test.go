@@ -3,6 +3,7 @@ package index
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,6 +88,36 @@ func TestChunkText_WhenMultipleShortSections_ExpectMergedCumulatively(t *testing
 	chunks := ChunkText(body)
 
 	assert.Less(t, len(chunks), 4, "expected some merging of short sections")
+}
+
+func TestChunkText_WhenSingleParagraphExceedsTokenBudget_ExpectSeveralChunks(t *testing.T) {
+	t.Parallel()
+
+	body := "## Section\n" + strings.Repeat("word ", 2000)
+	chunks := ChunkText(body)
+
+	require.Greater(t, len(chunks), 1)
+	for _, c := range chunks {
+		assert.Equal(t, "Section", c.Heading)
+		assert.LessOrEqual(t, len(c.Content), maxChunkContentBytes)
+		assert.LessOrEqual(t, estimateTokens(c.Content), 500)
+	}
+}
+
+func TestChunkText_WhenUnbrokenTextExceedsLimit_ExpectByteSplit(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Repeat("я", 20000)
+	chunks := ChunkText(body)
+
+	require.Greater(t, len(chunks), 1)
+	var joined strings.Builder
+	for _, c := range chunks {
+		assert.LessOrEqual(t, len(c.Content), maxChunkContentBytes)
+		assert.True(t, utf8.ValidString(c.Content))
+		joined.WriteString(c.Content)
+	}
+	assert.Equal(t, body, joined.String())
 }
 
 func TestEstimateTokens(t *testing.T) {
