@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
+	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
@@ -616,4 +618,177 @@ func TestOpenAIOrchestrator_WhenLinkInput_ExpectFetchMetaThenCreateNode(t *testi
 	assert.Equal(t, "link", result.Type)
 	assert.Equal(t, "net-http", result.Slug)
 	assert.Equal(t, 2, callCount)
+}
+
+func TestOpenAIOrchestrator_WhenToolCallOmitsID_ExpectIDInFollowUp(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	first := unmarshalResponse(t, `{
+		"id":"resp1","created_at":0,"error":{},"incomplete_details":{},"instructions":"","metadata":{},
+		"model":"gpt-5","object":"response","status":"completed","tool_choice":"auto","usage":{},
+		"output":[{
+			"type":"function_call",
+			"call_id":"call_missing",
+			"name":"fetch_url_content",
+			"arguments":"{\"url\":\"https://example.com/article\"}",
+			"status":"completed"
+		}]
+	}`)
+	second := buildCreateNodeResponse(t, "resp2", "call2", map[string]any{
+		"keywords":   []any{"linux"},
+		"annotation": "Article",
+		"theme_path": "os/linux",
+		"slug":       "linux-fuzzing",
+		"type":       "note",
+		"content":    "Digest",
+		"title":      "Linux fuzzing",
+	})
+	client := &recordingResponsesClient{responses: []*responses.Response{first, second}}
+	orch := llm.NewTestOrchestrator(client, "gpt-5", &mockContentFetcher{
+		result: &fetcher.FetchResult{Title: "Linux", Content: "body"},
+	})
+
+	_, err := orch.Process(ctx, llm.ProcessInput{Text: "https://example.com/article"})
+
+	require.NoError(t, err)
+	require.Len(t, client.calls, 2)
+	followUp := mustMarshalInput(t, client.calls[1])
+	assert.Contains(t, followUp, `"id":"fc_call_missing"`)
+	assert.Contains(t, followUp, `"call_id":"call_missing"`)
+	assert.Contains(t, followUp, "function_call_output")
+}
+
+func TestOpenAIOrchestrator_WhenReasoningPrecedesToolCall_ExpectReasoningReplayed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	first := unmarshalResponse(t, `{
+		"id":"resp1","created_at":0,"error":{},"incomplete_details":{},"instructions":"","metadata":{},
+		"model":"gpt-5","object":"response","status":"completed","tool_choice":"auto","usage":{},
+		"output":[
+			{"type":"reasoning","id":"rs_keep","summary":[{"type":"summary_text","text":"need the page"}],"status":"completed"},
+			{"type":"function_call","id":"fc_1","call_id":"call_1","name":"fetch_url_content","arguments":"{\"url\":\"https://example.com/article\"}","status":"completed"}
+		]
+	}`)
+	second := buildCreateNodeResponse(t, "resp2", "call2", map[string]any{
+		"keywords":   []any{"linux"},
+		"annotation": "Article",
+		"theme_path": "os/linux",
+		"slug":       "linux-fuzzing",
+		"type":       "note",
+		"content":    "Digest",
+		"title":      "Linux fuzzing",
+	})
+	client := &recordingResponsesClient{responses: []*responses.Response{first, second}}
+	orch := llm.NewTestOrchestrator(client, "gpt-5", &mockContentFetcher{
+		result: &fetcher.FetchResult{Title: "Linux", Content: "body"},
+	})
+
+	_, err := orch.Process(ctx, llm.ProcessInput{Text: "https://example.com/article"})
+
+	require.NoError(t, err)
+	require.Len(t, client.calls, 2)
+	followUp := mustMarshalInput(t, client.calls[1])
+	reasoningAt := strings.Index(followUp, `"id":"rs_keep"`)
+	callAt := strings.Index(followUp, `"call_id":"call_1"`)
+	outputAt := strings.Index(followUp, "function_call_output")
+	require.NotEqual(t, -1, reasoningAt)
+	require.NotEqual(t, -1, callAt)
+	require.NotEqual(t, -1, outputAt)
+	assert.Less(t, reasoningAt, callAt)
+	assert.Less(t, callAt, outputAt)
+}
+
+func TestOpenAIOrchestrator_WhenReasoningWithoutToolCall_ExpectNudgeWithoutReasoning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	first := unmarshalResponse(t, `{
+		"id":"resp1","created_at":0,"error":{},"incomplete_details":{},"instructions":"","metadata":{},
+		"model":"gpt-5","object":"response","status":"completed","tool_choice":"auto","usage":{},
+		"output":[
+			{"type":"reasoning","id":"rs_orphan","summary":[{"type":"summary_text","text":"thinking"}],"status":"completed"},
+			{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Сохраню как заметку."}]}
+		]
+	}`)
+	second := buildCreateNodeResponse(t, "resp2", "call2", map[string]any{
+		"keywords":   []any{"go"},
+		"annotation": "A note",
+		"theme_path": "go",
+		"slug":       "note",
+		"type":       "note",
+		"content":    "text",
+		"title":      "Note",
+	})
+	client := &recordingResponsesClient{responses: []*responses.Response{first, second}}
+	orch := llm.NewTestOrchestrator(client, "gpt-5", nil)
+
+	_, err := orch.Process(ctx, llm.ProcessInput{Text: "Короткая заметка"})
+
+	require.NoError(t, err)
+	require.Len(t, client.calls, 2)
+	followUp := mustMarshalInput(t, client.calls[1])
+	assert.NotContains(t, followUp, "rs_orphan")
+	assert.Contains(t, followUp, "create_node")
+}
+
+func TestOpenAIOrchestrator_WhenAPIReturns400_ExpectProviderMessage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	client := &recordingResponsesClient{err: &openai.Error{
+		StatusCode: 400,
+		Code:       "invalid_request_error",
+		Param:      "input",
+		Message:    "Item 'fc_1' of type 'function_call' was provided without its required reasoning item.",
+	}}
+	orch := llm.NewTestOrchestrator(client, "gpt-5", nil)
+
+	_, err := orch.Process(ctx, llm.ProcessInput{Text: "https://example.com/article"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "without its required reasoning item")
+	assert.Contains(t, err.Error(), "invalid_request_error")
+	assert.Contains(t, err.Error(), "param input")
+	assert.Contains(t, err.Error(), "400")
+}
+
+type recordingResponsesClient struct {
+	calls     []responses.ResponseNewParams
+	responses []*responses.Response
+	err       error
+}
+
+func (c *recordingResponsesClient) New(_ context.Context, params responses.ResponseNewParams, _ ...option.RequestOption) (*responses.Response, error) {
+	c.calls = append(c.calls, params)
+	if c.err != nil {
+		return nil, c.err
+	}
+	i := len(c.calls) - 1
+	if i >= len(c.responses) {
+		return nil, errNoMoreResponses
+	}
+
+	return c.responses[i], nil
+}
+
+func unmarshalResponse(tb testing.TB, data string) *responses.Response {
+	tb.Helper()
+	var resp responses.Response
+	if err := json.Unmarshal([]byte(data), &resp); err != nil {
+		tb.Fatalf("unmarshal response: %v", err)
+	}
+
+	return &resp
+}
+
+func mustMarshalInput(tb testing.TB, params responses.ResponseNewParams) string {
+	tb.Helper()
+	body, err := json.Marshal(params.Input)
+	if err != nil {
+		tb.Fatalf("marshal input: %v", err)
+	}
+
+	return string(body)
 }

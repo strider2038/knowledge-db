@@ -126,10 +126,13 @@ func newOpenAIOrchestratorWithClientAndMetaFetcher(
 // Используется stateless-подход: полная история диалога в каждом запросе.
 // Это необходимо для OpenRouter и других провайдеров, которые не поддерживают
 // previous_response_id или конвертируют его в формат Chat Completions некорректно.
-// В теле следующего запроса нужно повторять вызовы инструментов с полями id/call_id и
-// для function_call_output — с уникальным id (см. replayFunctionCallAsInputItem и
-// functionCallOutputAsInputItem); иначе провайдер отвечает ошибкой про role 'tool'
-// без предшествующих tool_calls.
+// В теле следующего запроса нужно повторять output items модели в исходном порядке.
+// Для reasoning-моделей это включает элемент reasoning перед function_call: без него
+// Responses API отвечает 400 (function_call without its required reasoning item).
+// У function_call должны быть id и call_id, у function_call_output — свой id
+// (см. replayFunctionCallAsInputItem и functionCallOutputAsInputItem); иначе провайдер
+// отвечает ошибкой про role 'tool' без предшествующих tool_calls.
+// ToParam() сериализует только исходный JSON, поэтому недостающий id дописывается в него.
 //
 // Контент, полученный через fetch_url_content, кешируется в памяти и подставляется
 // в результат напрямую — LLM не воспроизводит его в create_node, чтобы избежать усечения.
@@ -167,6 +170,10 @@ func (o *OpenAIOrchestrator) Process(ctx context.Context, input ProcessInput) (*
 
 		resp, err := o.client.New(ctx, params)
 		if err != nil {
+			if detail := openAIErrorDetail(err); detail != "" {
+				return nil, errors.Errorf("llm process: %s: %w", detail, err)
+			}
+
 			return nil, errors.Errorf("llm process: %w", err)
 		}
 		usage := resp.Usage
@@ -215,10 +222,17 @@ func (o *OpenAIOrchestrator) processResponse(
 	fetchCache map[string]*fetcher.FetchResult,
 	input ProcessInput,
 ) (*ProcessResult, responses.ResponseInputParam, error) {
-	var functionCalls responses.ResponseInputParam
+	// replayed сохраняет output items в исходном порядке: reasoning, затем function_call.
+	// toolOutputs добавляются после всех вызовов, а не между ними.
+	var replayed responses.ResponseInputParam
 	var toolOutputs responses.ResponseInputParam
 
 	for _, item := range resp.Output {
+		if item.Type == "reasoning" {
+			replayed = append(replayed, replayReasoningAsInputItem(item))
+
+			continue
+		}
 		if item.Type != "function_call" {
 			continue
 		}
@@ -266,7 +280,7 @@ func (o *OpenAIOrchestrator) processResponse(
 		case "fetch_url_content":
 			url := extractURLFromArgs(item.Arguments.OfString)
 			clog.Info(ctx, "ingest: llm call fetch_url_content", "url", url)
-			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
+			replayed = append(replayed, replayFunctionCallAsInputItem(item))
 			fetchStart := time.Now()
 			output, fetchResult := o.executeFetchURLContent(ctx, item.Arguments.OfString)
 			if fetchResult != nil && url != "" {
@@ -278,7 +292,7 @@ func (o *OpenAIOrchestrator) processResponse(
 		case "fetch_url_meta":
 			url := extractURLFromArgs(item.Arguments.OfString)
 			clog.Info(ctx, "ingest: llm call fetch_url_meta", "url", url)
-			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
+			replayed = append(replayed, replayFunctionCallAsInputItem(item))
 			metaStart := time.Now()
 			output := o.executeFetchURLMeta(ctx, item.Arguments.OfString)
 			toolOutputs = append(toolOutputs, functionCallOutputAsInputItem(item.CallID, output))
@@ -286,7 +300,7 @@ func (o *OpenAIOrchestrator) processResponse(
 
 		case "search_placement_candidates":
 			clog.Info(ctx, "ingest: llm call search_placement_candidates")
-			functionCalls = append(functionCalls, replayFunctionCallAsInputItem(item))
+			replayed = append(replayed, replayFunctionCallAsInputItem(item))
 			searchStart := time.Now()
 			output := o.executeSearchPlacementCandidates(ctx, item.Arguments.OfString, input)
 			toolOutputs = append(toolOutputs, functionCallOutputAsInputItem(item.CallID, output))
@@ -294,7 +308,7 @@ func (o *OpenAIOrchestrator) processResponse(
 		}
 	}
 
-	if len(functionCalls) == 0 {
+	if !hasReplayedFunctionCall(replayed) {
 		if nextInputItems, ok := buildCreateNodeNudgeInputItems(inputItems, resp); ok {
 			clog.Info(ctx, "ingest: llm text-only response, nudging create_node")
 
@@ -304,9 +318,9 @@ func (o *OpenAIOrchestrator) processResponse(
 		return nil, nil, nil
 	}
 
-	nextInputItems := make(responses.ResponseInputParam, 0, len(inputItems)+len(functionCalls)+len(toolOutputs))
+	nextInputItems := make(responses.ResponseInputParam, 0, len(inputItems)+len(replayed)+len(toolOutputs))
 	nextInputItems = append(nextInputItems, inputItems...)
-	nextInputItems = append(nextInputItems, functionCalls...)
+	nextInputItems = append(nextInputItems, replayed...)
 	nextInputItems = append(nextInputItems, toolOutputs...)
 
 	return nil, nextInputItems, nil
@@ -680,16 +694,98 @@ func unescapeNewlines(s string) string {
 }
 
 // replayFunctionCallAsInputItem кладёт в input следующего запроса ровно те поля вызова,
-// что вернула модель (через RawJSON → ToParam), включая id объекта function_call.
+// что вернула модель (через RawJSON), включая id объекта function_call.
 // OpenRouter при проксировании на Chat Completions требует id и корректную связку с tool results.
+// ToParam использует param.Override: последующая запись в p.ID в JSON не попадает,
+// поэтому отсутствующий id дописывается в исходный JSON до Override.
 func replayFunctionCallAsInputItem(item responses.ResponseOutputItemUnion) responses.ResponseInputItemUnionParam {
 	fc := item.AsFunctionCall()
-	p := fc.ToParam()
+	raw := []byte(fc.RawJSON())
 	if strings.TrimSpace(fc.ID) == "" && fc.CallID != "" {
-		p.ID = param.NewOpt("fc_" + fc.CallID)
+		raw = ensureFunctionCallID(raw, "fc_"+fc.CallID)
+	}
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		p := responses.ResponseFunctionToolCallParam{
+			Arguments: fc.Arguments,
+			CallID:    fc.CallID,
+			Name:      fc.Name,
+		}
+		if id := strings.TrimSpace(fc.ID); id != "" {
+			p.ID = param.NewOpt(id)
+		} else if fc.CallID != "" {
+			p.ID = param.NewOpt("fc_" + fc.CallID)
+		}
+
+		return responses.ResponseInputItemUnionParam{OfFunctionCall: &p}
 	}
 
+	p := param.Override[responses.ResponseFunctionToolCallParam](json.RawMessage(raw))
+
 	return responses.ResponseInputItemUnionParam{OfFunctionCall: &p}
+}
+
+// replayReasoningAsInputItem возвращает reasoning item как есть: Responses API
+// требует его в следующем запросе рядом с function_call той же итерации.
+func replayReasoningAsInputItem(item responses.ResponseOutputItemUnion) responses.ResponseInputItemUnionParam {
+	reasoning := item.AsReasoning().ToParam()
+
+	return responses.ResponseInputItemUnionParam{OfReasoning: &reasoning}
+}
+
+func hasReplayedFunctionCall(items responses.ResponseInputParam) bool {
+	for _, item := range items {
+		if item.OfFunctionCall != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+func ensureFunctionCallID(raw []byte, id string) []byte {
+	if len(strings.TrimSpace(string(raw))) == 0 || strings.TrimSpace(id) == "" {
+		return raw
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return raw
+	}
+	if existing, ok := obj["id"].(string); ok && strings.TrimSpace(existing) != "" {
+		return raw
+	}
+	obj["id"] = id
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+
+	return out
+}
+
+func openAIErrorDetail(err error) string {
+	apiErr, ok := errors.As[*openai.Error](err)
+	if !ok || apiErr == nil {
+		return ""
+	}
+
+	parts := make([]string, 0, 3)
+	if code := strings.TrimSpace(apiErr.Code); code != "" {
+		parts = append(parts, code)
+	}
+	if paramName := strings.TrimSpace(apiErr.Param); paramName != "" {
+		parts = append(parts, "param "+paramName)
+	}
+	if msg := strings.TrimSpace(apiErr.Message); msg != "" {
+		parts = append(parts, msg)
+	}
+	detail := strings.Join(parts, ": ")
+	const maxLen = 500
+	if len(detail) > maxLen {
+		detail = detail[:maxLen] + "…"
+	}
+
+	return detail
 }
 
 // functionCallOutputAsInputItem формирует function_call_output для истории диалога.
